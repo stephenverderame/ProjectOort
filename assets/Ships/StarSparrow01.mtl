@@ -8,3 +8,4 @@ d 1.000000
 illum 2
 map_Kd Textures/StarSparrow_Red.png
 bump Textures/StarSparrow_Normal.png
+map_d Textures/StarSparrow_Emissive.png

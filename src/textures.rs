@@ -1,5 +1,14 @@
 use glium::Surface;
 
+fn load_hdr(path: &str) -> glium::texture::RawImage2d<u16> {
+    //let img = image::codecs::hdr::read_raw_file(path).unwrap();
+    let f = std::fs::File::open(path).unwrap();
+    let img = image::load(std::io::BufReader::new(f),
+        image::ImageFormat::from_path(path).unwrap()).unwrap().to_rgb16();
+    let dims = img.dimensions();
+    glium::texture::RawImage2d::from_raw_rgb_reversed(&img.into_raw(), dims)
+}
+
 fn load_img(path: &str, rev: bool) -> glium::texture::RawImage2d<u8> {
     let f = std::fs::File::open(path).unwrap();
     let img = image::load(std::io::BufReader::new(f), 
@@ -24,6 +33,12 @@ pub fn load_texture_2d<F : glium::backend::Facade>(path: &str, facade: &F)
 {
     let tex = load_img(path, false);
     glium::Texture2d::new(facade, tex).unwrap()
+}
+
+pub fn load_texture_hdr<F : glium::backend::Facade>(path: &str, facade: &F)
+    -> glium::texture::Texture2d
+{
+    glium::Texture2d::new(facade, load_hdr(path)).unwrap()
 }
 
 pub fn dir_stem(path: &str) -> String {

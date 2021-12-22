@@ -10,6 +10,7 @@ uniform sampler2D albedo_map;
 uniform sampler2D normal_map;
 uniform sampler2D metallic_map;
 uniform sampler2D roughness_map;
+uniform sampler2D emission_map;
 
 vec3 light_positions[4] = vec3[4](
     vec3(10, 10, 0),
@@ -129,6 +130,7 @@ vec3 radianceIntegral(vec3 norm, vec3 view_dir, vec3 albedo,
 
 void main() {
     vec3 albedo = pow(texture(albedo_map, f_tex_coords).rgb, vec3(2.2));
+    vec3 emission = texture(emission_map, f_tex_coords).rgb;
     float metallic = texture(metallic_map, f_tex_coords).r;
     float roughness = texture(roughness_map, f_tex_coords).r;
 
@@ -137,7 +139,7 @@ void main() {
 
     vec3 irradiance = radianceIntegral(norm, view_dir, albedo, metallic, roughness);
     vec3 ambient = vec3(0.03) * albedo; //* ao
-    vec3 color = ambient + irradiance;
+    vec3 color = ambient + irradiance + emission;
 
     frag_color = vec4(toneMap(color), 1.0);
 }

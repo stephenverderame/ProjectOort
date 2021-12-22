@@ -30,6 +30,7 @@ struct MMaterial {
     name: String,
     pbr_data: Option<PBRData>,
     normal_tex: Option<glium::texture::Texture2d>,
+    emission_tex: Option<glium::texture::SrgbTexture2d>,
     
 }
 
@@ -99,12 +100,16 @@ fn get_material_data<F>(dir: &str, mat: &Material, facade: &F)
         println!("{}", dir);
         println!("{}", mat.diffuse_texture);
         println!("{}", mat.normal_texture);
+        println!("{}", mat.dissolve_texture);
     }
     MMaterial {
         diffuse_tex: textures::load_tex_srgb_or_empty(&format!("{}{}", dir, mat.diffuse_texture), facade),
         pbr_data: get_pbr_textures(dir, &mat.name, facade),
         normal_tex: if mat.normal_texture.is_empty() { None } else { 
             Some(textures::load_texture_2d(&format!("{}{}", dir, mat.normal_texture), facade))
+        },
+        emission_tex: if mat.dissolve_texture.is_empty() { None } else {
+            Some(textures::load_texture_srgb(&format!("{}{}", dir, mat.dissolve_texture), facade))
         },
         name: mat.name.clone(),
     }
@@ -138,7 +143,10 @@ fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::Matrices,
             Some(tex) => Some(tex),
             _ => None,
         },
-        emission_map: None,
+        emission_map: match &material.emission_tex {
+            Some(tex) => Some(tex),
+            _ => None,
+        },
     }
 }
 

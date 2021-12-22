@@ -6,10 +6,13 @@ enum ShaderType {
     BlinnPhong,
     Pbr,
     Skybox,
+    EquiRect,
 }
 pub struct ShaderManager {
     shaders: BTreeMap<i32, (glium::Program, glium::DrawParameters<'static>)>,
     skybox: glium::texture::Cubemap,
+    empty_srgb: glium::texture::SrgbTexture2d,
+    env_map: glium::texture::SrgbTexture2d,
 }
 
 #[derive(Clone)]
@@ -45,6 +48,7 @@ fn shader_type_to_int(typ: &ShaderType) -> i32 {
         &ShaderType::BlinnPhong => 0,
         &ShaderType::Skybox => 1,
         &ShaderType::Pbr => 2,
+        &ShaderType::EquiRect => 3,
     }
 }
 
@@ -52,9 +56,9 @@ use glium::uniforms::*;
 pub enum UniformType<'a> {
     BSUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    PbrUniform(UniformsStorage<'a, [f32; 3], UniformsStorage<'a, &'a glium::texture::Texture2d, UniformsStorage<'a, &'a glium::texture::Texture2d, 
-        UniformsStorage<'a, &'a glium::texture::Texture2d, UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [[f32; 4]; 4], 
-        UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>),
+    PbrUniform(UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [f32; 3], UniformsStorage<'a, &'a glium::texture::Texture2d, 
+        UniformsStorage<'a, &'a glium::texture::Texture2d, UniformsStorage<'a, &'a glium::texture::Texture2d, 
+        UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>),
 }
 
 
@@ -88,6 +92,8 @@ impl ShaderManager {
         ShaderManager {
             shaders: shaders,
             skybox: textures::load_cubemap("assets/skybox/right.png", facade),
+            empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
+            env_map: textures::load_texture_hdr("assets/Milkyway/Milkway_small.hdr", facade),
         }
     }
 
@@ -115,6 +121,7 @@ impl ShaderManager {
                 normal_map: data.normal_map.unwrap(),
                 metallic_map: data.metallic_map.unwrap(),
                 cam_pos: data.matrices.cam_pos,
+                emission_map: data.emission_map.unwrap_or(&self.empty_srgb),
             })
         };
         (shader, params, uniform)
