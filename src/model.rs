@@ -1,4 +1,6 @@
 use tobj::*;
+use std::collections::BTreeMap;
+use std::io::BufRead;
 
 use glium::{Surface};
 use crate::textures;
@@ -18,9 +20,17 @@ pub struct Model {
 
 }
 
+struct PBRData {
+    roughness_tex: glium::texture::Texture2d,
+    metalness_tex: glium::texture::Texture2d,
+}
+
 struct MMaterial {
     diffuse_tex: glium::texture::SrgbTexture2d,
     name: String,
+    pbr_data: Option<PBRData>,
+    normal_tex: Option<glium::texture::Texture2d>,
+    
 }
 
 struct MMesh {
@@ -49,11 +59,53 @@ fn get_mesh_data(mesh: &Mesh) -> (Vec<Vertex>, Vec<u32>) {
     (verts, indices)
 }
 
+fn get_pbr_data(dir: &str, mat_name: &str) -> Option<BTreeMap<String, String>> {
+    match std::fs::File::open(format!("{}{}-pbr.yml", dir, mat_name)) {
+        Ok(file) => {
+            let mut map = BTreeMap::<String, String>::new();
+            let line_iter = std::io::BufReader::new(file).lines();
+            for line in line_iter {
+                if let Ok(ln_str) = line {
+                    let (key, val) = ln_str.split_at(ln_str.find(':').unwrap());
+                    map.insert(key.trim().to_string(), val[1 .. val.len()].trim().to_string());
+                }
+            }
+            Some(map)
+        },
+        _ => None,
+    }
+}
+
+fn get_pbr_textures<F>(dir: &str, mat_name: &str, facade: &F) 
+    -> Option<PBRData> where F : glium::backend::Facade 
+{
+    match get_pbr_data(dir, mat_name) {
+        Some(tex_maps) => {
+            println!("{}", tex_maps["roughness"]);
+            println!("{}", tex_maps["metalness"]);
+            Some(PBRData {
+                roughness_tex: textures::load_texture_2d(&format!("{}{}", dir, tex_maps["roughness"]), facade),
+                metalness_tex: textures::load_texture_2d(&format!("{}{}", dir, tex_maps["metalness"]), facade),
+            })
+        },
+        _ => None,
+    }
+}
+
 fn get_material_data<F>(dir: &str, mat: &Material, facade: &F)
     -> MMaterial where F : glium::backend::Facade
 {
+    if mat.name.find("pbr").is_some() {
+        println!("{}", dir);
+        println!("{}", mat.diffuse_texture);
+        println!("{}", mat.normal_texture);
+    }
     MMaterial {
-        diffuse_tex: textures::load_tex2d_or_empty(&format!("{}{}", dir, mat.diffuse_texture), facade),
+        diffuse_tex: textures::load_tex_srgb_or_empty(&format!("{}{}", dir, mat.diffuse_texture), facade),
+        pbr_data: get_pbr_textures(dir, &mat.name, facade),
+        normal_tex: if mat.normal_texture.is_empty() { None } else { 
+            Some(textures::load_texture_2d(&format!("{}{}", dir, mat.normal_texture), facade))
+        },
         name: mat.name.clone(),
     }
 }
@@ -64,6 +116,29 @@ fn get_material_or_none<F>(dir: &str, mesh: &Mesh, mats: &Vec<Material>, facade:
     match mesh.material_id {
         Some(id) => Some(get_material_data(dir, &mats[id], facade)),
         None => None,
+    }
+}
+
+fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::Matrices, 
+    model: [[f32; 4]; 4]) -> shader::UniformData<'a>
+{
+    shader::UniformData {
+        diffuse_tex: &material.diffuse_tex,
+        model: model,
+        matrices: mats,
+        roughness_map: match &material.pbr_data {
+            Some(pbr) => Some(&pbr.roughness_tex),
+            _ => None,
+        },
+        metallic_map: match &material.pbr_data {
+            Some(pbr) => Some(&pbr.metalness_tex),
+            _ => None,
+        },
+        normal_map: match &material.normal_tex {
+            Some(tex) => Some(tex),
+            _ => None,
+        },
+        emission_map: None,
     }
 }
 
@@ -95,23 +170,21 @@ impl Model {
 
     pub fn render(&self, wnd: &mut glium::Frame, mats: &shader::Matrices, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
         for mesh in &self.mesh_geom {
-            let mut mat_name : String;
+            let mat_name : String;
             let data = match &mesh.material {
-                Some(MMaterial {diffuse_tex, name}) => {
-                    mat_name = name.clone();
-                    shader::UniformData {
-                        diffuse_tex: diffuse_tex,
-                        model: model,
-                        matrices: mats,
-                    }
+                Some(mat) => {
+                    mat_name = mat.name.clone();
+                    mat_to_uniform_data(mat, mats, model)
                 },
                 _ => panic!("No material"),
             };
             let (shader, params, uniform) = manager.use_shader(&mat_name, &data);
             match uniform {
-                shader::UniformType::ShipUniform(uniform) => 
+                shader::UniformType::BSUniform(uniform) => 
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::SkyboxUniform(uniform) => 
+                    wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
+                shader::UniformType::PbrUniform(uniform) => 
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
             }.unwrap()
         }

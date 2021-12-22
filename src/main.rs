@@ -24,7 +24,7 @@ fn main() {
     let e_loop = EventLoop::new();
     let window_builder = WindowBuilder::new().with_title("Rust Graphics")
         .with_decorations(true).with_inner_size(glium::glutin::dpi::PhysicalSize::<u32>{
-            width: 800, height: 800,
+            width: 1920, height: 1080,
         });
     let wnd_ctx = ContextBuilder::new().with_depth_buffer(24);
     let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
@@ -43,7 +43,7 @@ fn main() {
 
     e_loop.run(move |ev, _, control| {
         let dt = Instant::now() - prev_time;
-        let mut wnd_size : (u32, u32) = (1, 1);
+        let mut wnd_size : (u32, u32) = (1920, 1080);
         match ev {
             Event::LoopDestroyed => return,
             Event::WindowEvent {event, ..} => {
@@ -64,7 +64,11 @@ fn main() {
         let proj = cgmath::perspective(cgmath::Deg::<f32>(60f32), aspect, 0.1, 100.);
         let view = user.view_mat();
         let viewproj : [[f32; 4]; 4] = proj.mul(view).into();
-        let mats = shader::Matrices { viewproj: viewproj, proj: proj.into(), view: view.into()};
+        let mats = shader::Matrices { viewproj: viewproj, 
+            proj: proj.into(), 
+            view: view.into(), 
+            cam_pos: user.cam_pos().into() 
+        };
         let sky_scale = cgmath::Matrix4::from_scale(1000f32);
         sky.render(&mut display, &mats, sky_scale.into(), &shader_manager);
         user.render(&mut display, &mats, &shader_manager);

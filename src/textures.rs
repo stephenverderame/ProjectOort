@@ -12,14 +12,14 @@ fn load_img(path: &str, rev: bool) -> glium::texture::RawImage2d<u8> {
     }
 }
 
-pub fn load_texture_2d<F : glium::backend::Facade>(path: &str, facade: &F) 
+pub fn load_texture_srgb<F : glium::backend::Facade>(path: &str, facade: &F) 
     -> glium::texture::SrgbTexture2d 
 {
     let tex = load_img(path, true);
     glium::texture::SrgbTexture2d::new(facade, tex).unwrap()
 }
 
-pub fn load_texture_rgb<F : glium::backend::Facade>(path: &str, facade: &F) 
+pub fn load_texture_2d<F : glium::backend::Facade>(path: &str, facade: &F) 
     -> glium::texture::Texture2d 
 {
     let tex = load_img(path, false);
@@ -34,11 +34,21 @@ pub fn dir_stem(path: &str) -> String {
     
 }
 
-pub fn load_tex2d_or_empty<F : glium::backend::Facade>(path: &str, facade: &F)
+pub fn load_tex_srgb_or_empty<F : glium::backend::Facade>(path: &str, facade: &F)
     -> glium::texture::SrgbTexture2d 
 {
     if path.is_empty() || path.rfind('.').is_none() {
         glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap()
+    } else {
+        load_texture_srgb(path, facade)
+    }
+}
+
+pub fn load_tex_2d_or_empty<F : glium::backend::Facade>(path: &str, facade: &F)
+    -> glium::texture::Texture2d 
+{
+    if path.is_empty() || path.rfind('.').is_none() {
+        glium::texture::Texture2d::empty(facade, 0, 0).unwrap()
     } else {
         load_texture_2d(path, facade)
     }
@@ -66,7 +76,7 @@ pub fn load_cubemap<F>(file: &str, facade: &F)
             cubemap.main_level().image(cube_layer)).unwrap();
         let file = format!("{}{}{}", dir, name, extension);
         println!("{}", file);
-        let img = load_texture_rgb(&format!("{}{}{}", dir, name, extension), facade);
+        let img = load_texture_2d(&format!("{}{}{}", dir, name, extension), facade);
         img.as_surface().blit_whole_color_to(&fbo, &dst_target,
             glium::uniforms::MagnifySamplerFilter::Linear);
     }

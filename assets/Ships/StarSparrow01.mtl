@@ -1,4 +1,4 @@
-newmtl Material.001
+newmtl ship_material_pbr
 Ns 96.078431
 Ka 0.000000 0.000000 0.000000
 Kd 0.640000 0.640000 0.640000
@@ -7,3 +7,4 @@ Ni 1.000000
 d 1.000000
 illum 2
 map_Kd Textures/StarSparrow_Red.png
+bump Textures/StarSparrow_Normal.png
