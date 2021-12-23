@@ -25,17 +25,6 @@ vec3 light_color = vec3(0.5451, 0, 0.5451);
 
 const float PI = 3.14159265359;
 
-vec3 fresnelSchlick(float cos_theta, vec3 f0) {
-    // f0 is surface reflectance at zero incidence
-    // (how much the surface reflects when looking directly at it)
-    return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
-}
-
-vec3 fresnelSchlickRoughness(float cos_theta, vec3 f0, float roughness) {
-    // fresnel but with added roughness parameter for irradiance
-    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
-}
-
 /// Approximates amount of surface microfacets are aligned to the halfway vector
 float normalDistribGGX(vec3 norm, vec3 halfway, float roughness) {
     // Trowbridge-Reitz
@@ -66,21 +55,25 @@ float geometrySmith(vec3 norm, vec3 view_dir, vec3 light_dir, float roughness) {
     return ggx2 * ggx1;
 }
 
-/// Mixes light reflection and refraction
-vec3 getFresnel(vec3 albedo, float metallic, vec3 light_dir, vec3 halfway) {
-    vec3 f0 = vec3(0.04);
-    f0 = mix(f0, albedo, metallic);
+vec3 getF0(vec3 albedo, float metallic) {
     // non-metallic surfaces have f0 of 0.04
     // metallic surfaces take this from albedo color
-    float cos_theta = max(dot(light_dir, halfway), 0.0);
-    return fresnelSchlick(cos_theta, f0);
+    return mix(vec3(0.04), albedo, metallic);
 }
 
-vec3 getFresnelRoughness(vec3 albedo, float metallic, vec3 view_dir, vec3 norm, float roughness) {
-    vec3 f0 = vec3(0.04);
-    f0 = mix(f0, albedo, metallic);
+/// Mixes light reflection and refraction
+vec3 fresnelSchlick(vec3 f0, vec3 light_dir, vec3 halfway) {
+    float cos_theta = max(dot(light_dir, halfway), 0.0);
+    // f0 is surface reflectance at zero incidence
+    // (how much the surface reflects when looking directly at it)
+    return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+vec3 fresnelSchlickRoughness(vec3 f0, vec3 view_dir, vec3 norm, float roughness) {
     float cos_theta = max(dot(view_dir, norm), 0.0);
-    return fresnelSchlickRoughness(cos_theta, f0, roughness);
+    // fresnel but with added roughness parameter for irradiance
+    return f0 + (max(vec3(1.0 - roughness), f0) - f0) 
+        * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
 vec3 toneMap(vec3 color) {
@@ -105,12 +98,15 @@ vec3 getNormal() {
     return normalize(TBN * tangentNormal);
 }
 
-vec3 radianceIntegral(vec3 norm, vec3 view_dir, vec3 albedo, 
-    float metallic, float roughness) 
+vec3 radianceIntegral(vec3 norm, vec3 view_dir, vec3 f0, float roughness, 
+    float metallic, vec3 albedo) 
 {
     vec3 radiance_out = vec3(0);
 
     for(int i = 0; i < 4; ++i) {
+        // using point lights, so we know where the light is coming from 
+        // so not exactly integrating over total area
+
         vec3 light_dir = normalize(light_positions[i] - frag_pos);
         vec3 halfway = normalize(light_dir + view_dir);
 
@@ -118,7 +114,7 @@ vec3 radianceIntegral(vec3 norm, vec3 view_dir, vec3 albedo,
         float attenuation = 1.0 / (dist * dist);
         vec3 light_radiance = light_color * attenuation;
 
-        vec3 fresnel = getFresnel(albedo, metallic, light_dir, halfway);
+        vec3 fresnel = fresnelSchlick(f0, view_dir, halfway);
         float ndf = normalDistribGGX(norm, halfway, roughness);
         float g = geometrySmith(norm, view_dir, light_dir, roughness);
 
@@ -129,13 +125,13 @@ vec3 radianceIntegral(vec3 norm, vec3 view_dir, vec3 albedo,
         float brdfDenom = 4.0 * max(dot(norm, view_dir), 0.0) * 
             n_dot_l + 0.0001;
         // add small factor to prevent divide by 0
-        vec3 cookTorrenceBRDF = ndf * g * fresnel / brdfDenom;
+        vec3 specular = ndf * g * fresnel / brdfDenom;
 
         vec3 ks = fresnel; // specular factor
         vec3 kd = vec3(1.0) - ks; // 1 - ks to conserve energy
         kd *= 1.0 - metallic; //metallic surfaces don't have diffuse reflections
 
-        radiance_out += (kd * albedo / PI + cookTorrenceBRDF) * light_radiance * n_dot_l;
+        radiance_out += (kd * albedo / PI + specular) * light_radiance * n_dot_l;
 
     }
 
@@ -151,15 +147,19 @@ void main() {
     vec3 norm = normalize(getNormal());
     vec3 view_dir = normalize(cam_pos - frag_pos);
 
-    vec3 radiance_out = radianceIntegral(norm, view_dir, albedo, metallic, roughness);
+    vec3 f0 = getF0(albedo, metallic);
 
-    vec3 ks = getFresnelRoughness(albedo, metallic, view_dir, norm, roughness);
+    vec3 radiance_out = radianceIntegral(norm, view_dir, f0, roughness, 
+        metallic, albedo);
+
+    vec3 ks = fresnelSchlick(f0, view_dir, norm);
     vec3 kd = 1.0 - ks;
     kd *= 1.0 - metallic;
 
     vec3 irradiance = texture(irradiance_map, norm).rgb;
+    // irradiance map is precomputed integral of light intensity over hemisphere
     vec3 diffuse = irradiance * albedo;
-    vec3 ambient =  kd * diffuse; //* ao
+    vec3 ambient = kd * diffuse * vec3(0.8); //* ao (multiply by factor since we don't have ao map)
     vec3 color = ambient + radiance_out + emission;
 
     frag_color = vec4(toneMap(color), 1.0);

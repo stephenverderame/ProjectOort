@@ -16,23 +16,21 @@ mod node;
 mod camera;
 mod player;
 mod scene;
+mod render_target;
 
 use draw_traits::Drawable;
+use glutin::platform::run_return::*;
 
 use cgmath::*;
 
 
-fn draw(ctx : &mut glium::Frame) {
-    ctx.clear_color_and_depth((0.5, 0., 0.5, 1.0), 1.);
-}
-
 fn main() {
-    let e_loop = EventLoop::new();
+    let mut e_loop = EventLoop::new();
     let window_builder = WindowBuilder::new().with_title("Rust Graphics")
         .with_decorations(true).with_inner_size(glium::glutin::dpi::PhysicalSize::<u32>{
             width: 1920, height: 1080,
         });
-    let wnd_ctx = ContextBuilder::new().with_depth_buffer(24);
+    let wnd_ctx = ContextBuilder::new().with_multisampling(4).with_depth_buffer(24);
     let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
 
     let ship_model = model::Model::load("assets/Ships/StarSparrow01.obj", &wnd_ctx);
@@ -65,7 +63,10 @@ fn main() {
     let mut main_scene = scene::Scene::new();
     main_scene.set_ibl_map(sky_hdr_cbo);
 
-    e_loop.run(move |ev, _, control| {
+    let mut hdr = render_target::RenderTarget::new(8, 1920, 1080, &wnd_ctx);
+
+    
+    e_loop.run_return(|ev, _, control| {
         let dt = Instant::now() - prev_time;
         let mut wnd_size : (u32, u32) = (1920, 1080);
         match ev {
@@ -73,7 +74,10 @@ fn main() {
             Event::WindowEvent {event, ..} => {
                 match event {
                     WindowEvent::CloseRequested => *control = ControlFlow::Exit,
-                    WindowEvent::Resized(new_size) => wnd_size = (new_size.width, new_size.height),
+                    WindowEvent::Resized(new_size) => {
+                        wnd_size = (new_size.width, new_size.height);
+                        //hdr.resize(new_size.width, new_size.height, 8, &wnd_ctx);
+                    },
                     _ => (),
                 }
             },
@@ -82,12 +86,17 @@ fn main() {
         let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
         let rot = Quaternion::<f32>::from_angle_y(Deg::<f32>(theta));
         theta += dt.as_secs_f32() * 450.;
-        let mut display = wnd_ctx.draw();
-        draw(&mut display);
         user.set_rot(rot);
-        main_scene.render(&mut display, &user, aspect, |surface, mats| {
+        let surface = hdr.draw(&wnd_ctx);
+        surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
+        main_scene.render(surface, &user, aspect, |surface, mats| {
             main_skybox.render(surface, mats, &shader_manager);
             user.render(surface, mats, &shader_manager)
+        });
+        let mut display = wnd_ctx.draw();
+        display.clear_color_and_depth((0.5, 0., 0.5, 1.0), 1.);
+        main_scene.render(&mut display, &user, aspect, |surface, mats| {
+            hdr.render(surface, mats, &shader_manager);
         });
         display.finish().unwrap();
         prev_time = Instant::now();

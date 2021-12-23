@@ -192,7 +192,8 @@ impl Model {
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::PbrUniform(uniform) => 
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
-                shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) => 
+                shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 
+                 | shader::UniformType::UiUniform(_) => 
                     panic!("Model get invalid uniform type"),
             }.unwrap()
         }

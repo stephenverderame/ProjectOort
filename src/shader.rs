@@ -1,14 +1,38 @@
 use std::collections::BTreeMap;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 enum ShaderType {
     BlinnPhong,
     Pbr,
     Skybox,
     EquiRect,
+    UiShader,
 }
+
+fn shader_type_to_int(typ: &ShaderType) -> i32 {
+    match typ {
+        &ShaderType::BlinnPhong => 0,
+        &ShaderType::Skybox => 1,
+        &ShaderType::Pbr => 2,
+        &ShaderType::EquiRect => 3,
+        &ShaderType::UiShader => 4,
+    }
+}
+
+impl std::cmp::Ord for ShaderType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        shader_type_to_int(&self).cmp(&shader_type_to_int(other))
+    }
+}
+
+impl std::cmp::PartialOrd for ShaderType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 pub struct ShaderManager {
-    shaders: BTreeMap<i32, (glium::Program, glium::DrawParameters<'static>)>,
+    shaders: BTreeMap<ShaderType, (glium::Program, glium::DrawParameters<'static>)>,
     empty_srgb: glium::texture::SrgbTexture2d,
 }
 
@@ -39,29 +63,40 @@ fn str_to_shader_type(material_name: &str) -> ShaderType {
         "skybox" => ShaderType::Skybox,
         x if x.find("pbr").is_some() => ShaderType::Pbr,
         "equirectangular" => ShaderType::EquiRect,
+        "ui-msaa" | "ui" => ShaderType::UiShader,
         _ => ShaderType::BlinnPhong,
-    }
-}
-
-fn shader_type_to_int(typ: &ShaderType) -> i32 {
-    match typ {
-        &ShaderType::BlinnPhong => 0,
-        &ShaderType::Skybox => 1,
-        &ShaderType::Pbr => 2,
-        &ShaderType::EquiRect => 3,
     }
 }
 
 use glium::uniforms::*;
 pub enum UniformType<'a> {
-    BSUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    BSUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    PbrUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, 
-        UniformsStorage<'a, [f32; 3], UniformsStorage<'a, &'a glium::texture::Texture2d, 
-        UniformsStorage<'a, &'a glium::texture::Texture2d, UniformsStorage<'a, &'a glium::texture::Texture2d, 
-        UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
-    EqRectUniform(UniformsStorage<'a, &'a glium::texture::Texture2d, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    PbrUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
+        UniformsStorage<'a, [f32; 3], UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
+        UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
+        UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
+    EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
 }
+
+macro_rules! sample_mip_repeat {
+    ($tex_name:expr) => {
+        $tex_name.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
+        .minify_filter(glium::uniforms::MinifySamplerFilter::LinearMipmapLinear)
+        .wrap_function(glium::uniforms::SamplerWrapFunction::Repeat)
+    }
+}
+
+macro_rules! sample_linear_clamp {
+    ($tex_name:expr) => {
+        $tex_name.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
+        .minify_filter(glium::uniforms::MinifySamplerFilter::Linear)
+        .wrap_function(glium::uniforms::SamplerWrapFunction::Clamp)
+    }
+}
+
+
 
 
 impl ShaderManager {
@@ -82,6 +117,10 @@ impl ShaderManager {
             &String::from_utf8_lossy(include_bytes!("shaders/skyVert.glsl")),
             &String::from_utf8_lossy(include_bytes!("shaders/eqRectFrag.glsl")), 
             None).unwrap();
+        let ui_shader = glium::Program::from_source(facade, 
+            &String::from_utf8_lossy(include_bytes!("shaders/hdrVert.glsl")),
+            &String::from_utf8_lossy(include_bytes!("shaders/hdrFrag.glsl")), 
+            None).unwrap();
         let ship_params = glium::DrawParameters::<'static> {
             depth: glium::Depth {
                 test: glium::draw_parameters::DepthTest::IfLess,
@@ -91,11 +130,12 @@ impl ShaderManager {
             backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
             .. Default::default()
         };
-        let mut shaders = BTreeMap::<i32, (glium::Program, glium::DrawParameters)>::new();
-        shaders.insert(0, (ship_shader, ship_params.clone()));
-        shaders.insert(1, (skybox_shader, Default::default()));
-        shaders.insert(2, (pbr_shader, ship_params));
-        shaders.insert(3, (equirect_shader, Default::default()));
+        let mut shaders = BTreeMap::<ShaderType, (glium::Program, glium::DrawParameters)>::new();
+        shaders.insert(ShaderType::BlinnPhong, (ship_shader, ship_params.clone()));
+        shaders.insert(ShaderType::Skybox, (skybox_shader, Default::default()));
+        shaders.insert(ShaderType::Pbr, (pbr_shader, ship_params));
+        shaders.insert(ShaderType::EquiRect, (equirect_shader, Default::default()));
+        shaders.insert(ShaderType::UiShader, (ui_shader, Default::default()));
         ShaderManager {
             shaders: shaders,
             empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
@@ -106,34 +146,37 @@ impl ShaderManager {
         -> (&'b glium::Program, &'b glium::DrawParameters, UniformType<'b>)
     {
         let typ = str_to_shader_type(shader);
-        let (shader, params) = self.shaders.get(&shader_type_to_int(&typ)).unwrap();
+        let (shader, params) = self.shaders.get(&typ).unwrap();
         let uniform = match typ {
             ShaderType::BlinnPhong => UniformType::BSUniform(glium::uniform! {
                 viewproj: data.scene_data.viewproj,
-                diffuse_tex: data.diffuse_tex.unwrap(),
+                diffuse_tex: sample_mip_repeat!(data.diffuse_tex.unwrap()),
                 model: data.model,
             }),
             ShaderType::Skybox => UniformType::SkyboxUniform(glium::uniform! {
                 view: data.scene_data.view,
                 proj: data.scene_data.proj,
-                skybox: data.env_map.unwrap().sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear),
+                skybox: sample_linear_clamp!(data.env_map.unwrap()),
             }),
             ShaderType::EquiRect => UniformType::EqRectUniform(glium::uniform! {
                 view: data.scene_data.view,
                 proj: data.scene_data.proj,
-                equirectangular_map: data.normal_map.unwrap(),
+                equirectangular_map: sample_linear_clamp!(data.normal_map.unwrap()),
             }),
             ShaderType::Pbr => UniformType::PbrUniform(glium::uniform! {
                 viewproj: data.scene_data.viewproj,
                 model: data.model,
-                albedo_map: data.diffuse_tex.unwrap(),
-                roughness_map: data.roughness_map.unwrap(),
-                normal_map: data.normal_map.unwrap(),
-                metallic_map: data.metallic_map.unwrap(),
+                albedo_map: sample_mip_repeat!(data.diffuse_tex.unwrap()),
+                roughness_map: sample_mip_repeat!(data.roughness_map.unwrap()),
+                normal_map: sample_mip_repeat!(data.normal_map.unwrap()),
+                metallic_map: sample_mip_repeat!(data.metallic_map.unwrap()),
                 cam_pos: data.scene_data.cam_pos,
-                emission_map: data.emission_map.unwrap_or(&self.empty_srgb),
-                irradiance_map: data.scene_data.ibl_map.unwrap()
-                    .sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear),
+                emission_map: sample_mip_repeat!(data.emission_map.unwrap_or(&self.empty_srgb)),
+                irradiance_map: sample_linear_clamp!(data.scene_data.ibl_map.unwrap()),
+            }),
+            ShaderType::UiShader => UniformType::UiUniform(glium::uniform! {
+                model: data.model,
+                diffuse: sample_linear_clamp!(data.normal_map.unwrap()),
             })
         };
         (shader, params, uniform)
