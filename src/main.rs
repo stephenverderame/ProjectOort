@@ -4,14 +4,20 @@ use glutin::event::{Event, WindowEvent};
 use glutin::event_loop::{ControlFlow, EventLoop};
 use glium::{Surface, Display};
 use std::time::Instant;
-use std::ops::Mul;
 
 extern crate cgmath;
 mod textures;
-mod model;
 mod shader;
+mod draw_traits;
+mod skybox;
+mod entity;
+mod model;
 mod node;
+mod camera;
 mod player;
+mod scene;
+
+use draw_traits::Drawable;
 
 use cgmath::*;
 
@@ -29,17 +35,34 @@ fn main() {
     let wnd_ctx = ContextBuilder::new().with_depth_buffer(24);
     let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
 
-    let view = cgmath::Matrix4::look_at_rh(point3(0., 0., -5.), point3(0., 0.5, 0.), vec3(0., 1., 0.));
-
     let ship_model = model::Model::load("assets/Ships/StarSparrow01.obj", &wnd_ctx);
     let mut user = player::Player::new(ship_model);
 
-    let sky = model::Model::load("assets/skybox/sky.obj", &wnd_ctx);
+    //let sky = model::Model::load("assets/skybox/sky.obj", &wnd_ctx);
+    //let sky = model::Model::load("assets/Milkyway/sky.obj", &wnd_ctx);
+    let sky_hdr = skybox::Skybox::new(skybox::SkyboxTex::Sphere(
+        textures::load_texture_hdr("assets/Milkyway/Milkyway_Light.hdr", &wnd_ctx)), &wnd_ctx);
+    let sky = skybox::Skybox::new(skybox::SkyboxTex::Sphere(
+        textures::load_texture_2d("assets/Milkyway/Milkyway_BG.jpg", &wnd_ctx)), &wnd_ctx);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
 
     let mut theta = 0.;
     let mut prev_time = Instant::now();
+
+    let gen_sky_scene = scene::Scene {};
+    let sky_cbo = gen_sky_scene.render_to_cubemap(cgmath::point3(0., 0., 0.), &wnd_ctx, |fbo, mats| {
+        sky.render(fbo, mats, &shader_manager)
+    });
+
+
+    let sky_hdr_cbo = gen_sky_scene.render_to_cubemap(cgmath::point3(0., 0., 0.), &wnd_ctx, |fbo, mats| {
+        sky_hdr.render(fbo, mats, &shader_manager)
+    });
+
+    let main_skybox = skybox::Skybox::new(skybox::SkyboxTex::Cube(sky_cbo), &wnd_ctx);
+
+    let main_scene = scene::Scene {};
 
     e_loop.run(move |ev, _, control| {
         let dt = Instant::now() - prev_time;
@@ -61,17 +84,10 @@ fn main() {
         let mut display = wnd_ctx.draw();
         draw(&mut display);
         user.set_rot(rot);
-        let proj = cgmath::perspective(cgmath::Deg::<f32>(60f32), aspect, 0.1, 100.);
-        let view = user.view_mat();
-        let viewproj : [[f32; 4]; 4] = proj.mul(view).into();
-        let mats = shader::Matrices { viewproj: viewproj, 
-            proj: proj.into(), 
-            view: view.into(), 
-            cam_pos: user.cam_pos().into() 
-        };
-        let sky_scale = cgmath::Matrix4::from_scale(1000f32);
-        sky.render(&mut display, &mats, sky_scale.into(), &shader_manager);
-        user.render(&mut display, &mats, &shader_manager);
+        main_scene.render(&mut display, &user, aspect, |surface, mats| {
+            main_skybox.render(surface, mats, &shader_manager);
+            user.render(surface, mats, &shader_manager)
+        });
         display.finish().unwrap();
         prev_time = Instant::now();
     });

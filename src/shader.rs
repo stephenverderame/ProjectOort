@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use crate::textures;
 
 #[derive(Copy, Clone)]
 enum ShaderType {
@@ -10,9 +9,7 @@ enum ShaderType {
 }
 pub struct ShaderManager {
     shaders: BTreeMap<i32, (glium::Program, glium::DrawParameters<'static>)>,
-    skybox: glium::texture::Cubemap,
     empty_srgb: glium::texture::SrgbTexture2d,
-    env_map: glium::texture::SrgbTexture2d,
 }
 
 #[derive(Clone)]
@@ -26,11 +23,12 @@ pub struct Matrices {
 pub struct UniformData<'a> {
     pub matrices: &'a Matrices,
     pub model: [[f32; 4]; 4],
-    pub diffuse_tex: &'a glium::texture::SrgbTexture2d,
+    pub diffuse_tex: Option<&'a glium::texture::SrgbTexture2d>,
     pub roughness_map: Option<&'a glium::texture::Texture2d>,
     pub metallic_map: Option<&'a glium::texture::Texture2d>,
     pub normal_map: Option<&'a glium::texture::Texture2d>,
     pub emission_map: Option<&'a glium::texture::SrgbTexture2d>,
+    pub env_map: Option<&'a glium::texture::Cubemap>,
 
 
 }
@@ -39,6 +37,7 @@ fn str_to_shader_type(material_name: &str) -> ShaderType {
     match material_name {
         "skybox" => ShaderType::Skybox,
         x if x.find("pbr").is_some() => ShaderType::Pbr,
+        "equirectangular" => ShaderType::EquiRect,
         _ => ShaderType::BlinnPhong,
     }
 }
@@ -59,6 +58,7 @@ pub enum UniformType<'a> {
     PbrUniform(UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [f32; 3], UniformsStorage<'a, &'a glium::texture::Texture2d, 
         UniformsStorage<'a, &'a glium::texture::Texture2d, UniformsStorage<'a, &'a glium::texture::Texture2d, 
         UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>),
+    EqRectUniform(UniformsStorage<'a, &'a glium::texture::Texture2d, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
 }
 
 
@@ -76,6 +76,10 @@ impl ShaderManager {
             &String::from_utf8_lossy(include_bytes!("shaders/pbrVert.glsl")),
             &String::from_utf8_lossy(include_bytes!("shaders/pbrFrag.glsl")), 
             None).unwrap();
+        let equirect_shader = glium::Program::from_source(facade, 
+            &String::from_utf8_lossy(include_bytes!("shaders/skyVert.glsl")),
+            &String::from_utf8_lossy(include_bytes!("shaders/eqRectFrag.glsl")), 
+            None).unwrap();
         let ship_params = glium::DrawParameters::<'static> {
             depth: glium::Depth {
                 test: glium::draw_parameters::DepthTest::IfLess,
@@ -89,11 +93,10 @@ impl ShaderManager {
         shaders.insert(0, (ship_shader, ship_params.clone()));
         shaders.insert(1, (skybox_shader, Default::default()));
         shaders.insert(2, (pbr_shader, ship_params));
+        shaders.insert(3, (equirect_shader, Default::default()));
         ShaderManager {
             shaders: shaders,
-            skybox: textures::load_cubemap("assets/skybox/right.png", facade),
             empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
-            env_map: textures::load_texture_hdr("assets/Milkyway/Milkway_small.hdr", facade),
         }
     }
 
@@ -105,18 +108,23 @@ impl ShaderManager {
         let uniform = match typ {
             ShaderType::BlinnPhong => UniformType::BSUniform(glium::uniform! {
                 viewproj: data.matrices.viewproj,
-                diffuse_tex: data.diffuse_tex,
+                diffuse_tex: data.diffuse_tex.unwrap(),
                 model: data.model,
             }),
             ShaderType::Skybox => UniformType::SkyboxUniform(glium::uniform! {
                 view: data.matrices.view,
                 proj: data.matrices.proj,
-                skybox: self.skybox.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear),
+                skybox: data.env_map.unwrap().sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear),
+            }),
+            ShaderType::EquiRect => UniformType::EqRectUniform(glium::uniform! {
+                view: data.matrices.view,
+                proj: data.matrices.proj,
+                equirectangular_map: data.normal_map.unwrap(),
             }),
             ShaderType::Pbr => UniformType::PbrUniform(glium::uniform! {
                 viewproj: data.matrices.viewproj,
                 model: data.model,
-                albedo_map: data.diffuse_tex,
+                albedo_map: data.diffuse_tex.unwrap(),
                 roughness_map: data.roughness_map.unwrap(),
                 normal_map: data.normal_map.unwrap(),
                 metallic_map: data.metallic_map.unwrap(),

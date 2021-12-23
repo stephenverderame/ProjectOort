@@ -2,7 +2,6 @@ use tobj::*;
 use std::collections::BTreeMap;
 use std::io::BufRead;
 
-use glium::{Surface};
 use crate::textures;
 use crate::shader;
 
@@ -128,7 +127,7 @@ fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::Matrices,
     model: [[f32; 4]; 4]) -> shader::UniformData<'a>
 {
     shader::UniformData {
-        diffuse_tex: &material.diffuse_tex,
+        diffuse_tex: Some(&material.diffuse_tex),
         model: model,
         matrices: mats,
         roughness_map: match &material.pbr_data {
@@ -147,6 +146,7 @@ fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::Matrices,
             Some(tex) => Some(tex),
             _ => None,
         },
+        env_map: None,
     }
 }
 
@@ -176,7 +176,7 @@ impl Model {
         
     }
 
-    pub fn render(&self, wnd: &mut glium::Frame, mats: &shader::Matrices, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
+    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::Matrices, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
         for mesh in &self.mesh_geom {
             let mat_name : String;
             let data = match &mesh.material {
@@ -190,10 +190,10 @@ impl Model {
             match uniform {
                 shader::UniformType::BSUniform(uniform) => 
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
-                shader::UniformType::SkyboxUniform(uniform) => 
-                    wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::PbrUniform(uniform) => 
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
+                shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) => 
+                    panic!("Model get invalid uniform type"),
             }.unwrap()
         }
     }
