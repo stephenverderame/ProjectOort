@@ -7,25 +7,37 @@ use crate::node;
 use cgmath::*;
 use glium::framebuffer::ToDepthAttachment;
 
-pub struct Scene {}
+pub struct Scene {
+    ibl_map: Option<glium::texture::Cubemap>,
+}
 
 impl Scene {
-    pub fn render<S : glium::Surface, F : FnOnce(&mut S, &shader::Matrices)>
+    pub fn new() -> Scene {
+        Scene {
+            ibl_map: None
+        }
+    }
+
+    pub fn render<S : glium::Surface, F : FnOnce(&mut S, &shader::SceneData)>
     (&self, frame: &mut S, viewer: &dyn draw_traits::Viewer, aspect: f32, func: F)
     {
         let view = viewer.view_mat();
         let proj = viewer.proj_mat(aspect);
-        let mats = shader::Matrices {
+        let mats = shader::SceneData {
             viewproj: (proj * view).into(),
             view: view.into(),
             proj: proj.into(),
             cam_pos: viewer.cam_pos().into(),
+            ibl_map: match &self.ibl_map {
+                Some(map) => Some(&map),
+                _ => None,
+            },
         };
         func(frame, &mats);
     }
 
     pub fn render_to_cubemap<F : glium::backend::Facade, 
-        Cb : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::Matrices)>
+        Cb : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)>
         (&self, cam_pos: cgmath::Point3<f32>, facade: &F, func: Cb) -> glium::texture::Cubemap 
     {
         let mut cam = camera::PerspectiveCamera {
@@ -58,5 +70,9 @@ impl Scene {
             self.render(&mut fbo, &cam, 1., &func);
         }
         cubemap
+    }
+
+    pub fn set_ibl_map(&mut self, map: glium::texture::Cubemap) {
+        self.ibl_map = Some(map);
     }
 }

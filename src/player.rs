@@ -50,7 +50,7 @@ impl draw_traits::Viewer for Player {
 }
 
 impl draw_traits::Drawable for Player {
-    fn render<S : glium::Surface>(&self, display: &mut S, mats: &shader::Matrices, shaders: &shader::ShaderManager) {
+    fn render<S : glium::Surface>(&self, display: &mut S, mats: &shader::SceneData, shaders: &shader::ShaderManager) {
         let model : Matrix4<f32> = Matrix4::<f32>::from(&*self.root.borrow());
         self.geom.render(display, mats, model.into(), shaders)
     }

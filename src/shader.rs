@@ -13,15 +13,16 @@ pub struct ShaderManager {
 }
 
 #[derive(Clone)]
-pub struct Matrices {
+pub struct SceneData<'a> {
     pub viewproj: [[f32; 4]; 4],
     pub view: [[f32; 4]; 4],
     pub proj: [[f32; 4]; 4],
     pub cam_pos: [f32; 3],
+    pub ibl_map: Option<&'a glium::texture::Cubemap>,
 }
 
 pub struct UniformData<'a> {
-    pub matrices: &'a Matrices,
+    pub scene_data: &'a SceneData<'a>,
     pub model: [[f32; 4]; 4],
     pub diffuse_tex: Option<&'a glium::texture::SrgbTexture2d>,
     pub roughness_map: Option<&'a glium::texture::Texture2d>,
@@ -55,9 +56,10 @@ use glium::uniforms::*;
 pub enum UniformType<'a> {
     BSUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    PbrUniform(UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [f32; 3], UniformsStorage<'a, &'a glium::texture::Texture2d, 
+    PbrUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, 
+        UniformsStorage<'a, [f32; 3], UniformsStorage<'a, &'a glium::texture::Texture2d, 
         UniformsStorage<'a, &'a glium::texture::Texture2d, UniformsStorage<'a, &'a glium::texture::Texture2d, 
-        UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>),
+        UniformsStorage<'a, &'a glium::texture::SrgbTexture2d, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, &'a glium::texture::Texture2d, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
 }
 
@@ -107,29 +109,31 @@ impl ShaderManager {
         let (shader, params) = self.shaders.get(&shader_type_to_int(&typ)).unwrap();
         let uniform = match typ {
             ShaderType::BlinnPhong => UniformType::BSUniform(glium::uniform! {
-                viewproj: data.matrices.viewproj,
+                viewproj: data.scene_data.viewproj,
                 diffuse_tex: data.diffuse_tex.unwrap(),
                 model: data.model,
             }),
             ShaderType::Skybox => UniformType::SkyboxUniform(glium::uniform! {
-                view: data.matrices.view,
-                proj: data.matrices.proj,
+                view: data.scene_data.view,
+                proj: data.scene_data.proj,
                 skybox: data.env_map.unwrap().sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear),
             }),
             ShaderType::EquiRect => UniformType::EqRectUniform(glium::uniform! {
-                view: data.matrices.view,
-                proj: data.matrices.proj,
+                view: data.scene_data.view,
+                proj: data.scene_data.proj,
                 equirectangular_map: data.normal_map.unwrap(),
             }),
             ShaderType::Pbr => UniformType::PbrUniform(glium::uniform! {
-                viewproj: data.matrices.viewproj,
+                viewproj: data.scene_data.viewproj,
                 model: data.model,
                 albedo_map: data.diffuse_tex.unwrap(),
                 roughness_map: data.roughness_map.unwrap(),
                 normal_map: data.normal_map.unwrap(),
                 metallic_map: data.metallic_map.unwrap(),
-                cam_pos: data.matrices.cam_pos,
+                cam_pos: data.scene_data.cam_pos,
                 emission_map: data.emission_map.unwrap_or(&self.empty_srgb),
+                irradiance_map: data.scene_data.ibl_map.unwrap()
+                    .sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear),
             })
         };
         (shader, params, uniform)

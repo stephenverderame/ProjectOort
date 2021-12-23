@@ -123,13 +123,13 @@ fn get_material_or_none<F>(dir: &str, mesh: &Mesh, mats: &Vec<Material>, facade:
     }
 }
 
-fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::Matrices, 
+fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::SceneData, 
     model: [[f32; 4]; 4]) -> shader::UniformData<'a>
 {
     shader::UniformData {
         diffuse_tex: Some(&material.diffuse_tex),
         model: model,
-        matrices: mats,
+        scene_data: mats,
         roughness_map: match &material.pbr_data {
             Some(pbr) => Some(&pbr.roughness_tex),
             _ => None,
@@ -176,7 +176,7 @@ impl Model {
         
     }
 
-    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::Matrices, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
+    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
         for mesh in &self.mesh_geom {
             let mat_name : String;
             let data = match &mesh.material {

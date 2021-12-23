@@ -50,7 +50,7 @@ fn main() {
     let mut theta = 0.;
     let mut prev_time = Instant::now();
 
-    let gen_sky_scene = scene::Scene {};
+    let gen_sky_scene = scene::Scene::new();
     let sky_cbo = gen_sky_scene.render_to_cubemap(cgmath::point3(0., 0., 0.), &wnd_ctx, |fbo, mats| {
         sky.render(fbo, mats, &shader_manager)
     });
@@ -62,7 +62,8 @@ fn main() {
 
     let main_skybox = skybox::Skybox::new(skybox::SkyboxTex::Cube(sky_cbo), &wnd_ctx);
 
-    let main_scene = scene::Scene {};
+    let mut main_scene = scene::Scene::new();
+    main_scene.set_ibl_map(sky_hdr_cbo);
 
     e_loop.run(move |ev, _, control| {
         let dt = Instant::now() - prev_time;

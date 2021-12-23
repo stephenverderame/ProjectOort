@@ -12,6 +12,8 @@ uniform sampler2D metallic_map;
 uniform sampler2D roughness_map;
 uniform sampler2D emission_map;
 
+uniform samplerCube irradiance_map;
+
 vec3 light_positions[4] = vec3[4](
     vec3(10, 10, 0),
     vec3(0, 5, -20),
@@ -27,6 +29,11 @@ vec3 fresnelSchlick(float cos_theta, vec3 f0) {
     // f0 is surface reflectance at zero incidence
     // (how much the surface reflects when looking directly at it)
     return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+vec3 fresnelSchlickRoughness(float cos_theta, vec3 f0, float roughness) {
+    // fresnel but with added roughness parameter for irradiance
+    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
 /// Approximates amount of surface microfacets are aligned to the halfway vector
@@ -67,6 +74,13 @@ vec3 getFresnel(vec3 albedo, float metallic, vec3 light_dir, vec3 halfway) {
     // metallic surfaces take this from albedo color
     float cos_theta = max(dot(light_dir, halfway), 0.0);
     return fresnelSchlick(cos_theta, f0);
+}
+
+vec3 getFresnelRoughness(vec3 albedo, float metallic, vec3 view_dir, vec3 norm, float roughness) {
+    vec3 f0 = vec3(0.04);
+    f0 = mix(f0, albedo, metallic);
+    float cos_theta = max(dot(view_dir, norm), 0.0);
+    return fresnelSchlickRoughness(cos_theta, f0, roughness);
 }
 
 vec3 toneMap(vec3 color) {
@@ -137,9 +151,16 @@ void main() {
     vec3 norm = normalize(getNormal());
     vec3 view_dir = normalize(cam_pos - frag_pos);
 
-    vec3 irradiance = radianceIntegral(norm, view_dir, albedo, metallic, roughness);
-    vec3 ambient = vec3(0.03) * albedo; //* ao
-    vec3 color = ambient + irradiance + emission;
+    vec3 radiance_out = radianceIntegral(norm, view_dir, albedo, metallic, roughness);
+
+    vec3 ks = getFresnelRoughness(albedo, metallic, view_dir, norm, roughness);
+    vec3 kd = 1.0 - ks;
+    kd *= 1.0 - metallic;
+
+    vec3 irradiance = texture(irradiance_map, norm).rgb;
+    vec3 diffuse = irradiance * albedo;
+    vec3 ambient =  kd * diffuse; //* ao
+    vec3 color = ambient + radiance_out + emission;
 
     frag_color = vec4(toneMap(color), 1.0);
 }

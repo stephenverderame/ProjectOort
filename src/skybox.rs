@@ -40,9 +40,9 @@ impl Skybox {
 }
 
 impl draw_traits::Drawable for Skybox {
-    fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::Matrices, shader: &shader::ShaderManager) {
+    fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, shader: &shader::ShaderManager) {
         let args = shader::UniformData {
-            matrices: mats,
+            scene_data: mats,
             model: cgmath::Matrix4::from_scale(1f32).into(),
             diffuse_tex: None,
             roughness_map: None,

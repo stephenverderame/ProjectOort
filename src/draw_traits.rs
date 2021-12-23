@@ -1,6 +1,6 @@
 use crate::shader;
 pub trait Drawable {
-    fn render<S>(&self, frame: &mut S, mats: &shader::Matrices, shader: &shader::ShaderManager)
+    fn render<S>(&self, frame: &mut S, mats: &shader::SceneData, shader: &shader::ShaderManager)
         where S : glium::Surface;
 }
 
