@@ -16,7 +16,7 @@ uniform samplerCube irradiance_map;
 
 vec3 light_positions[4] = vec3[4](
     vec3(10, 10, 0),
-    vec3(0, 5, -20),
+    vec3(0, 5, 0),
     vec3(-10, 10, 0),
     vec3(1, 5, 15)
 );
@@ -74,12 +74,6 @@ vec3 fresnelSchlickRoughness(vec3 f0, vec3 view_dir, vec3 norm, float roughness)
     // fresnel but with added roughness parameter for irradiance
     return f0 + (max(vec3(1.0 - roughness), f0) - f0) 
         * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
-}
-
-vec3 toneMap(vec3 color) {
-    // converts color to HDR
-    color = color / (color + vec3(1.0));
-    return pow(color, vec3(1.0/2.2));
 }
 
 vec3 getNormal() {
@@ -156,11 +150,11 @@ void main() {
     vec3 kd = 1.0 - ks;
     kd *= 1.0 - metallic;
 
-    vec3 irradiance = texture(irradiance_map, norm).rgb;
+    vec3 irradiance = texture(irradiance_map, norm).rgb * 5;
     // irradiance map is precomputed integral of light intensity over hemisphere
     vec3 diffuse = irradiance * albedo;
     vec3 ambient = kd * diffuse * vec3(0.8); //* ao (multiply by factor since we don't have ao map)
-    vec3 color = ambient + radiance_out + emission;
+    vec3 color = ambient + radiance_out + emission * 4;
 
-    frag_color = vec4(toneMap(color), 1.0);
+    frag_color = vec4(color, 1.0);
 }

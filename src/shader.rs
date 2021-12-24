@@ -7,6 +7,8 @@ enum ShaderType {
     Skybox,
     EquiRect,
     UiShader,
+    BlurShader,
+    BloomShader,
 }
 
 fn shader_type_to_int(typ: &ShaderType) -> i32 {
@@ -16,6 +18,8 @@ fn shader_type_to_int(typ: &ShaderType) -> i32 {
         &ShaderType::Pbr => 2,
         &ShaderType::EquiRect => 3,
         &ShaderType::UiShader => 4,
+        &ShaderType::BloomShader => 5,
+        &ShaderType::BlurShader => 6,
     }
 }
 
@@ -34,6 +38,7 @@ impl std::cmp::PartialOrd for ShaderType {
 pub struct ShaderManager {
     shaders: BTreeMap<ShaderType, (glium::Program, glium::DrawParameters<'static>)>,
     empty_srgb: glium::texture::SrgbTexture2d,
+    empty_2d: glium::texture::Texture2d,
 }
 
 #[derive(Clone)]
@@ -63,7 +68,9 @@ fn str_to_shader_type(material_name: &str) -> ShaderType {
         "skybox" => ShaderType::Skybox,
         x if x.find("pbr").is_some() => ShaderType::Pbr,
         "equirectangular" => ShaderType::EquiRect,
-        "ui-msaa" | "ui" => ShaderType::UiShader,
+        "ui" => ShaderType::UiShader,
+        "ui-bloom" => ShaderType::BloomShader,
+        "ui-blur" => ShaderType::BlurShader,
         _ => ShaderType::BlinnPhong,
     }
 }
@@ -77,7 +84,11 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
+    BloomUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
+    UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
+        UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
+    BlurUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    
 }
 
 macro_rules! sample_mip_repeat {
@@ -96,31 +107,58 @@ macro_rules! sample_linear_clamp {
     }
 }
 
+macro_rules! include_str {
+    ($file:literal) => {
+        &String::from_utf8_lossy(include_bytes!($file))
+    };
+}
+
+macro_rules! load_shader_source {
+    ($facade:expr, $vertex_file:literal, $fragment_file:literal, $geom_file:literal) => {
+        glium::Program::from_source($facade,
+            include_str!($vertex_file), include_str!($fragment_file), include_str!($geom_option))
+    };
+    ($facade:expr, $vertex_file:literal, $fragment_file:literal) => {
+        glium::Program::from_source($facade,
+            include_str!($vertex_file), include_str!($fragment_file), None)
+    };
+}
+
+macro_rules! load_shader_srgb {
+    ($facade:expr, $vertex_file:literal, $fragment_file:literal) => {
+        glium::Program::new($facade,
+            glium::program::ProgramCreationInput::SourceCode {
+                vertex_shader: include_str!($vertex_file),
+                tessellation_control_shader: None,
+                tessellation_evaluation_shader: None,
+                geometry_shader: None,
+                fragment_shader: include_str!($fragment_file),
+                transform_feedback_varyings: None,
+                outputs_srgb: true,
+                uses_point_size: false,
+            })
+    };
+}
+
 
 
 
 impl ShaderManager {
     pub fn init<F : glium::backend::Facade>(facade: &F) -> ShaderManager {
-        let ship_shader = glium::Program::from_source(facade, 
-            &String::from_utf8_lossy(include_bytes!("shaders/basicVert.glsl")),
-            &String::from_utf8_lossy(include_bytes!("shaders/basicFrag.glsl")), 
-            None).unwrap();
-        let skybox_shader = glium::Program::from_source(facade, 
-            &String::from_utf8_lossy(include_bytes!("shaders/skyVert.glsl")),
-            &String::from_utf8_lossy(include_bytes!("shaders/skyFrag.glsl")), 
-            None).unwrap();
-        let pbr_shader = glium::Program::from_source(facade,
-            &String::from_utf8_lossy(include_bytes!("shaders/pbrVert.glsl")),
-            &String::from_utf8_lossy(include_bytes!("shaders/pbrFrag.glsl")), 
-            None).unwrap();
-        let equirect_shader = glium::Program::from_source(facade, 
-            &String::from_utf8_lossy(include_bytes!("shaders/skyVert.glsl")),
-            &String::from_utf8_lossy(include_bytes!("shaders/eqRectFrag.glsl")), 
-            None).unwrap();
-        let ui_shader = glium::Program::from_source(facade, 
-            &String::from_utf8_lossy(include_bytes!("shaders/hdrVert.glsl")),
-            &String::from_utf8_lossy(include_bytes!("shaders/hdrFrag.glsl")), 
-            None).unwrap();
+        let ship_shader = load_shader_source!(facade, 
+            "shaders/basicVert.glsl", "shaders/basicFrag.glsl").unwrap();
+        let skybox_shader = load_shader_source!(facade, 
+            "shaders/skyVert.glsl", "shaders/skyFrag.glsl").unwrap();
+        let pbr_shader = load_shader_source!(facade,
+            "shaders/pbrVert.glsl", "shaders/pbrFrag.glsl").unwrap();
+        let equirect_shader = load_shader_srgb!(facade, 
+            "shaders/skyVert.glsl", "shaders/eqRectFrag.glsl").unwrap();
+        let ui_shader = load_shader_source!(facade, 
+            "shaders/hdrVert.glsl", "shaders/hdrFrag.glsl").unwrap();
+        let bloom_shader = load_shader_source!(facade,
+            "shaders/hdrVert.glsl", "shaders/bloomFrag.glsl").unwrap();
+        let blur_shader = load_shader_source!(facade,
+            "shaders/hdrVert.glsl", "shaders/blurFrag.glsl").unwrap();
         let ship_params = glium::DrawParameters::<'static> {
             depth: glium::Depth {
                 test: glium::draw_parameters::DepthTest::IfLess,
@@ -136,9 +174,12 @@ impl ShaderManager {
         shaders.insert(ShaderType::Pbr, (pbr_shader, ship_params));
         shaders.insert(ShaderType::EquiRect, (equirect_shader, Default::default()));
         shaders.insert(ShaderType::UiShader, (ui_shader, Default::default()));
+        shaders.insert(ShaderType::BlurShader, (blur_shader, Default::default()));
+        shaders.insert(ShaderType::BloomShader, (bloom_shader, Default::default()));
         ShaderManager {
             shaders: shaders,
             empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
+            empty_2d: glium::texture::Texture2d::empty(facade, 0, 0).unwrap(),
         }
     }
 
@@ -175,6 +216,18 @@ impl ShaderManager {
                 irradiance_map: sample_linear_clamp!(data.scene_data.ibl_map.unwrap()),
             }),
             ShaderType::UiShader => UniformType::UiUniform(glium::uniform! {
+                model: data.model,
+                diffuse: sample_linear_clamp!(data.normal_map.unwrap()),
+                do_blend: data.roughness_map.is_some(),
+                bloom_tex: sample_linear_clamp!(data.roughness_map.unwrap_or(&self.empty_2d)),
+            }),
+            ShaderType::BlurShader => UniformType::BlurUniform(glium::uniform! {
+                model: data.model,
+                diffuse: sample_linear_clamp!(
+                    data.normal_map.unwrap_or_else(|| data.roughness_map.unwrap())),
+                horizontal_pass: data.normal_map.is_some(),
+            }),
+            ShaderType::BloomShader => UniformType::BloomUniform(glium::uniform! {
                 model: data.model,
                 diffuse: sample_linear_clamp!(data.normal_map.unwrap()),
             })

@@ -1,9 +1,10 @@
-use glutin::window::WindowBuilder;
+use glutin::window::{WindowBuilder};
 use glutin::ContextBuilder;
 use glutin::event::{Event, WindowEvent};
 use glutin::event_loop::{ControlFlow, EventLoop};
 use glium::{Surface, Display};
 use std::time::Instant;
+use std::cell::Ref;
 
 extern crate cgmath;
 mod textures;
@@ -67,7 +68,7 @@ fn main() {
 
     
     e_loop.run_return(|ev, _, control| {
-        let dt = Instant::now() - prev_time;
+        let dt = Instant::now().duration_since(prev_time).as_secs_f32();
         let mut wnd_size : (u32, u32) = (1920, 1080);
         match ev {
             Event::LoopDestroyed => return,
@@ -76,7 +77,7 @@ fn main() {
                     WindowEvent::CloseRequested => *control = ControlFlow::Exit,
                     WindowEvent::Resized(new_size) => {
                         wnd_size = (new_size.width, new_size.height);
-                        //hdr.resize(new_size.width, new_size.height, 8, &wnd_ctx);
+                        //hdr.resize_and_clear(new_size.width, new_size.height, 8, &wnd_ctx);
                     },
                     _ => (),
                 }
@@ -85,7 +86,7 @@ fn main() {
         };
         let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
         let rot = Quaternion::<f32>::from_angle_y(Deg::<f32>(theta));
-        theta += dt.as_secs_f32() * 450.;
+        theta += dt * 450.;
         user.set_rot(rot);
         let surface = hdr.draw(&wnd_ctx);
         surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
@@ -94,12 +95,13 @@ fn main() {
             user.render(surface, mats, &shader_manager)
         });
         let mut display = wnd_ctx.draw();
-        display.clear_color_and_depth((0.5, 0., 0.5, 1.0), 1.);
+        display.clear_color_and_depth((0.05, 0.05, 0.05, 1.0), 1.);
         main_scene.render(&mut display, &user, aspect, |surface, mats| {
             hdr.render(surface, mats, &shader_manager);
         });
         display.finish().unwrap();
         prev_time = Instant::now();
+        wnd_ctx.gl_window().window().request_redraw();
     });
 
 }
