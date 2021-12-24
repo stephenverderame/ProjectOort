@@ -102,20 +102,13 @@ impl<'a> RenderTarget<'a> {
     }
 
     
-    fn extract_bright_color(&self, mats: &shader::SceneData, shader: &shader::ShaderManager) {
-        let data = shader::UniformData {
-            scene_data: mats,
-            model: cgmath::Matrix4::from_scale(1f32).into(),
-            diffuse_tex: None,
-            roughness_map: None,
-            metallic_map: None,
-            normal_map: Some(&self.out_tex),
-            emission_map: None,
-            env_map: None,
-        };
-        let (program, params, uniform) = shader.use_shader("ui-bloom", &data);
+    fn extract_bright_color(&self, shader: &shader::ShaderManager) {
+        let data = shader::UniformInfo::ExtractBrightInfo(shader::ExtractBrightData {
+            tex: &self.out_tex
+        });
+        let (program, params, uniform) = shader.use_shader(&data);
         match uniform {
-            shader::UniformType::BloomUniform(uniform) => {
+            shader::UniformType::ExtractBrightUniform(uniform) => {
                 let fbo = &mut *self.bright_color_fbo.borrow_mut();
                 fbo.clear_color(0., 0., 0., 1.);
                 fbo.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap()
@@ -124,45 +117,40 @@ impl<'a> RenderTarget<'a> {
         }
     }
 
-    fn blur_pass(&self, shader: &shader::ShaderManager, mats: &shader::SceneData, pass_count: i32) 
+    fn blur_pass(&self, shader: &shader::ShaderManager, pass_count: i32) 
     {
-        let mut data = shader::UniformData {
-            scene_data: mats,
-            model: cgmath::Matrix4::from_scale(1f32).into(),
-            diffuse_tex: None,
-            roughness_map: None,
-            metallic_map: None,
-            normal_map: None,
-            emission_map: None,
-            env_map: None,
-        };
         let fbo : &RefCell<glium::framebuffer::SimpleFrameBuffer>;
+        let tex : &glium::texture::Texture2d;
+        let horizontal_pass : bool;
         match pass_count {
             x if x % 2 == 0 => {
                 fbo = &self.pong_fbo;
-                data.normal_map = Some(&self.bright_color_tex);
-                data.roughness_map = None;
+                tex = &self.bright_color_tex;
+                horizontal_pass = true;
             },
             _ => {
                 fbo = &self.bright_color_fbo;
-                data.roughness_map = Some(&self.pong_tex);
-                data.normal_map = None;
+                tex = &self.pong_tex;
+                horizontal_pass = false;
             }
-        }
-        let (program, params, uniform) = shader.use_shader("ui-blur", &data);
+        };
+        let data = shader::UniformInfo::SepConvInfo(shader::SepConvData {
+            horizontal_pass, tex
+        });
+        let (program, params, uniform) = shader.use_shader(&data);
         match uniform {
-            shader::UniformType::BlurUniform(uniform) => {
+            shader::UniformType::SepConvUniform(uniform) => {
                 fbo.borrow_mut().draw(&self.vbo, &self.ebo, program, &uniform, params).unwrap();
             },
             _ => panic!("Invalid uniform type returned for RenderTarget"),
         }
     }
 
-    fn gen_bloom_tex<'b>(&'b self, mats: &'b shader::SceneData, shader: &shader::ShaderManager) {
-        self.extract_bright_color(mats, shader);
+    fn gen_bloom_tex<'b>(&'b self, shader: &shader::ShaderManager) {
+        self.extract_bright_color(shader);
         let passes = 10;
         for i in 0 .. passes {
-            self.blur_pass(shader, mats, i);
+            self.blur_pass(shader, i);
         }
         if passes % 2 == 1 {
             // ends on even number (last rendered to pong_fbo)
@@ -181,7 +169,7 @@ impl<'a> RenderTarget<'a> {
 }
 
 impl<'a> draw_traits::Drawable for RenderTarget<'a> {
-    fn render<S>(&self, frame: &mut S, mats: &shader::SceneData, shader: &shader::ShaderManager)
+    fn render<S>(&self, frame: &mut S, _mats: &shader::SceneData, shader: &shader::ShaderManager)
         where S : glium::Surface
     {
 
@@ -193,18 +181,14 @@ impl<'a> draw_traits::Drawable for RenderTarget<'a> {
         };
         self.fbo.as_ref().unwrap().blit_whole_color_to(self.out_fbo.as_ref().unwrap(), 
             &dst_target, glium::uniforms::MagnifySamplerFilter::Linear);
-        self.gen_bloom_tex(mats, shader);
-        let args = shader::UniformData {
-            scene_data: mats,
+        self.gen_bloom_tex(shader);
+        let args = shader::UniformInfo::UiInfo(shader::UiData {
+            diffuse: &self.out_tex,
+            do_blend: true,
+            blend_tex: Some(&self.bright_color_tex),
             model: cgmath::Matrix4::from_scale(1f32).into(),
-            diffuse_tex: None,
-            roughness_map: Some(&self.bright_color_tex),
-            metallic_map: None,
-            normal_map: Some(&self.out_tex),
-            emission_map: None,
-            env_map: None,
-        };
-        let (program, params, uniform) = shader.use_shader("ui", &args);
+        });
+        let (program, params, uniform) = shader.use_shader(&args);
         match uniform {
             shader::UniformType::UiUniform(uniform) =>
                 frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),

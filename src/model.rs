@@ -124,10 +124,13 @@ fn get_material_or_none<F>(dir: &str, mesh: &Mesh, mats: &Vec<Material>, facade:
 }
 
 fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::SceneData, 
-    model: [[f32; 4]; 4]) -> shader::UniformData<'a>
+    model: [[f32; 4]; 4]) -> shader::UniformInfo<'a>
 {
-    shader::UniformData {
-        diffuse_tex: Some(&material.diffuse_tex),
+    if material.name.find("pbr").is_none() {
+        panic!("Only PBR is implemented")
+    }
+    shader::UniformInfo::PBRInfo(shader::PBRData {
+        diffuse_tex: &material.diffuse_tex,
         model: model,
         scene_data: mats,
         roughness_map: match &material.pbr_data {
@@ -146,8 +149,7 @@ fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::SceneData,
             Some(tex) => Some(tex),
             _ => None,
         },
-        env_map: None,
-    }
+    })
 }
 
 impl Model {
@@ -186,15 +188,15 @@ impl Model {
                 },
                 _ => panic!("No material"),
             };
-            let (shader, params, uniform) = manager.use_shader(&mat_name, &data);
+            let (shader, params, uniform) = manager.use_shader(&data);
             match uniform {
                 shader::UniformType::BSUniform(uniform) => 
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::PbrUniform(uniform) => 
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 
-                 | shader::UniformType::UiUniform(_) | shader::UniformType::BloomUniform(_) 
-                 | shader::UniformType::BlurUniform(_) => 
+                 | shader::UniformType::UiUniform(_) | shader::UniformType::SepConvUniform(_) 
+                 | shader::UniformType::ExtractBrightUniform(_) => 
                     panic!("Model get invalid uniform type"),
             }.unwrap()
         }

@@ -84,9 +84,10 @@ fn main() {
             },
             _ => (),
         };
+
         let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
         let rot = Quaternion::<f32>::from_angle_y(Deg::<f32>(theta));
-        theta += dt * 450.;
+        theta += dt * 800.;
         user.set_rot(rot);
         let surface = hdr.draw(&wnd_ctx);
         surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
@@ -101,7 +102,6 @@ fn main() {
         });
         display.finish().unwrap();
         prev_time = Instant::now();
-        wnd_ctx.gl_window().window().request_redraw();
     });
 
 }

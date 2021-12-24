@@ -41,27 +41,17 @@ impl Skybox {
 
 impl draw_traits::Drawable for Skybox {
     fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, shader: &shader::ShaderManager) {
-        let args = shader::UniformData {
-            scene_data: mats,
-            model: cgmath::Matrix4::from_scale(1f32).into(),
-            diffuse_tex: None,
-            roughness_map: None,
-            metallic_map: None,
-            normal_map: match &self.tex {
-                SkyboxTex::Sphere(map) => Some(map),
-                SkyboxTex::Cube(_) => None,
-            },
-            emission_map: None,
-            env_map: match &self.tex {
-                SkyboxTex::Cube(map) => Some(map),
-                SkyboxTex::Sphere(_) => None,
-            },
+        let args = match &self.tex {
+            SkyboxTex::Sphere(map) => shader::UniformInfo::EquiRectInfo(shader::EqRectData {
+                env_map: map,
+                scene_data: mats,
+            }),
+            SkyboxTex::Cube(map) => shader::UniformInfo::SkyboxInfo(shader::SkyboxData {
+                env_map: map,
+                scene_data: mats
+            }),
         };
-        let shader_name = match &self.tex {
-            SkyboxTex::Cube(_) => "skybox",
-            SkyboxTex::Sphere(_) => "equirectangular",
-        };
-        let (program, params, uniform) = shader.use_shader(shader_name, &args);
+        let (program, params, uniform) = shader.use_shader(&args);
         match uniform {
             shader::UniformType::SkyboxUniform(uniform) =>
                 frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
