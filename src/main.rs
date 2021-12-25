@@ -18,11 +18,13 @@ mod camera;
 mod player;
 mod scene;
 mod render_target;
+mod render_pass;
 
 use draw_traits::Drawable;
 use glutin::platform::run_return::*;
 
 use cgmath::*;
+use render_target::*;
 
 
 fn main() {
@@ -50,12 +52,11 @@ fn main() {
     let mut prev_time = Instant::now();
 
     let gen_sky_scene = scene::Scene::new();
-    let sky_cbo = gen_sky_scene.render_to_cubemap(cgmath::point3(0., 0., 0.), &wnd_ctx, |fbo, mats| {
+    let gen_sky = render_target::CubemapRenderTarget::new(1024, 10., cgmath::point3(0., 0., 0.), &wnd_ctx);
+    let sky_cbo = gen_sky_scene.render_target(&mut gen_sky, &user, 1., |fbo, mats| {
         sky.render(fbo, mats, &shader_manager)
     });
-
-
-    let sky_hdr_cbo = gen_sky_scene.render_to_cubemap(cgmath::point3(0., 0., 0.), &wnd_ctx, |fbo, mats| {
+    let sky_hdr_cbo = gen_sky_scene.render_target(&mut gen_sky, &user, 1., |fbo, mats| {
         sky_hdr.render(fbo, mats, &shader_manager)
     });
 

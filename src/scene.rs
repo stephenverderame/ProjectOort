@@ -3,6 +3,7 @@ use crate::draw_traits;
 use crate::shader;
 use crate::camera;
 use crate::node;
+use crate::render_target;
 
 use cgmath::*;
 use glium::framebuffer::ToDepthAttachment;
@@ -19,12 +20,12 @@ impl Scene {
         }
     }
 
-    pub fn render<S : glium::Surface, F : FnOnce(&mut S, &shader::SceneData)>
-    (&self, frame: &mut S, viewer: &dyn draw_traits::Viewer, aspect: f32, func: F)
+    fn get_scene_data(&self, viewer: &dyn draw_traits::Viewer, aspect: f32) 
+        -> (shader::SceneData, cgmath::Matrix4<f32>) 
     {
         let view = viewer.view_mat();
         let proj = viewer.proj_mat(aspect);
-        let mats = shader::SceneData {
+        (shader::SceneData {
             viewproj: (proj * view).into(),
             view: view.into(),
             proj: proj.into(),
@@ -33,82 +34,30 @@ impl Scene {
                 Some(map) => Some(&map),
                 _ => None,
             },
-        };
+        }, proj)
+    }
+
+    pub fn render<S : glium::Surface, F : Fn(&mut S, &shader::SceneData)>
+    (&self, frame: &mut S, viewer: &dyn draw_traits::Viewer, aspect: f32, func: F)
+    {
+        let (mats, _) = self.get_scene_data(viewer, aspect);
         func(frame, &mats);
     }
 
-    pub fn render_to_cubemap<F : glium::backend::Facade, 
-        Cb : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)>
-        (&self, cam_pos: cgmath::Point3<f32>, facade: &F, func: Cb) -> glium::texture::Cubemap 
+    pub fn render_target<'a, F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)>
+    (&self, frame: &'a mut dyn render_target::RenderTarget, viewer: &dyn draw_traits::Viewer, aspect: f32, func: F)
+    -> render_target::TextureType<'a>
     {
-        let mut cam = camera::PerspectiveCamera {
-            cam: node::Node::new(Some(cam_pos), None, None, None),
-            aspect: 1f32,
-            fov_deg: 90f32,
-            target: cgmath::point3(0., 0., 0.),
-            near: 0.1,
-            far: 10.,
-            up: vec3(0., 1., 0.),
-        };
-        use glium::texture::CubeLayer::*;
-        let target_faces : [(cgmath::Point3<f32>, glium::texture::CubeLayer, cgmath::Vector3<f32>); 6] = 
-            [(point3(1., 0., 0.), PositiveX, vec3(0., -1., 0.)), (point3(-1., 0., 0.), NegativeX, vec3(0., -1., 0.)),
-            (point3(0., 1., 0.), PositiveY, vec3(0., 0., 1.)), (point3(0., -1., 0.), NegativeY, vec3(0., 0., -1.)),
-            (point3(0., 0., 1.), PositiveZ, vec3(0., -1., 0.)), (point3(0., 0., -1.), NegativeZ, vec3(0., -1., 0.))];
-        let im_size = 1024u32;
-        let cubemap = glium::texture::Cubemap::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16,
-            glium::texture::MipmapsOption::NoMipmap, im_size).unwrap();
-        //let cubemap = glium::texture::Cubemap::empty(facade, im_size).unwrap();
-        for (target, face, up) in target_faces {
-            let target : (f32, f32, f32) = (target.to_vec() + cam.cam.pos.to_vec()).into();
-            cam.target = std::convert::From::from(target);
-            cam.up = up;
-            let rbo = glium::framebuffer::DepthRenderBuffer::new(facade, 
-                glium::texture::DepthFormat::F32, im_size, im_size).unwrap();
-            let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(facade, 
-                cubemap.main_level().image(face), rbo.to_depth_attachment()).unwrap();
-            fbo.clear_color_and_depth((0., 0., 0., 1.), 0.);
-            self.render(&mut fbo, &cam, 1., &func);
-        }
-        cubemap
+        let (mut mats, proj) = self.get_scene_data(viewer, aspect);
+        frame.draw(viewer, &|fbo, viewer| {
+            let view_mat = viewer.view_mat();
+            mats.viewproj = (proj * view_mat).into();
+            mats.view = view_mat.into();
+            mats.cam_pos = viewer.cam_pos().into();
+            func(fbo, &mats);
+        });
+        frame.read()
     }
-
-    pub fn render_to_cubemap_mip<F : glium::backend::Facade, 
-        Cb : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)>
-        (&self, cam_pos: cgmath::Point3<f32>, facade: &F, func: Cb) -> glium::texture::Cubemap 
-    {
-        let mut cam = camera::PerspectiveCamera {
-            cam: node::Node::new(Some(cam_pos), None, None, None),
-            aspect: 1f32,
-            fov_deg: 90f32,
-            target: cgmath::point3(0., 0., 0.),
-            near: 0.1,
-            far: 10.,
-            up: vec3(0., 1., 0.),
-        };
-        use glium::texture::CubeLayer::*;
-        let target_faces : [(cgmath::Point3<f32>, glium::texture::CubeLayer, cgmath::Vector3<f32>); 6] = 
-            [(point3(1., 0., 0.), PositiveX, vec3(0., -1., 0.)), (point3(-1., 0., 0.), NegativeX, vec3(0., -1., 0.)),
-            (point3(0., 1., 0.), PositiveY, vec3(0., 0., 1.)), (point3(0., -1., 0.), NegativeY, vec3(0., 0., -1.)),
-            (point3(0., 0., 1.), PositiveZ, vec3(0., -1., 0.)), (point3(0., 0., -1.), NegativeZ, vec3(0., -1., 0.))];
-        let im_size = 1024u32;
-        let cubemap = glium::texture::Cubemap::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16,
-            glium::texture::MipmapsOption::AutoGeneratedMipmaps, im_size).unwrap();
-        for (target, face, up) in target_faces {
-            let target : (f32, f32, f32) = (target.to_vec() + cam.cam.pos.to_vec()).into();
-            cam.target = std::convert::From::from(target);
-            cam.up = up;
-            let rbo = glium::framebuffer::DepthRenderBuffer::new(facade, 
-                glium::texture::DepthFormat::F32, im_size, im_size).unwrap();
-            let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(facade, 
-                cubemap.main_level().image(face), rbo.to_depth_attachment()).unwrap();
-            fbo.clear_color_and_depth((0., 0., 0., 1.), 0.);
-            self.render(&mut fbo, &cam, 1., &func);
-        }
-        cubemap
-    }
-
-
 
     pub fn set_ibl_map(&mut self, map: glium::texture::Cubemap) {
         self.ibl_map = Some(map);
