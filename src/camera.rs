@@ -12,6 +12,15 @@ pub struct PerspectiveCamera {
     pub up: cgmath::Vector3<f32>,
 
 }
+impl PerspectiveCamera {
+    pub fn default(aspect: f32) -> PerspectiveCamera {
+        PerspectiveCamera {
+            cam: node::Node::new(None, None, None, None),
+            aspect, fov_deg: 60., target: point3(0., 0., 1.),
+            near: 0.1, far: 100., up: vec3(0., 1., 0.),
+        }
+    }
+}
 
 impl draw_traits::Viewer for PerspectiveCamera {
     fn proj_mat(&self, aspect: f32) -> cgmath::Matrix4<f32> {

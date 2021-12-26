@@ -26,6 +26,36 @@ use glutin::platform::run_return::*;
 use cgmath::*;
 use render_target::*;
 
+fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::ShaderManager, facade: &F) 
+    -> (glium::texture::Cubemap, glium::texture::Cubemap) 
+{
+    let cam = camera::PerspectiveCamera::default(1.);
+    let sky_hdr = skybox::Skybox::new(skybox::SkyboxTex::Sphere(
+        textures::load_texture_hdr("assets/Milkyway/Milkyway_Light.hdr", facade)), facade);
+    let sky = skybox::Skybox::new(skybox::SkyboxTex::Sphere(
+        textures::load_texture_2d("assets/Milkyway/Milkyway_BG.jpg", facade)), facade);
+    let gen_sky_scene = scene::Scene::new();
+    let mut gen_sky = render_target::CubemapRenderTarget::new(size, 10., cgmath::point3(0., 0., 0.), facade);
+    let mut cp = render_target::CopyTextureProcessor::new(size, size, None, None, facade);
+    let mut gen_sky_pass = render_pass::RenderPass::new(&mut gen_sky, vec![&mut cp], render_pass::Pipeline::new(vec![0], vec![(0, 1)]));
+    let gen_sky_ptr = &mut gen_sky_pass as *mut render_pass::RenderPass;
+    unsafe {
+        let sky_cbo = gen_sky_scene.do_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, |fbo, scene_data| {
+            sky.render(fbo, scene_data, &shader_manager)
+        });
+        // safe bx we finish using the first borrow here
+        let sky_hdr_cbo = gen_sky_scene.do_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, |fbo, scene_data| {
+            sky_hdr.render(fbo, scene_data, shader_manager)
+        });
+
+        match (sky_cbo, sky_hdr_cbo) {
+            (TextureType::TexCube(Ownership::Own(sky)), 
+            TextureType::TexCube(Ownership::Own(sky_hdr))) => (sky, sky_hdr),
+            _ => panic!("Unexpected return from sky generation"),
+        }
+    }
+}
+
 
 fn main() {
     let mut e_loop = EventLoop::new();
@@ -41,31 +71,27 @@ fn main() {
 
     //let sky = model::Model::load("assets/skybox/sky.obj", &wnd_ctx);
     //let sky = model::Model::load("assets/Milkyway/sky.obj", &wnd_ctx);
-    let sky_hdr = skybox::Skybox::new(skybox::SkyboxTex::Sphere(
-        textures::load_texture_hdr("assets/Milkyway/Milkyway_Light.hdr", &wnd_ctx)), &wnd_ctx);
-    let sky = skybox::Skybox::new(skybox::SkyboxTex::Sphere(
-        textures::load_texture_2d("assets/Milkyway/Milkyway_BG.jpg", &wnd_ctx)), &wnd_ctx);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
 
     let mut theta = 0.;
     let mut prev_time = Instant::now();
-
-    let gen_sky_scene = scene::Scene::new();
-    let gen_sky = render_target::CubemapRenderTarget::new(1024, 10., cgmath::point3(0., 0., 0.), &wnd_ctx);
-    let sky_cbo = gen_sky_scene.render_target(&mut gen_sky, &user, 1., |fbo, mats| {
-        sky.render(fbo, mats, &shader_manager)
-    });
-    let sky_hdr_cbo = gen_sky_scene.render_target(&mut gen_sky, &user, 1., |fbo, mats| {
-        sky_hdr.render(fbo, mats, &shader_manager)
-    });
-
+    let (sky_cbo, sky_hdr_cbo) = gen_skybox(1024, &shader_manager, &wnd_ctx);
     let main_skybox = skybox::Skybox::new(skybox::SkyboxTex::Cube(sky_cbo), &wnd_ctx);
 
     let mut main_scene = scene::Scene::new();
     main_scene.set_ibl_map(sky_hdr_cbo);
 
-    let mut hdr = render_target::RenderTarget::new(8, 1920, 1080, &wnd_ctx);
+    let mut msaa = render_target::MsaaRenderTarget::new(8, 1920, 1080, &wnd_ctx);
+    let mut eb = render_target::ExtractBrightProcessor::new(&wnd_ctx, 1920, 1080);
+    let mut blur = render_target::SepConvProcessor::new(1920, 1080, 10, &wnd_ctx);
+    let mut compose = render_target::UiCompositeProcessor::new(&wnd_ctx, || { 
+        let mut surface = wnd_ctx.draw();
+        surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
+        surface
+    }, |disp| disp.finish().unwrap());
+    let mut main_pass = render_pass::RenderPass::new(&mut msaa, vec![&mut eb, &mut blur, &mut compose], 
+        render_pass::Pipeline::new(vec![0], vec![(0, 1), (1, 2), (2, 3), (0, 3)]));
 
     
     e_loop.run_return(|ev, _, control| {
@@ -90,7 +116,12 @@ fn main() {
         let rot = Quaternion::<f32>::from_angle_y(Deg::<f32>(theta));
         theta += dt * 800.;
         user.set_rot(rot);
-        let surface = hdr.draw(&wnd_ctx);
+        main_scene.do_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data| {
+            fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
+            main_skybox.render(fbo, &scene_data, &shader_manager);
+            user.render(fbo, &scene_data, &shader_manager);
+        });
+        /*let surface = hdr.draw(&wnd_ctx);
         surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
         main_scene.render(surface, &user, aspect, |surface, mats| {
             main_skybox.render(surface, mats, &shader_manager);
@@ -101,7 +132,7 @@ fn main() {
         main_scene.render(&mut display, &user, aspect, |surface, mats| {
             hdr.render(surface, mats, &shader_manager);
         });
-        display.finish().unwrap();
+        display.finish().unwrap();*/
         prev_time = Instant::now();
     });
 

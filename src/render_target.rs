@@ -11,6 +11,7 @@ use crate::shader;
 use crate::draw_traits::*;
 use glium::*;
 use glium::framebuffer::ToDepthAttachment;
+use framebuffer::ToColorAttachment;
 
 fn get_rect_vbo_ebo<F : glium::backend::Facade>(facade: &F) 
     -> (VertexBuffer<Vertex>, IndexBuffer<u16>) 
@@ -25,20 +26,35 @@ fn get_rect_vbo_ebo<F : glium::backend::Facade>(facade: &F)
     IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &indices).unwrap())
 }
 
-#[derive(Clone)]
+pub enum Ownership<'a, T> {
+    Own(T),
+    Ref(&'a T),
+}
+
+impl<'a, T> Ownership<'a, T> {
+    pub fn to_ref(&self) -> &T {
+        match &self {
+            Own(s) => &s,
+            Ref(s) => s,
+        }
+    }
+}
+
+use Ownership::*;
+
 pub enum TextureType<'a> {
-    Tex2d(&'a texture::Texture2d),
-    TexCube(&'a texture::Cubemap),
+    Tex2d(Ownership<'a, texture::Texture2d>),
+    TexCube(Ownership<'a, texture::Cubemap>),
     ToDefaultFbo,
 }
 
 pub trait RenderTarget {
-    fn draw(&self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer));
-    fn read(&self) -> TextureType;
+    fn draw(&mut self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer));
+    fn read(&mut self) -> TextureType;
 }
 
 pub trait TextureProcessor {
-    fn process(&self, source: &Vec<TextureType>, shader: &shader::ShaderManager) -> TextureType;
+    fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager) -> TextureType;
 }
 
 pub struct MsaaRenderTarget<'a> {
@@ -74,11 +90,11 @@ impl<'a> MsaaRenderTarget<'a> {
 }
 
 impl<'a> RenderTarget for MsaaRenderTarget<'a> {
-    fn draw(&self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) {
+    fn draw(&mut self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) {
         func(&mut self.fbo, viewer)
     }
 
-    fn read(&self) -> TextureType {
+    fn read(&mut self) -> TextureType {
         let dst_target = glium::BlitTarget {
             left: 0,
             bottom: 0,
@@ -87,7 +103,7 @@ impl<'a> RenderTarget for MsaaRenderTarget<'a> {
         };
         self.fbo.blit_whole_color_to(&self.out_fbo, 
             &dst_target, glium::uniforms::MagnifySamplerFilter::Linear);
-        TextureType::Tex2d(&self.out_tex)
+        TextureType::Tex2d(Ref(&self.out_tex))
     }
 }
 
@@ -125,7 +141,7 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
 }
 
 impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
-    fn draw(&self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) {
+    fn draw(&mut self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) {
         use crate::camera::*;
         use crate::node;
         use cgmath::*;
@@ -150,8 +166,8 @@ impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
         }
     }
 
-    fn read(&self) -> TextureType {
-        TextureType::TexCube(&self.cubemap)
+    fn read(&mut self) -> TextureType {
+        TextureType::TexCube(Ref(&self.cubemap))
     }
 
 }
@@ -181,8 +197,9 @@ impl<'a> ExtractBrightProcessor<'a> {
 }
 
 impl<'a> TextureProcessor for ExtractBrightProcessor<'a> {
-    fn process(&self, source: &Vec<TextureType>, shader: &shader::ShaderManager) -> TextureType {
+    fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager) -> TextureType {
         if let TextureType::Tex2d(source) = source[0] {
+            let source = source.to_ref();
             let data = shader::UniformInfo::ExtractBrightInfo(shader::ExtractBrightData {
                 tex: source
             });
@@ -195,7 +212,7 @@ impl<'a> TextureProcessor for ExtractBrightProcessor<'a> {
                 },
                 _ => panic!("Invalid uniform type returned for RenderTarget"),
             };
-            TextureType::Tex2d(&self.bright_color_tex)
+            TextureType::Tex2d(Ref(&self.bright_color_tex))
         } else {
             panic!("Invalid texture source for extract bright");
         }
@@ -212,24 +229,32 @@ pub struct SepConvProcessor<'a> {
 
 impl<'a> SepConvProcessor<'a> {
     pub fn new<F : backend::Facade>(width: u32, height: u32, iterations: usize, facade: &'a F) -> SepConvProcessor {
-        let mut ping_pong_tex: [Box<texture::Texture2d>; 2];
-        let mut ping_pong_fbo: [framebuffer::SimpleFrameBuffer<'a>; 2];
+        use std::mem::MaybeUninit;
+        let mut ping_pong_tex: [MaybeUninit<Box<texture::Texture2d>>; 2] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut ping_pong_fbo: [MaybeUninit<framebuffer::SimpleFrameBuffer<'a>>; 2] = unsafe { MaybeUninit::uninit().assume_init() };
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
         for i in 0 .. 2 {
-            ping_pong_tex[i] = Box::new(glium::texture::Texture2d::empty_with_format(facade,
+            let tex_box = Box::new(glium::texture::Texture2d::empty_with_format(facade,
                 glium::texture::UncompressedFloatFormat::F16F16F16F16, glium::texture::MipmapsOption::NoMipmap,
                 width, height).unwrap());
-            let tex_ptr = &*ping_pong_tex[i] as *const texture::Texture2d;
+            let tex_ptr = &*tex_box as *const texture::Texture2d;
             unsafe {
-                ping_pong_fbo[i] = glium::framebuffer::SimpleFrameBuffer::new(facade, &*tex_ptr).unwrap();
+                ping_pong_tex[i].write(tex_box);
+                ping_pong_fbo[i].write(glium::framebuffer::SimpleFrameBuffer::new(facade, &*tex_ptr).unwrap());
             }
         }
-        SepConvProcessor {
-            iterations, ping_pong_fbo, ping_pong_tex, vbo, ebo
+        unsafe {
+            SepConvProcessor {
+                iterations, ping_pong_fbo: std::mem::transmute::<_, [framebuffer::SimpleFrameBuffer<'a>; 2]>(ping_pong_fbo), 
+                ping_pong_tex: std::mem::transmute::<_, [Box<texture::Texture2d>; 2]>(ping_pong_tex),
+                vbo, ebo
+            }
         }
     }
 
-    fn pass(&self, source: &texture::Texture2d, iteration: usize, shaders: &shader::ShaderManager) {
+    fn pass(dst: &mut framebuffer::SimpleFrameBuffer, source: &texture::Texture2d, 
+        vbo: &VertexBuffer<Vertex>, ebo: &IndexBuffer<u16>, iteration: usize, shaders: &shader::ShaderManager) 
+    {
         let data = shader::UniformInfo::SepConvInfo(shader::SepConvData {
             horizontal_pass: iteration % 2 == 0, 
             tex: source
@@ -237,8 +262,7 @@ impl<'a> SepConvProcessor<'a> {
         let (program, params, uniform) = shaders.use_shader(&data);
         match uniform {
             shader::UniformType::SepConvUniform(uniform) => {
-                self.ping_pong_fbo[iteration % 2]
-                    .draw(&self.vbo, &self.ebo, program, &uniform, params).unwrap();
+                dst.draw(vbo, ebo, program, &uniform, params).unwrap();
             },
             _ => panic!("Invalid uniform type returned for RenderTarget"),
         }
@@ -246,37 +270,42 @@ impl<'a> SepConvProcessor<'a> {
 }
 
 impl<'a> TextureProcessor for SepConvProcessor<'a> {
-    fn process(&self, source: &Vec<TextureType>, shader: &shader::ShaderManager) -> TextureType {
+    fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager) -> TextureType {
         if let TextureType::Tex2d(source) = source[0] {
-            self.pass(source, 0, shader);
+            let source = source.to_ref();
+            SepConvProcessor::pass(&mut self.ping_pong_fbo[0], source, &self.vbo, &self.ebo, 0, shader);
             for i in 1 .. self.iterations {
-                self.pass(&*self.ping_pong_tex[(i - 1) % 2], i, shader);
+                let tex = &*self.ping_pong_tex[(i - 1) % 2];
+                let dst = &mut self.ping_pong_fbo[i % 2];
+                SepConvProcessor::pass(dst, tex, &self.vbo, &self.ebo, i, shader);
             }
-            TextureType::Tex2d(&*self.ping_pong_tex[(self.iterations - 1) % 2])
+            TextureType::Tex2d(Ref(&*self.ping_pong_tex[(self.iterations - 1) % 2]))
         } else {
             panic!("Invalid source type for separable convolution");
         }
     }
 }
 
-pub struct UiCompositeProcessor<'a, S : Surface> {
+pub struct UiCompositeProcessor<S : Surface, F : Fn() -> S, G : Fn(S)> {
     vbo: VertexBuffer<Vertex>,
     ebo: IndexBuffer<u16>,
-    surface: &'a mut S
+    get_surface: F,
+    clean_surface: G,
 }
 
-impl<'a, S : Surface> UiCompositeProcessor<'a, S> {
-    pub fn new<F : backend::Facade>(facade: &F, surface: &'a mut S) -> UiCompositeProcessor<'a, S> {
+impl<S : Surface, F : Fn() -> S, G : Fn(S)> UiCompositeProcessor<S, F, G> {
+    pub fn new<Fac: backend::Facade>(facade: &Fac, get_surface: F, clean_surface: G) -> UiCompositeProcessor<S, F, G> {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
-        UiCompositeProcessor { vbo, ebo, surface }
+        UiCompositeProcessor { vbo, ebo, get_surface, clean_surface }
     }
 }
 
-impl<'a, S : Surface> TextureProcessor for UiCompositeProcessor<'a, S> {
-    fn process(&self, source: &Vec<TextureType>, shader: &shader::ShaderManager) -> TextureType {
+impl<S : Surface, F : Fn() -> S, G : Fn(S)> TextureProcessor for UiCompositeProcessor<S, F, G> {
+    fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager) -> TextureType {
         if source.len() == 2 {
             match (source[0], source[1]) {
                 (TextureType::Tex2d(diffuse), TextureType::Tex2d(blend)) => {
+                    let (diffuse, blend) = (diffuse.to_ref(), blend.to_ref());
                     let args = shader::UniformInfo::UiInfo(shader::UiData {
                         diffuse,
                         do_blend: true,
@@ -285,8 +314,11 @@ impl<'a, S : Surface> TextureProcessor for UiCompositeProcessor<'a, S> {
                     });
                     let (program, params, uniform) = shader.use_shader(&args);
                     match uniform {
-                        shader::UniformType::UiUniform(uniform) =>
-                            self.surface.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
+                        shader::UniformType::UiUniform(uniform) => {
+                            let mut surface = (self.get_surface)();
+                            surface.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap();
+                            (self.clean_surface)(surface);
+                        },
                         _ => panic!("Invalid uniform type returned for RenderTarget"),
                     };
                     TextureType::ToDefaultFbo
@@ -295,6 +327,64 @@ impl<'a, S : Surface> TextureProcessor for UiCompositeProcessor<'a, S> {
             }
         } else {
             panic!("Invalid number of source textures")
+        }
+    }
+}
+
+pub struct CopyTextureProcessor<'a, F : backend::Facade> {
+    facade: &'a F,
+    width: u32,
+    height: u32,
+    tex_format: texture::UncompressedFloatFormat,
+    mipmap: texture::MipmapsOption,
+}
+
+impl<'a, F : backend::Facade> CopyTextureProcessor<'a, F> {
+    pub fn new(width: u32, height: u32, fmt: Option<texture::UncompressedFloatFormat>, 
+        mipmap: Option<texture::MipmapsOption>, facade: &F) -> CopyTextureProcessor<F> 
+    {
+        CopyTextureProcessor {width, height, facade, tex_format: fmt.unwrap_or(texture::UncompressedFloatFormat::F16F16F16F16),
+        mipmap: mipmap.unwrap_or(texture::MipmapsOption::NoMipmap)}
+    }
+
+    fn blit_src_to_dst<'b, S : ToColorAttachment<'b>, D : ToColorAttachment<'b>>(&self, source: S, dst: D) {
+        let out_fbo = framebuffer::SimpleFrameBuffer::new(self.facade, dst).unwrap();
+        let in_fbo = framebuffer::SimpleFrameBuffer::new(self.facade, source).unwrap();
+        let target = BlitTarget {
+            left: 0,
+            bottom: 0,
+            width: self.height as i32,
+            height: self.width as i32,
+        };
+        in_fbo.blit_whole_color_to(&out_fbo, &target, uniforms::MagnifySamplerFilter::Linear);
+    }
+}
+
+impl<'a, F : backend::Facade> TextureProcessor for CopyTextureProcessor<'a, F> {
+    fn process(&mut self, source: Vec<&TextureType>, _: &shader::ShaderManager) -> TextureType {
+        match source[0] {
+            TextureType::Tex2d(Own(x)) => panic!("Not implemented copy"),//TextureType::Tex2d(Own(x)),
+            TextureType::TexCube(Own(x)) => panic!("Not implemented copy"),//TextureType::TexCube(Own(x)),
+            TextureType::ToDefaultFbo => TextureType::ToDefaultFbo,
+            TextureType::Tex2d(Ref(x)) => {
+                let out = texture::Texture2d::empty_with_format(self.facade,
+                    self.tex_format, self.mipmap,
+                    self.width, self.height).unwrap();
+                self.blit_src_to_dst(*x, &out);
+                TextureType::Tex2d(Own(out))
+            },
+            TextureType::TexCube(Ref(x)) => {
+                use texture::CubeLayer::*;
+                let out = texture::Cubemap::empty_with_format(self.facade,
+                    self.tex_format, self.mipmap,
+                    self.width).unwrap();
+                let layers = [PositiveX, NegativeX, PositiveY, NegativeY, PositiveZ, NegativeZ];
+                for layer in layers {
+                    self.blit_src_to_dst(x.main_level().image(layer), 
+                        out.main_level().image(layer));
+                }
+                TextureType::TexCube(Own(out))
+            }
         }
     }
 }
