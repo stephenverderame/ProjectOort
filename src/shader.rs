@@ -11,6 +11,8 @@ enum ShaderType {
     BloomShader,
 }
 
+/// Converts a shader type to an integer
+/// This is to allow shader types to be keys in maps
 fn shader_type_to_int(typ: &ShaderType) -> i32 {
     match typ {
         &ShaderType::BlinnPhong => 0,
@@ -35,12 +37,17 @@ impl std::cmp::PartialOrd for ShaderType {
     }
 }
 
+/// The ShaderManager stores all shaders and all draw parameters for each shader
+/// It converts shader inputs to OpenGL uniform parameters and selects the shader
+/// based on those shader inputs
 pub struct ShaderManager {
     shaders: BTreeMap<ShaderType, (glium::Program, glium::DrawParameters<'static>)>,
     empty_srgb: glium::texture::SrgbTexture2d,
     empty_2d: glium::texture::Texture2d,
 }
 
+/// Stores scene-wide information such as view and projection matrices
+/// and IBL images
 #[derive(Clone)]
 pub struct SceneData<'a> {
     pub viewproj: [[f32; 4]; 4],
@@ -49,7 +56,7 @@ pub struct SceneData<'a> {
     pub cam_pos: [f32; 3],
     pub ibl_map: Option<&'a glium::texture::Cubemap>,
 }
-
+/// Shader inputs for PBR shader
 pub struct PBRData<'a> {
     pub scene_data: &'a SceneData<'a>,
     pub model: [[f32; 4]; 4],
@@ -59,33 +66,33 @@ pub struct PBRData<'a> {
     pub normal_map: Option<&'a glium::texture::Texture2d>,
     pub emission_map: Option<&'a glium::texture::SrgbTexture2d>,
 }
-
+/// Shader inputs for Spherical Texture shader
 pub struct EqRectData<'a> {
     pub scene_data: &'a SceneData<'a>,
     pub env_map: &'a glium::texture::Texture2d,
 }
-
+/// Shader inputs for Skybox shader
 pub struct SkyboxData<'a> {
     pub scene_data: &'a SceneData<'a>,
     pub env_map: &'a glium::texture::Cubemap,
 }
-
+/// Shader inputs for Ui shader
 pub struct UiData<'a> {
     pub model: [[f32; 4]; 4],
     pub diffuse: &'a glium::texture::Texture2d,
     pub do_blend: bool,
     pub blend_tex: Option<&'a glium::texture::Texture2d>,
 }
-
+/// Shader inputs for seperable convolutions
 pub struct SepConvData<'a> {
     pub tex: &'a glium::texture::Texture2d,
     pub horizontal_pass: bool,
 }
-
+/// Shader inputs for extracting bright colors
 pub struct ExtractBrightData<'a> {
     pub tex: &'a glium::texture::Texture2d,
 }
-
+/// Shader inputs passed from a rendering object to the shader manager
 pub enum UniformInfo<'a> {
     PBRInfo(PBRData<'a>),
     EquiRectInfo(EqRectData<'a>),
@@ -97,6 +104,8 @@ pub enum UniformInfo<'a> {
 }
 
 impl<'a> UniformInfo<'a> {
+    /// Gets the corresponding shader type based on the type of 
+    /// shader inputs
     fn corresp_shader_type(&self) -> ShaderType {
         use UniformInfo::*;
         match &self {
@@ -112,7 +121,7 @@ impl<'a> UniformInfo<'a> {
 
 use glium::uniforms::*;
 pub enum UniformType<'a> {
-    BSUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    //BSUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     PbrUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
@@ -125,7 +134,7 @@ pub enum UniformType<'a> {
     SepConvUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     
 }
-
+/// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
 macro_rules! sample_mip_repeat {
     ($tex_name:expr) => {
         $tex_name.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
@@ -133,7 +142,7 @@ macro_rules! sample_mip_repeat {
         .wrap_function(glium::uniforms::SamplerWrapFunction::Repeat)
     }
 }
-
+/// Samples a texture with linear mag and minification and clamp wrapping
 macro_rules! sample_linear_clamp {
     ($tex_name:expr) => {
         $tex_name.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
@@ -159,6 +168,11 @@ macro_rules! load_shader_source {
     };
 }
 
+/// Loads the shader source for a shader that outputs to srgb
+/// If the output of this shader is stored in an sRGB framebuffer,
+/// OpenGL does not do the srgb conversion for us
+/// Basically has the effect of calling `glDisable(GL_FRAMEBUFFER_SRGB)`
+/// for this shader
 macro_rules! load_shader_srgb {
     ($facade:expr, $vertex_file:literal, $fragment_file:literal) => {
         glium::Program::new($facade,
@@ -218,6 +232,10 @@ impl ShaderManager {
         }
     }
 
+    /// Selects a shader to use based on `data`. Returns the selected shader,
+    /// the shader's draw parameters, and `data` converted to a uniform
+    /// Panics if `data` is missing required fields or if `data` does not match a 
+    /// shader
     pub fn use_shader<'b>(&'b self, data: &'b UniformInfo) 
         -> (&'b glium::Program, &'b glium::DrawParameters, UniformType<'b>)
     {

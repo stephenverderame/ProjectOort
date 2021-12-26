@@ -3,6 +3,9 @@ use crate::node;
 use crate::draw_traits;
 use crate::shader;
 
+/// An entity is a renderable geometry with a node in the
+/// scene transformation heirarchy and collision and physics
+/// behavior.
 pub struct Entity {
     pub transform: node::Node,
     geometry: model::Model,

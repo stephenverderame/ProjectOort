@@ -1,13 +1,10 @@
-use glium::Surface;
 use crate::draw_traits;
 use crate::shader;
-use crate::camera;
-use crate::node;
 use crate::render_target;
 use crate::render_pass::*;
 
-use cgmath::*;
-
+/// A Scene manages the scene parameters and
+/// strings together multiple render passes
 pub struct Scene {
     ibl_map: Option<glium::texture::Cubemap>,
 }
@@ -36,7 +33,7 @@ impl Scene {
         }
     }
 
-    pub fn render<S : glium::Surface, F : Fn(&mut S, &shader::SceneData)>
+    /*pub fn render<S : glium::Surface, F : Fn(&mut S, &shader::SceneData)>
     (&self, frame: &mut S, viewer: &dyn draw_traits::Viewer, aspect: f32, func: F)
     {
         let mats = self.get_scene_data(viewer, aspect);
@@ -52,9 +49,9 @@ impl Scene {
             func(fbo, &mats);
         });
         frame.read()
-    }
+    }*/
 
-    pub fn do_pass<'a, F>(&self, pass: &'a mut RenderPass, viewer: &dyn draw_traits::Viewer, 
+    pub fn render_pass<'a, F>(&self, pass: &'a mut RenderPass, viewer: &dyn draw_traits::Viewer, 
         aspect: f32, shader: &shader::ShaderManager, func: F)
         -> render_target::TextureType<'a> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)
     {

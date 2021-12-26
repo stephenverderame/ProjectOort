@@ -48,19 +48,27 @@ pub enum TextureType<'a> {
     ToDefaultFbo,
 }
 
+/// A RenderTarget is something that can be rendered to and produces a texture
 pub trait RenderTarget {
+    /// Draws to the render target by passing a framebuffer to `func`. Must be called before `read()`.
+    /// 
+    /// `viewer` - the viewer for this render. May or may not be passed verbatim to `func`
     fn draw(&mut self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer));
+    /// Reads from the render target. Must be called after `draw()`
     fn read(&mut self) -> TextureType;
 }
 
+/// A TextureProcessor transforms input textures into an output texture. It is basically
+/// a function on textures
 pub trait TextureProcessor {
     fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager) -> TextureType;
 }
 
+/// RenderTarget which renders to an MSAA color and depth buffer
 pub struct MsaaRenderTarget<'a> {
     fbo: framebuffer::SimpleFrameBuffer<'a>,
-    tex: Box<texture::Texture2dMultisample>,
-    depth_tex: Box<texture::DepthTexture2dMultisample>,
+    _tex: Box<texture::Texture2dMultisample>,
+    _depth_tex: Box<texture::DepthTexture2dMultisample>,
     out_fbo: framebuffer::SimpleFrameBuffer<'a>,
     out_tex: Box<texture::Texture2d>,
     width: u32,
@@ -69,20 +77,20 @@ pub struct MsaaRenderTarget<'a> {
 
 impl<'a> MsaaRenderTarget<'a> {
     pub fn new<F : glium::backend::Facade>(samples: u32, width: u32, height: u32, facade: &F) -> MsaaRenderTarget {
-        let depth_tex = Box::new(glium::texture::DepthTexture2dMultisample::empty(facade, width, height, samples).unwrap());
-        let tex = Box::new(glium::texture::Texture2dMultisample::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16F16,
+        let _depth_tex = Box::new(glium::texture::DepthTexture2dMultisample::empty(facade, width, height, samples).unwrap());
+        let _tex = Box::new(glium::texture::Texture2dMultisample::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16F16,
             glium::texture::MipmapsOption::NoMipmap, width, height, samples).unwrap());
         let out_tex = Box::new(glium::texture::Texture2d::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16F16,
             glium::texture::MipmapsOption::NoMipmap, width, height).unwrap());
-        let ms_tex = &*tex as *const glium::texture::Texture2dMultisample;
-        let rbo_ptr = &*depth_tex as *const glium::texture::DepthTexture2dMultisample;
+        let ms_tex = &*_tex as *const glium::texture::Texture2dMultisample;
+        let rbo_ptr = &*_depth_tex as *const glium::texture::DepthTexture2dMultisample;
         let out_ptr = &*out_tex as *const glium::texture::Texture2d;
         unsafe {
             MsaaRenderTarget {
                 fbo: glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(facade, 
                     &*ms_tex, &*rbo_ptr).unwrap(),
                 out_fbo: glium::framebuffer::SimpleFrameBuffer::new(facade, &*out_ptr).unwrap(),
-                tex, depth_tex, out_tex, width, height,
+                _tex, _depth_tex, out_tex, width, height,
             }
         }
     }
@@ -107,19 +115,26 @@ impl<'a> RenderTarget for MsaaRenderTarget<'a> {
     }
 }
 
+/// RenderTarget which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
 pub struct CubemapRenderTarget<'a, F : backend::Facade> {
     cubemap: texture::Cubemap,
     depth_buffer: framebuffer::DepthRenderBuffer,
-    size: u32,
+    _size: u32,
     view_dist: f32,
     view_pos: cgmath::Point3<f32>,
     facade: &'a F,
 }
 
 impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
+    /// Creates a new CubemapRenderTarget. The cubemap is a F16 RGB texture with no mipmapping
+    /// `view_dist` - the view distance for the viewer when rendering to a cubemap
+    /// 
+    /// `size` - the square side length of each texture face in the cubemap
+    /// 
+    /// `view_pos` - the position in the scene the cubemap is rendered from
     pub fn new(size: u32, view_dist: f32, view_pos: cgmath::Point3<f32>, facade: &'a F) -> CubemapRenderTarget<'a, F> {
         CubemapRenderTarget {
-            size, view_dist, view_pos,
+            _size: size, view_dist, view_pos,
             cubemap: glium::texture::Cubemap::empty_with_format(facade, 
                 glium::texture::UncompressedFloatFormat::F16F16F16,
                 glium::texture::MipmapsOption::NoMipmap, size).unwrap(),
@@ -129,6 +144,7 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
         }
     }
 
+    /// Gets an array of tuples of view target direction, CubeFace, and up vector
     fn get_target_face_up() 
         -> [(cgmath::Point3<f32>, glium::texture::CubeLayer, cgmath::Vector3<f32>); 6]
     {
@@ -141,7 +157,7 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
 }
 
 impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
-    fn draw(&mut self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) {
+    fn draw(&mut self, _: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) {
         use crate::camera::*;
         use crate::node;
         use cgmath::*;
@@ -172,6 +188,7 @@ impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
 
 }
 
+/// Texture processor which extracts bright parts of a texture for Bloom
 pub struct ExtractBrightProcessor<'a> {
     bright_color_tex: Box<glium::texture::Texture2d>,
     bright_color_fbo: framebuffer::SimpleFrameBuffer<'a>,
@@ -219,6 +236,7 @@ impl<'a> TextureProcessor for ExtractBrightProcessor<'a> {
     }
 }
 
+/// Texture processor which performs a separable convolution
 pub struct SepConvProcessor<'a> {
     ping_pong_tex: [Box<texture::Texture2d>; 2],
     ping_pong_fbo: [framebuffer::SimpleFrameBuffer<'a>; 2],
@@ -228,6 +246,8 @@ pub struct SepConvProcessor<'a> {
 }
 
 impl<'a> SepConvProcessor<'a> {
+    /// Requires `iterations >= 2` because a single convolution is broken up into two passes. So an odd number
+    /// for `iterations` performs a multiple of `1/2` convolutions
     pub fn new<F : backend::Facade>(width: u32, height: u32, iterations: usize, facade: &'a F) -> SepConvProcessor {
         use std::mem::MaybeUninit;
         let mut ping_pong_tex: [MaybeUninit<Box<texture::Texture2d>>; 2] = unsafe { MaybeUninit::uninit().assume_init() };
@@ -286,6 +306,7 @@ impl<'a> TextureProcessor for SepConvProcessor<'a> {
     }
 }
 
+/// A processor which additively blends together textures and renders them to a surface
 pub struct UiCompositeProcessor<S : Surface, F : Fn() -> S, G : Fn(S)> {
     vbo: VertexBuffer<Vertex>,
     ebo: IndexBuffer<u16>,
@@ -294,6 +315,10 @@ pub struct UiCompositeProcessor<S : Surface, F : Fn() -> S, G : Fn(S)> {
 }
 
 impl<S : Surface, F : Fn() -> S, G : Fn(S)> UiCompositeProcessor<S, F, G> {
+    /// `get_surface` - callable that returns the surface to render to. The surface is **not** cleared
+    /// 
+    /// `clean_surface` - callable that accepts the returned surface and performs any necessary cleanup
+    /// after drawing is finished
     pub fn new<Fac: backend::Facade>(facade: &Fac, get_surface: F, clean_surface: G) -> UiCompositeProcessor<S, F, G> {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
         UiCompositeProcessor { vbo, ebo, get_surface, clean_surface }
@@ -331,6 +356,7 @@ impl<S : Surface, F : Fn() -> S, G : Fn(S)> TextureProcessor for UiCompositeProc
     }
 }
 
+/// Texture processor which copies its input texture by performing a framebuffer blit
 pub struct CopyTextureProcessor<'a, F : backend::Facade> {
     facade: &'a F,
     width: u32,
@@ -340,6 +366,9 @@ pub struct CopyTextureProcessor<'a, F : backend::Facade> {
 }
 
 impl<'a, F : backend::Facade> CopyTextureProcessor<'a, F> {
+    /// `fmt` - the output texture format or `None` for F16 RGBA
+    /// 
+    /// `mipmap` - the output texture mipmapping or `None` for No mipmaps
     pub fn new(width: u32, height: u32, fmt: Option<texture::UncompressedFloatFormat>, 
         mipmap: Option<texture::MipmapsOption>, facade: &F) -> CopyTextureProcessor<F> 
     {
@@ -363,8 +392,8 @@ impl<'a, F : backend::Facade> CopyTextureProcessor<'a, F> {
 impl<'a, F : backend::Facade> TextureProcessor for CopyTextureProcessor<'a, F> {
     fn process(&mut self, source: Vec<&TextureType>, _: &shader::ShaderManager) -> TextureType {
         match source[0] {
-            TextureType::Tex2d(Own(x)) => panic!("Not implemented copy"),//TextureType::Tex2d(Own(x)),
-            TextureType::TexCube(Own(x)) => panic!("Not implemented copy"),//TextureType::TexCube(Own(x)),
+            TextureType::Tex2d(Own(_)) => panic!("Not implemented copy"),//TextureType::Tex2d(Own(x)),
+            TextureType::TexCube(Own(_)) => panic!("Not implemented copy"),//TextureType::TexCube(Own(x)),
             TextureType::ToDefaultFbo => TextureType::ToDefaultFbo,
             TextureType::Tex2d(Ref(x)) => {
                 let out = texture::Texture2d::empty_with_format(self.facade,
@@ -388,177 +417,3 @@ impl<'a, F : backend::Facade> TextureProcessor for CopyTextureProcessor<'a, F> {
         }
     }
 }
-
-/*
-pub struct RenderTarget<'a>{
-    fbo: Option<glium::framebuffer::SimpleFrameBuffer<'a>>,
-    depth_tex: Box<glium::texture::DepthTexture2dMultisample>,
-    // box for heap allocation to prevent dangling pointers
-    tex: Box<glium::texture::Texture2dMultisample>,
-    vbo: glium::VertexBuffer<Vertex>,
-    ebo: glium::IndexBuffer<u16>,
-    height: u32,
-    width: u32,
-    out_tex: Box<glium::texture::Texture2d>,
-    out_fbo: Option<glium::framebuffer::SimpleFrameBuffer<'a>>,
-    bright_color_tex: Box<glium::texture::Texture2d>,
-    bright_color_fbo: RefCell<glium::framebuffer::SimpleFrameBuffer<'a>>,
-    pong_tex: Box<glium::texture::Texture2d>,
-    pong_fbo: RefCell<glium::framebuffer::SimpleFrameBuffer<'a>>,
-}
-
-impl<'a> RenderTarget<'a> {
-    pub fn new<F : glium::backend::Facade>(samples: u32, width: u32, height: u32, facade: &F) -> RenderTarget {
-        let pong_tex = Box::new(glium::texture::Texture2d::empty_with_format(facade,
-            glium::texture::UncompressedFloatFormat::F16F16F16F16, glium::texture::MipmapsOption::NoMipmap,
-            width, height).unwrap());
-        unsafe {
-            let bright_color_ptr = &*bright_color_tex as *const glium::texture::Texture2d;
-            let bright_color_fbo = RefCell::new(glium::framebuffer::SimpleFrameBuffer::new(facade, &*bright_color_ptr).unwrap());
-            let pong_ptr = &*pong_tex as *const glium::texture::Texture2d;
-            let pong_fbo = RefCell::new(glium::framebuffer::SimpleFrameBuffer::new(facade, &*pong_ptr).unwrap());
-            RenderTarget {
-                fbo: None,
-                out_fbo: None,
-                depth_tex: Box::new(depth_tex),
-                tex: Box::new(tex),
-                vbo: glium::VertexBuffer::new(facade, &verts).unwrap(),
-                ebo: glium::IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &indices).unwrap(),
-                width: width,
-                height: height,
-                out_tex: Box::new(out_tex),
-                bright_color_fbo,
-                bright_color_tex,
-                pong_tex,
-                pong_fbo,
-
-            }
-
-        }
-    }
-    pub fn resize_and_clear<F : glium::backend::Facade>(&mut self, width: u32, height: u32, samples: u32, facade: &F) {
-        if self.fbo.is_some() {
-            self.fbo = None;
-            self.out_fbo = None;
-            self.depth_tex = Box::new(glium::texture::DepthTexture2dMultisample::empty(facade, width, height, samples).unwrap());
-            self.tex = Box::new(glium::texture::Texture2dMultisample::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16F16,
-                glium::texture::MipmapsOption::NoMipmap, width, height, samples).unwrap());
-            self.out_tex = Box::new(glium::texture::Texture2d::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16F16,
-                glium::texture::MipmapsOption::NoMipmap, width, height).unwrap());
-            println!("Finish resizing");
-        }
-    }
-
-    pub fn draw<F : glium::backend::Facade>(&mut self, facade: &F) -> &mut glium::framebuffer::SimpleFrameBuffer<'a> {
-        if self.fbo.is_none() {
-            let ms_tex = &*self.tex as *const glium::texture::Texture2dMultisample;
-            let rbo_ptr = &*self.depth_tex as *const glium::texture::DepthTexture2dMultisample;
-            unsafe {
-                self.fbo = Some(glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(facade, 
-                    &*ms_tex, &*rbo_ptr).unwrap());
-            }
-        }
-        if self.out_fbo.is_none() {
-            unsafe {
-                let tex_ptr = &*self.out_tex as *const glium::texture::Texture2d;
-                self.out_fbo = Some(glium::framebuffer::SimpleFrameBuffer::new(facade, &*tex_ptr).unwrap());
-            }
-        }
-        self.fbo.as_mut().unwrap()
-    }
-
-    
-    fn extract_bright_color(&self, shader: &shader::ShaderManager) {
-        let data = shader::UniformInfo::ExtractBrightInfo(shader::ExtractBrightData {
-            tex: &self.out_tex
-        });
-        let (program, params, uniform) = shader.use_shader(&data);
-        match uniform {
-            shader::UniformType::ExtractBrightUniform(uniform) => {
-                let fbo = &mut *self.bright_color_fbo.borrow_mut();
-                fbo.clear_color(0., 0., 0., 1.);
-                fbo.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap()
-            },
-            _ => panic!("Invalid uniform type returned for RenderTarget"),
-        }
-    }
-
-    fn blur_pass(&self, shader: &shader::ShaderManager, pass_count: i32) 
-    {
-        let fbo : &RefCell<glium::framebuffer::SimpleFrameBuffer>;
-        let tex : &glium::texture::Texture2d;
-        let horizontal_pass : bool;
-        match pass_count {
-            x if x % 2 == 0 => {
-                fbo = &self.pong_fbo;
-                tex = &self.bright_color_tex;
-                horizontal_pass = true;
-            },
-            _ => {
-                fbo = &self.bright_color_fbo;
-                tex = &self.pong_tex;
-                horizontal_pass = false;
-            }
-        };
-        let data = shader::UniformInfo::SepConvInfo(shader::SepConvData {
-            horizontal_pass, tex
-        });
-        let (program, params, uniform) = shader.use_shader(&data);
-        match uniform {
-            shader::UniformType::SepConvUniform(uniform) => {
-                fbo.borrow_mut().draw(&self.vbo, &self.ebo, program, &uniform, params).unwrap();
-            },
-            _ => panic!("Invalid uniform type returned for RenderTarget"),
-        }
-    }
-
-    fn gen_bloom_tex<'b>(&'b self, shader: &shader::ShaderManager) {
-        self.extract_bright_color(shader);
-        let passes = 10;
-        for i in 0 .. passes {
-            self.blur_pass(shader, i);
-        }
-        if passes % 2 == 1 {
-            // ends on even number (last rendered to pong_fbo)
-            let bt = glium::BlitTarget {
-                left: 0,
-                bottom: 0,
-                width: self.height as i32,
-                height: self.width as i32,
-            };
-            self.pong_fbo.borrow().blit_whole_color_to(&*self.bright_color_fbo.borrow(), 
-                &bt, glium::uniforms::MagnifySamplerFilter::Linear);
-
-        }
-    }
-    
-}
-
-impl<'a> draw_traits::Drawable for RenderTarget<'a> {
-    fn render<S>(&self, frame: &mut S, _mats: &shader::SceneData, shader: &shader::ShaderManager)
-        where S : glium::Surface
-    {
-
-        let dst_target = glium::BlitTarget {
-            left: 0,
-            bottom: 0,
-            width: self.width as i32,
-            height: self.height as i32,
-        };
-        self.fbo.as_ref().unwrap().blit_whole_color_to(self.out_fbo.as_ref().unwrap(), 
-            &dst_target, glium::uniforms::MagnifySamplerFilter::Linear);
-        self.gen_bloom_tex(shader);
-        let args = shader::UniformInfo::UiInfo(shader::UiData {
-            diffuse: &self.out_tex,
-            do_blend: true,
-            blend_tex: Some(&self.bright_color_tex),
-            model: cgmath::Matrix4::from_scale(1f32).into(),
-        });
-        let (program, params, uniform) = shader.use_shader(&args);
-        match uniform {
-            shader::UniformType::UiUniform(uniform) =>
-                frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
-            _ => panic!("Invalid uniform type returned for RenderTarget"),
-        }
-    }
-}*/

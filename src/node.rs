@@ -3,12 +3,14 @@ use std::rc::Rc;
 use cgmath::*;
 use std::cell::RefCell;
 
+/// Rotation matrix or quaternion
 #[derive(Clone)]
 pub enum Rot {
     Quat(Quaternion<f32>),
     Mat(Matrix4<f32>),
 }
 
+/// Converts `rot` to matrix form
 fn rot_to_mat(rot: &Rot) -> Matrix4<f32> {
     match rot {
         Rot::Quat(q) => Matrix4::<f32>::from(q.clone()),
@@ -16,6 +18,13 @@ fn rot_to_mat(rot: &Rot) -> Matrix4<f32> {
     }
 }
 
+/// A node in a transformation heirarchy with a position, rotation, scale, and anchor point
+/// that can have a parent. The node represents the transformation from the local coordinate space to 
+/// the parent's coordinate space. A node without an explicit parent is implicitly the child of the 
+/// root scene node.
+/// 
+/// Conversion of a Node into a `Matrix4<f32>` returns the transformation matrix from
+/// this node's local space to world space. 
 #[derive(Clone)]
 pub struct Node {
     pub pos: cgmath::Point3<f32>,
@@ -26,6 +35,15 @@ pub struct Node {
 }
 
 impl Node {
+    /// Creates a new scene node
+    /// # Arguments
+    /// `trans` - The position of the node or `None` for `(0, 0, 0)`
+    /// 
+    /// `rot` - rotation quaternion or `None` for identity
+    /// 
+    /// `scale` - node scale or `None` for uniform scale of `1`
+    /// 
+    /// `anchor` - the center of rotation/scaling or `None` for `(0, 0, 0)`
     pub fn new(trans: Option<Point3<f32>>, rot: Option<Quaternion<f32>>, 
         scale: Option<f32>, anchor: Option<Point3<f32>>) -> Node 
     {

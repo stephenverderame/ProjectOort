@@ -9,6 +9,7 @@ use std::cell::RefCell;
 
 use cgmath::*;
 
+/// The player is the combination of the player's entity and the player's camera
 pub struct Player {
     root: Rc<RefCell<Node>>,
     cam: Node,

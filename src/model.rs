@@ -180,18 +180,18 @@ impl Model {
 
     pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
         for mesh in &self.mesh_geom {
-            let mat_name : String;
+            let _mat_name : String;
             let data = match &mesh.material {
                 Some(mat) => {
-                    mat_name = mat.name.clone();
+                    _mat_name = mat.name.clone();
                     mat_to_uniform_data(mat, mats, model)
                 },
                 _ => panic!("No material"),
             };
             let (shader, params, uniform) = manager.use_shader(&data);
             match uniform {
-                shader::UniformType::BSUniform(uniform) => 
-                    wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
+               //shader::UniformType::BSUniform(uniform) => 
+               //     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::PbrUniform(uniform) => 
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 
