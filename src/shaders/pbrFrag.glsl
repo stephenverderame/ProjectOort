@@ -13,6 +13,10 @@ uniform sampler2D roughness_map;
 uniform sampler2D emission_map;
 
 uniform samplerCube irradiance_map;
+uniform samplerCube prefilter_map;
+uniform sampler2D brdf_lut;
+
+const float max_reflection_mips = 4.0; // we use 5 mip maps (0 to 4)
 
 vec3 light_positions[4] = vec3[4](
     vec3(10, 10, 0),
@@ -92,7 +96,8 @@ vec3 getNormal() {
     return normalize(TBN * tangentNormal);
 }
 
-vec3 radianceIntegral(vec3 norm, vec3 view_dir, vec3 f0, float roughness, 
+/// Computes the direct radiance from an array of light sources
+vec3 directRadiance(vec3 norm, vec3 view_dir, vec3 f0, float roughness, 
     float metallic, vec3 albedo) 
 {
     vec3 radiance_out = vec3(0);
@@ -140,21 +145,26 @@ void main() {
 
     vec3 norm = normalize(getNormal());
     vec3 view_dir = normalize(cam_pos - frag_pos);
+    vec3 ref = reflect(-view_dir, norm);
+
+    vec3 prefilter_color = textureLod(prefilter_map, ref, roughness * max_reflection_mips).rgb;
 
     vec3 f0 = getF0(albedo, metallic);
 
-    vec3 radiance_out = radianceIntegral(norm, view_dir, f0, roughness, 
+    vec3 direct_radiance = directRadiance(norm, view_dir, f0, roughness, 
         metallic, albedo);
 
-    vec3 ks = fresnelSchlick(f0, view_dir, norm);
+    vec3 ks = fresnelSchlickRoughness(f0, view_dir, norm, roughness);
+    vec2 env_brdf = texture(brdf_lut, vec2(max(dot(norm, view_dir), 0.0), roughness)).rg;
     vec3 kd = 1.0 - ks;
     kd *= 1.0 - metallic;
 
-    vec3 irradiance = texture(irradiance_map, norm).rgb * 5;
+    vec3 irradiance = texture(irradiance_map, norm).rgb;
     // irradiance map is precomputed integral of light intensity over hemisphere
     vec3 diffuse = irradiance * albedo;
-    vec3 ambient = kd * diffuse * vec3(0.8); //* ao (multiply by factor since we don't have ao map)
-    vec3 color = ambient + radiance_out + emission * 4;
+    vec3 specular = prefilter_color * (ks * env_brdf.x + env_brdf.y);
+    vec3 ambient = (kd * diffuse + specular) * vec3(0.8); //* ao (multiply by factor since we don't have ao map)
+    vec3 color = ambient + direct_radiance + emission;
 
     frag_color = vec4(color, 1.0);
 }

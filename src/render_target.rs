@@ -389,6 +389,26 @@ impl<S : Surface, F : Fn() -> S, G : Fn(S)> UiCompositeProcessor<S, F, G> {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
         UiCompositeProcessor { vbo, ebo, get_surface, clean_surface }
     }
+
+    fn render<'a>(&self, tex_a: &Ownership<'a, texture::Texture2d>, 
+        tex_b: Option<&Ownership<'a, texture::Texture2d>>, shader: &shader::ShaderManager) 
+    {
+        let diffuse = tex_a.to_ref();
+        let blend_tex = tex_b.map(|tex| tex.to_ref());
+        let args = shader::UniformInfo::UiInfo(shader::UiData {
+            diffuse, do_blend: blend_tex.is_some(), blend_tex,
+            model: cgmath::Matrix4::from_scale(1f32).into(),
+        });
+        let (program, params, uniform) = shader.use_shader(&args);
+        match uniform {
+            shader::UniformType::UiUniform(uniform) => {
+                let mut surface = (self.get_surface)();
+                surface.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap();
+                (self.clean_surface)(surface);
+            },
+            _ => panic!("Invalid uniform type returned for RenderTarget"),
+        };
+    }
 }
 
 impl<S : Surface, F : Fn() -> S, G : Fn(S)> TextureProcessor for UiCompositeProcessor<S, F, G> {
@@ -396,25 +416,17 @@ impl<S : Surface, F : Fn() -> S, G : Fn(S)> TextureProcessor for UiCompositeProc
         if source.len() == 2 {
             match (source[0], source[1]) {
                 (TextureType::Tex2d(diffuse), TextureType::Tex2d(blend)) => {
-                    let (diffuse, blend) = (diffuse.to_ref(), blend.to_ref());
-                    let args = shader::UniformInfo::UiInfo(shader::UiData {
-                        diffuse,
-                        do_blend: true,
-                        blend_tex: Some(blend),
-                        model: cgmath::Matrix4::from_scale(1f32).into(),
-                    });
-                    let (program, params, uniform) = shader.use_shader(&args);
-                    match uniform {
-                        shader::UniformType::UiUniform(uniform) => {
-                            let mut surface = (self.get_surface)();
-                            surface.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap();
-                            (self.clean_surface)(surface);
-                        },
-                        _ => panic!("Invalid uniform type returned for RenderTarget"),
-                    };
+                    self.render(diffuse, Some(blend), shader);
                     TextureType::ToDefaultFbo
                 },
                 _ => panic!("Invalid texture type passed to texture processor")
+            }
+        } else if source.len() == 1 {
+            if let TextureType::Tex2d(diffuse) = source[0] {
+                self.render(diffuse, None, shader);
+                TextureType::ToDefaultFbo
+            } else {
+                panic!("Invalid texture type passed to ui composer")
             }
         } else {
             panic!("Invalid number of source textures")
@@ -481,5 +493,42 @@ impl<'a, F : backend::Facade> TextureProcessor for CopyTextureProcessor<'a, F> {
                 TextureType::TexCube(Own(out))
             }
         }
+    }
+}
+
+/// Texture processor which generates a BRDF lookup texture
+/// Can assume that this processor ignores its inputs
+pub struct GenLutProcessor<'a, F : backend::Facade> {
+    vbo: VertexBuffer<Vertex>,
+    ebo: IndexBuffer<u16>,
+    width: u32, height: u32,
+    facade: &'a F,
+}
+
+impl<'a, F : backend::Facade> GenLutProcessor<'a, F> {
+    pub fn new(facade: &'a F, width: u32, height: u32) -> GenLutProcessor<'a, F> {
+        let (vbo, ebo) = get_rect_vbo_ebo(facade);
+        GenLutProcessor {
+            ebo, vbo, width, height, facade
+        }
+    }
+}
+
+impl<'a, F : backend::Facade> TextureProcessor for GenLutProcessor<'a, F> {
+    fn process(&mut self, _: Vec<&TextureType>, shader: &shader::ShaderManager) -> TextureType {
+        let tex = texture::Texture2d::empty_with_format(self.facade,
+            texture::UncompressedFloatFormat::F16F16, texture::MipmapsOption::NoMipmap,
+            self.width, self.height).unwrap();
+        let rbo = framebuffer::DepthRenderBuffer::new(self.facade, texture::DepthFormat::I24,
+            self.width, self.height).unwrap();
+        let mut fbo = framebuffer::SimpleFrameBuffer::with_depth_buffer(self.facade, &tex, &rbo).unwrap();
+        fbo.clear_color_and_depth((0., 0., 0., 0.), 1.);
+        let (program, params, uniform) = shader.use_shader(&shader::UniformInfo::GenLutInfo);
+        match uniform {
+            shader::UniformType::BrdfLutUniform(uniform) => 
+                fbo.draw(&self.vbo, &self.ebo, program, &uniform, params).unwrap(),
+            _ => panic!("Gen lut got unexepected uniform type")
+        };
+        TextureType::Tex2d(Own(tex))
     }
 }

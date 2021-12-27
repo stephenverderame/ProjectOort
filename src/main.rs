@@ -59,7 +59,7 @@ fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::Sh
 }
 
 fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::Skybox>>, size: u32, 
-    shader_manager: &shader::ShaderManager, facade: &F) -> glium::texture::Cubemap 
+    shader_manager: &shader::ShaderManager, facade: &F) -> (glium::texture::Cubemap, glium::texture::Texture2d)
 {
     let cam = camera::PerspectiveCamera::default(1.);
     let mip_levels = 5;
@@ -74,8 +74,11 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
         *iterations.borrow_mut() = its + 1;
     });
     skybox.borrow_mut().set_mip_progress(None);
-    match res {
-        TextureType::TexCube(Ownership::Own(x)) => x,
+    let mut tp = render_target::GenLutProcessor::new(facade, 512, 512);
+    let brdf = tp.process(Vec::<&TextureType>::new(), shader_manager);
+    match (res, brdf) {
+        (TextureType::TexCube(Ownership::Own(x)), 
+            TextureType::Tex2d(Ownership::Own(y))) => (x, y),
         _ => panic!("Unexpected return from read"),
     }
 }
@@ -101,11 +104,13 @@ fn main() {
     let mut theta = 0.;
     let (sky_cbo, sky_hdr_cbo) = gen_skybox(1024, &shader_manager, &wnd_ctx);
     let main_skybox = Rc::new(RefCell::new(skybox::Skybox::new(skybox::SkyboxTex::Cube(sky_cbo), &wnd_ctx)));
-    let pre_filter = gen_prefilter_hdr_env(main_skybox.clone(), 128, &shader_manager, &wnd_ctx);
+    let (pre_filter, brdf_lut) = gen_prefilter_hdr_env(main_skybox.clone(), 128, &shader_manager, &wnd_ctx);
 
     //let main_skybox = RefCell::new(skybox::Skybox::new(skybox::SkyboxTex::Cube(pre_filter), &wnd_ctx));
     let mut main_scene = scene::Scene::new();
-    main_scene.set_ibl_map(sky_hdr_cbo);
+    main_scene.set_ibl_maps(shader::PbrMaps {
+        diffuse_ibl: sky_hdr_cbo, spec_ibl: pre_filter, brdf_lut
+    });
 
     let mut msaa = render_target::MsaaRenderTarget::new(8, 1920, 1080, &wnd_ctx);
     let mut eb = render_target::ExtractBrightProcessor::new(&wnd_ctx, 1920, 1080);

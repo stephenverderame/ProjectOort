@@ -6,13 +6,13 @@ use crate::render_pass::*;
 /// A Scene manages the scene parameters and
 /// strings together multiple render passes
 pub struct Scene {
-    ibl_map: Option<glium::texture::Cubemap>,
+    ibl_maps: Option<shader::PbrMaps>,
 }
 
 impl Scene {
     pub fn new() -> Scene {
         Scene {
-            ibl_map: None
+            ibl_maps: None
         }
     }
 
@@ -26,10 +26,7 @@ impl Scene {
             view: view.into(),
             proj: proj.into(),
             cam_pos: viewer.cam_pos().into(),
-            ibl_map: match &self.ibl_map {
-                Some(map) => Some(&map),
-                _ => None,
-            },
+            ibl_maps: self.ibl_maps.as_ref(),
         }
     }
 
@@ -61,7 +58,7 @@ impl Scene {
         })
     }
 
-    pub fn set_ibl_map(&mut self, map: glium::texture::Cubemap) {
-        self.ibl_map = Some(map);
+    pub fn set_ibl_maps(&mut self, maps: shader::PbrMaps) {
+        self.ibl_maps = Some(maps);
     }
 }

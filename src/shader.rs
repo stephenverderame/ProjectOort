@@ -10,6 +10,7 @@ enum ShaderType {
     BlurShader,
     BloomShader,
     PrefilterHdrShader,
+    GenLutShader,
 }
 
 /// Converts a shader type to an integer
@@ -24,6 +25,7 @@ fn shader_type_to_int(typ: &ShaderType) -> i32 {
         &ShaderType::BloomShader => 5,
         &ShaderType::BlurShader => 6,
         &ShaderType::PrefilterHdrShader => 7,
+        &ShaderType::GenLutShader => 8,
     }
 }
 
@@ -48,15 +50,21 @@ pub struct ShaderManager {
     empty_2d: glium::texture::Texture2d,
 }
 
+/// Precomputed integrals for PBR environment maps
+pub struct PbrMaps {
+    pub diffuse_ibl: glium::texture::Cubemap,
+    pub spec_ibl: glium::texture::Cubemap,
+    pub brdf_lut: glium::texture::Texture2d,
+}
+
 /// Stores scene-wide information such as view and projection matrices
 /// and IBL images
-#[derive(Clone)]
 pub struct SceneData<'a> {
     pub viewproj: [[f32; 4]; 4],
     pub view: [[f32; 4]; 4],
     pub proj: [[f32; 4]; 4],
     pub cam_pos: [f32; 3],
-    pub ibl_map: Option<&'a glium::texture::Cubemap>,
+    pub ibl_maps: Option<&'a PbrMaps>,
 }
 /// Shader inputs for PBR shader
 pub struct PBRData<'a> {
@@ -109,6 +117,7 @@ pub enum UniformInfo<'a> {
     SepConvInfo(SepConvData<'a>),
     ExtractBrightInfo(ExtractBrightData<'a>),
     PrefilterHdrEnvInfo(PrefilterHdrEnvData<'a>),
+    GenLutInfo,
 
 }
 
@@ -125,6 +134,7 @@ impl<'a> UniformInfo<'a> {
             SepConvInfo(_) => ShaderType::BlurShader,
             ExtractBrightInfo(_) => ShaderType::BloomShader,
             PrefilterHdrEnvInfo(_) => ShaderType::PrefilterHdrShader,
+            GenLutInfo => ShaderType::GenLutShader,
         }
     }
 }
@@ -133,10 +143,11 @@ use glium::uniforms::*;
 pub enum UniformType<'a> {
     //BSUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    PbrUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
+    PbrUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, 
+        Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
-        UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
+        UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     ExtractBrightUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
     UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
@@ -144,6 +155,7 @@ pub enum UniformType<'a> {
     SepConvUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     PrefilterHdrEnvUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], 
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
+    BrdfLutUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -230,6 +242,8 @@ impl ShaderManager {
             "shaders/hdrVert.glsl", "shaders/blurFrag.glsl").unwrap();
         let prefilter_shader = load_shader_source!(facade,
             "shaders/skyVert.glsl", "shaders/prefilterEnvFrag.glsl").unwrap();
+        let brdf_lut_shader = load_shader_source!(facade,
+            "shaders/hdrVert.glsl", "shaders/specLutFrag.glsl").unwrap();
         let ship_params = glium::DrawParameters::<'static> {
             depth: glium::Depth {
                 test: glium::draw_parameters::DepthTest::IfLess,
@@ -248,6 +262,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::BlurShader, (blur_shader, Default::default()));
         shaders.insert(ShaderType::BloomShader, (bloom_shader, Default::default()));
         shaders.insert(ShaderType::PrefilterHdrShader, (prefilter_shader, Default::default()));
+        shaders.insert(ShaderType::GenLutShader, (brdf_lut_shader, Default::default()));
         ShaderManager {
             shaders: shaders,
             empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
@@ -290,7 +305,9 @@ impl ShaderManager {
                 metallic_map: sample_mip_repeat!(metallic_map.unwrap()),
                 cam_pos: scene_data.cam_pos,
                 emission_map: sample_mip_repeat!(emission_map.unwrap_or(&self.empty_srgb)),
-                irradiance_map: sample_linear_clamp!(scene_data.ibl_map.unwrap()),
+                irradiance_map: sample_linear_clamp!(scene_data.ibl_maps.unwrap().diffuse_ibl),
+                prefilter_map: sample_mip_clamp!(scene_data.ibl_maps.unwrap().spec_ibl),
+                brdf_lut: sample_linear_clamp!(scene_data.ibl_maps.unwrap().brdf_lut),
             }),
             (ShaderType::UiShader, UiInfo(UiData {model, diffuse, do_blend, blend_tex })) => UniformType::UiUniform(glium::uniform! {
                 model: *model,
@@ -314,6 +331,9 @@ impl ShaderManager {
                 proj: scene_data.proj,
                 env_map: sample_linear_clamp!(env_map),
                 roughness: *roughness,
+            }),
+            (ShaderType::GenLutShader, _) => UniformType::BrdfLutUniform(glium::uniform! {
+                model: cgmath::Matrix4::from_scale(1f32).into(),
             }),
             (_, _) => panic!("Invalid shader/shader data combination"),
         };

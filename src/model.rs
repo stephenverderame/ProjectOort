@@ -215,7 +215,8 @@ impl Model {
                 shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 
                  | shader::UniformType::UiUniform(_) | shader::UniformType::SepConvUniform(_) 
                  | shader::UniformType::ExtractBrightUniform(_) 
-                 | shader::UniformType::PrefilterHdrEnvUniform(_) => 
+                 | shader::UniformType::PrefilterHdrEnvUniform(_)
+                 | shader::UniformType::BrdfLutUniform(_) => 
                     panic!("Model get invalid uniform type"),
             }.unwrap()
         }
