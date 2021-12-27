@@ -14,6 +14,7 @@ pub struct Vertex {
 
 glium::implement_vertex!(Vertex, pos, normal, tex_coords);
 
+/// A model is geometry loaded from the filesystem
 pub struct Model {
     mesh_geom: Vec<MMesh>,
 
@@ -24,6 +25,7 @@ struct PBRData {
     metalness_tex: glium::texture::Texture2d,
 }
 
+/// Material data for a mesh
 struct MMaterial {
     diffuse_tex: glium::texture::SrgbTexture2d,
     name: String,
@@ -33,6 +35,7 @@ struct MMaterial {
     
 }
 
+/// A Mesh is a part of a model with its own vao and material
 struct MMesh {
     verts: glium::VertexBuffer<Vertex>,
     indices: glium::IndexBuffer<u32>,
@@ -40,6 +43,7 @@ struct MMesh {
 
 }
 
+/// Gets the vertices and indices from a TOBJ mesh
 fn get_mesh_data(mesh: &Mesh) -> (Vec<Vertex>, Vec<u32>) {
     let mut verts = Vec::<Vertex>::new();
     let indices = mesh.indices.clone();
@@ -59,6 +63,13 @@ fn get_mesh_data(mesh: &Mesh) -> (Vec<Vertex>, Vec<u32>) {
     (verts, indices)
 }
 
+/// Reads pbr textures from an externam file names `[mat_name]-pbr.yml` that resides in
+/// directory `dir`
+/// 
+/// Configuration information in this file must be specified in `key: value` pairs with each
+/// key being on a separate line
+/// 
+/// Returns the map of key value pairs as strings
 fn get_pbr_data(dir: &str, mat_name: &str) -> Option<BTreeMap<String, String>> {
     match std::fs::File::open(format!("{}{}-pbr.yml", dir, mat_name)) {
         Ok(file) => {
@@ -76,6 +87,8 @@ fn get_pbr_data(dir: &str, mat_name: &str) -> Option<BTreeMap<String, String>> {
     }
 }
 
+/// Loads the pbr textures for the material with name `mat_name` which has a home
+/// directory of `dir`
 fn get_pbr_textures<F>(dir: &str, mat_name: &str, facade: &F) 
     -> Option<PBRData> where F : glium::backend::Facade 
 {
@@ -92,6 +105,8 @@ fn get_pbr_textures<F>(dir: &str, mat_name: &str, facade: &F)
     }
 }
 
+/// Creates an `MMaterial` from a TOBJ `Material` and loads extra data
+/// from other files, if any exists
 fn get_material_data<F>(dir: &str, mat: &Material, facade: &F)
     -> MMaterial where F : glium::backend::Facade
 {
@@ -123,6 +138,7 @@ fn get_material_or_none<F>(dir: &str, mesh: &Mesh, mats: &Vec<Material>, facade:
     }
 }
 
+/// Converts a material to its relevant UniformType based on what material information is present
 fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::SceneData, 
     model: [[f32; 4]; 4]) -> shader::UniformInfo<'a>
 {
@@ -153,6 +169,8 @@ fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::SceneData,
 }
 
 impl Model {
+    /// Loads a model from `file`. If any extra data exists for the model, it must reside in the same directory
+    /// as the corresponding `.mtl` file for the mesh
     pub fn load<F>(file: &str, facade: &F) -> Model where F : glium::backend::Facade {
         let (models, materials) = load_obj(file, &LoadOptions {
             triangulate: true,
@@ -196,7 +214,8 @@ impl Model {
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 
                  | shader::UniformType::UiUniform(_) | shader::UniformType::SepConvUniform(_) 
-                 | shader::UniformType::ExtractBrightUniform(_) => 
+                 | shader::UniformType::ExtractBrightUniform(_) 
+                 | shader::UniformType::PrefilterHdrEnvUniform(_) => 
                     panic!("Model get invalid uniform type"),
             }.unwrap()
         }

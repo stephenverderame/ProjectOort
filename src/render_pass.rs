@@ -133,8 +133,7 @@ impl<'a> RenderPass<'a> {
         let mut saved_textures = Vec::<TextureType>::new();
         let mut registers = HashMap::<u16, Vec<usize>>::new();
         let mut final_out : Option<usize>;
-        self.target.draw(viewer, render_func);
-        saved_textures.push(self.target.read());
+        saved_textures.push(self.target.draw(viewer, render_func));
         final_out = RenderPass::save_stage_out(
             &mut registers, saved_textures.len() - 1, 0, &self.pipeline);
         for node in &self.topo_order {

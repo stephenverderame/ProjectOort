@@ -53,9 +53,10 @@ pub trait RenderTarget {
     /// Draws to the render target by passing a framebuffer to `func`. Must be called before `read()`.
     /// 
     /// `viewer` - the viewer for this render. May or may not be passed verbatim to `func`
-    fn draw(&mut self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer));
-    /// Reads from the render target. Must be called after `draw()`
-    fn read(&mut self) -> TextureType;
+    /// 
+    /// Returns the texture output of rendering to this render target
+    fn draw(&mut self, viewer: &dyn Viewer, 
+        func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) -> TextureType;
 }
 
 /// A TextureProcessor transforms input textures into an output texture. It is basically
@@ -98,11 +99,8 @@ impl<'a> MsaaRenderTarget<'a> {
 }
 
 impl<'a> RenderTarget for MsaaRenderTarget<'a> {
-    fn draw(&mut self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) {
-        func(&mut self.fbo, viewer)
-    }
-
-    fn read(&mut self) -> TextureType {
+    fn draw(&mut self, viewer: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) -> TextureType {
+        func(&mut self.fbo, viewer);
         let dst_target = glium::BlitTarget {
             left: 0,
             bottom: 0,
@@ -114,33 +112,18 @@ impl<'a> RenderTarget for MsaaRenderTarget<'a> {
         TextureType::Tex2d(Ref(&self.out_tex))
     }
 }
-
-/// RenderTarget which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
-pub struct CubemapRenderTarget<'a, F : backend::Facade> {
-    cubemap: texture::Cubemap,
-    depth_buffer: framebuffer::DepthRenderBuffer,
-    _size: u32,
+/// Helper struct for render targets rendering to a cubemap with perspective
+struct CubemapRenderBase {
     view_dist: f32,
     view_pos: cgmath::Point3<f32>,
-    facade: &'a F,
 }
 
-impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
-    /// Creates a new CubemapRenderTarget. The cubemap is a F16 RGB texture with no mipmapping
-    /// `view_dist` - the view distance for the viewer when rendering to a cubemap
-    /// 
-    /// `size` - the square side length of each texture face in the cubemap
-    /// 
-    /// `view_pos` - the position in the scene the cubemap is rendered from
-    pub fn new(size: u32, view_dist: f32, view_pos: cgmath::Point3<f32>, facade: &'a F) -> CubemapRenderTarget<'a, F> {
-        CubemapRenderTarget {
-            _size: size, view_dist, view_pos,
-            cubemap: glium::texture::Cubemap::empty_with_format(facade, 
-                glium::texture::UncompressedFloatFormat::F16F16F16,
-                glium::texture::MipmapsOption::NoMipmap, size).unwrap(),
-            depth_buffer: glium::framebuffer::DepthRenderBuffer::new(facade, 
-                glium::texture::DepthFormat::F32, size, size).unwrap(),
-            facade,
+impl CubemapRenderBase {
+    fn new<F : backend::Facade>(view_dist: f32, view_pos: cgmath::Point3<f32>, size: u32,
+        facade: &F) -> CubemapRenderBase
+    {
+        CubemapRenderBase {
+            view_dist, view_pos,
         }
     }
 
@@ -154,10 +137,11 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
             (point3(0., 1., 0.), PositiveY, vec3(0., 0., 1.)), (point3(0., -1., 0.), NegativeY, vec3(0., 0., -1.)),
             (point3(0., 0., 1.), PositiveZ, vec3(0., -1., 0.)), (point3(0., 0., -1.), NegativeZ, vec3(0., -1., 0.))]
     }
-}
 
-impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
-    fn draw(&mut self, _: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) {
+    /// Repeatedly calls `func` for each face of the cubemap
+    /// 
+    /// `func` - callable to render a single face of a cubemap. Passed a cube face and camera
+    fn draw(&self, func: &dyn Fn(texture::CubeLayer, &dyn Viewer)) {
         use crate::camera::*;
         use crate::node;
         use cgmath::*;
@@ -170,20 +154,102 @@ impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
             far: self.view_dist,
             up: cgmath::vec3(0., 1., 0.),
         };
-        let target_faces = CubemapRenderTarget::<'a, F>::get_target_face_up();
+        let target_faces = Self::get_target_face_up();
         for (target, face, up) in target_faces {
             let target : (f32, f32, f32) = (target.to_vec() + cam.cam.pos.to_vec()).into();
             cam.target = std::convert::From::from(target);
             cam.up = up;
-            let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(self.facade, 
-                self.cubemap.main_level().image(face), self.depth_buffer.to_depth_attachment()).unwrap();
-            fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
-            func(&mut fbo, &cam);
+            func(face, &cam);
         }
     }
+}
 
-    fn read(&mut self) -> TextureType {
-        TextureType::TexCube(Ref(&self.cubemap))
+/// RenderTarget which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
+pub struct CubemapRenderTarget<'a, F : backend::Facade> {
+    cubemap: CubemapRenderBase,
+    cbo_tex: texture::Cubemap,
+    depth_buffer: framebuffer::DepthRenderBuffer,
+    _size: u32,
+    facade: &'a F,
+}
+
+impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
+    /// Creates a new CubemapRenderTarget. The cubemap is a F16 RGB texture with no mipmapping
+    /// `view_dist` - the view distance for the viewer when rendering to a cubemap
+    /// 
+    /// `size` - the square side length of each texture face in the cubemap
+    /// 
+    /// `view_pos` - the position in the scene the cubemap is rendered from
+    pub fn new(size: u32, view_dist: f32, view_pos: cgmath::Point3<f32>, facade: &'a F) -> CubemapRenderTarget<'a, F> {
+        CubemapRenderTarget {
+            _size: size, 
+            cubemap: CubemapRenderBase::new(view_dist, view_pos, size, facade),
+            depth_buffer: glium::framebuffer::DepthRenderBuffer::new(facade, 
+                glium::texture::DepthFormat::F32, size, size).unwrap(),
+            facade,
+            cbo_tex: texture::Cubemap::empty_with_format(facade, texture::UncompressedFloatFormat::F16F16F16,
+                texture::MipmapsOption::NoMipmap, size).unwrap(),
+        }
+    }
+}
+
+impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
+    fn draw(&mut self, _: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) -> TextureType {
+        self.cubemap.draw(&|face, cam| {
+            let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(self.facade, 
+                self.cbo_tex.main_level().image(face), self.depth_buffer.to_depth_attachment()).unwrap();
+            fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
+            func(&mut fbo, cam);
+        });
+        TextureType::TexCube(Ref(&self.cbo_tex))
+    }
+
+}
+
+/// RenderTarget which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
+pub struct MipCubemapRenderTarget<'a, F : backend::Facade> {
+    cubemap: CubemapRenderBase,
+    mip_levels: u32,
+    facade: &'a F,
+    size: u32,
+    cbo_tex: Option<texture::Cubemap>,
+}
+
+impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
+    /// Creates a new CubemapRenderTarget. The cubemap is a F16 RGB texture with no mipmapping
+    /// `view_dist` - the view distance for the viewer when rendering to a cubemap
+    /// 
+    /// `size` - the square side length of each texture face in the cubemap
+    /// 
+    /// `view_pos` - the position in the scene the cubemap is rendered from
+    /// 
+    /// `mip_levels` - the amount of mipmaps
+    pub fn new(size: u32, mip_levels: u32, view_dist: f32, view_pos: cgmath::Point3<f32>, facade: &'a F) -> MipCubemapRenderTarget<'a, F> {
+        MipCubemapRenderTarget {
+            mip_levels, facade, size,
+            cubemap: CubemapRenderBase::new(view_dist, view_pos, size, facade),
+            cbo_tex: None,
+        }
+    }
+}
+
+impl<'a, F : backend::Facade> RenderTarget for MipCubemapRenderTarget<'a, F> {
+    fn draw(&mut self, _: &dyn Viewer, func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) -> TextureType {
+        let cbo_tex = texture::Cubemap::empty_with_format(self.facade, texture::UncompressedFloatFormat::F16F16F16,
+        texture::MipmapsOption::AutoGeneratedMipmaps, self.size).unwrap();
+        for mip_level in 0 .. self.mip_levels {
+            let mip_pow = 0.5f32.powi(mip_level as i32);
+            let mipped_size = ((self.size as f32) * mip_pow) as u32;
+            self.cubemap.draw(&|face, cam| {
+                let rbo = framebuffer::DepthRenderBuffer::new(self.facade, texture::DepthFormat::I24, mipped_size, mipped_size).unwrap();
+                let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(self.facade, 
+                    cbo_tex.mipmap(mip_level).unwrap().image(face), 
+                    rbo.to_depth_attachment()).unwrap();
+                fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
+                func(&mut fbo, cam);
+            });
+        }
+        TextureType::TexCube(Own(cbo_tex))
     }
 
 }

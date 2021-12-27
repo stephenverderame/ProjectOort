@@ -9,6 +9,7 @@ enum ShaderType {
     UiShader,
     BlurShader,
     BloomShader,
+    PrefilterHdrShader,
 }
 
 /// Converts a shader type to an integer
@@ -22,6 +23,7 @@ fn shader_type_to_int(typ: &ShaderType) -> i32 {
         &ShaderType::UiShader => 4,
         &ShaderType::BloomShader => 5,
         &ShaderType::BlurShader => 6,
+        &ShaderType::PrefilterHdrShader => 7,
     }
 }
 
@@ -92,6 +94,12 @@ pub struct SepConvData<'a> {
 pub struct ExtractBrightData<'a> {
     pub tex: &'a glium::texture::Texture2d,
 }
+/// Shader inputs for prefiltering the environment map
+pub struct PrefilterHdrEnvData<'a> {
+    pub scene_data: &'a SceneData<'a>,
+    pub env_map: &'a glium::texture::Cubemap,
+    pub roughness: f32,
+}
 /// Shader inputs passed from a rendering object to the shader manager
 pub enum UniformInfo<'a> {
     PBRInfo(PBRData<'a>),
@@ -100,6 +108,7 @@ pub enum UniformInfo<'a> {
     UiInfo(UiData<'a>),
     SepConvInfo(SepConvData<'a>),
     ExtractBrightInfo(ExtractBrightData<'a>),
+    PrefilterHdrEnvInfo(PrefilterHdrEnvData<'a>),
 
 }
 
@@ -115,6 +124,7 @@ impl<'a> UniformInfo<'a> {
             UiInfo(_) => ShaderType::UiShader,
             SepConvInfo(_) => ShaderType::BlurShader,
             ExtractBrightInfo(_) => ShaderType::BloomShader,
+            PrefilterHdrEnvInfo(_) => ShaderType::PrefilterHdrShader,
         }
     }
 }
@@ -132,6 +142,8 @@ pub enum UniformType<'a> {
     UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
     SepConvUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    PrefilterHdrEnvUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], 
+        UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -147,6 +159,14 @@ macro_rules! sample_linear_clamp {
     ($tex_name:expr) => {
         $tex_name.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
         .minify_filter(glium::uniforms::MinifySamplerFilter::Linear)
+        .wrap_function(glium::uniforms::SamplerWrapFunction::Clamp)
+    }
+}
+
+macro_rules! sample_mip_clamp {
+    ($tex:expr) => {
+        $tex.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
+        .minify_filter(glium::uniforms::MinifySamplerFilter::LinearMipmapLinear)
         .wrap_function(glium::uniforms::SamplerWrapFunction::Clamp)
     }
 }
@@ -208,6 +228,8 @@ impl ShaderManager {
             "shaders/hdrVert.glsl", "shaders/bloomFrag.glsl").unwrap();
         let blur_shader = load_shader_source!(facade,
             "shaders/hdrVert.glsl", "shaders/blurFrag.glsl").unwrap();
+        let prefilter_shader = load_shader_source!(facade,
+            "shaders/skyVert.glsl", "shaders/prefilterEnvFrag.glsl").unwrap();
         let ship_params = glium::DrawParameters::<'static> {
             depth: glium::Depth {
                 test: glium::draw_parameters::DepthTest::IfLess,
@@ -225,6 +247,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::UiShader, (ui_shader, Default::default()));
         shaders.insert(ShaderType::BlurShader, (blur_shader, Default::default()));
         shaders.insert(ShaderType::BloomShader, (bloom_shader, Default::default()));
+        shaders.insert(ShaderType::PrefilterHdrShader, (prefilter_shader, Default::default()));
         ShaderManager {
             shaders: shaders,
             empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
@@ -283,6 +306,14 @@ impl ShaderManager {
             (ShaderType::BloomShader, ExtractBrightInfo(ExtractBrightData {tex})) => UniformType::ExtractBrightUniform(glium::uniform! {
                 model: cgmath::Matrix4::from_scale(1f32).into(),
                 diffuse: sample_linear_clamp!(tex),
+            }),
+            (ShaderType::PrefilterHdrShader, PrefilterHdrEnvInfo(PrefilterHdrEnvData {
+                scene_data, env_map, roughness })) 
+            => UniformType::PrefilterHdrEnvUniform(glium::uniform! {
+                view: scene_data.view,
+                proj: scene_data.proj,
+                env_map: sample_linear_clamp!(env_map),
+                roughness: *roughness,
             }),
             (_, _) => panic!("Invalid shader/shader data combination"),
         };
