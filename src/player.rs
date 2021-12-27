@@ -4,6 +4,7 @@ use crate::node::*;
 use crate::model::Model;
 use crate::shader;
 use crate::draw_traits;
+use crate::controls;
 use std::rc::{Rc};
 use std::cell::RefCell;
 
@@ -27,10 +28,19 @@ impl Player {
             geom: model,
         }
     }
-
-    pub fn set_rot(&mut self, rot: Quaternion<f32>) {
-        self.root.borrow_mut().orientation = Rot::Quat(rot);
+    /// Moves the player based on user input
+    /// 
+    /// `dt` - seconds per frame
+    pub fn move_player(&mut self, input: &controls::PlayerControls, dt: f32) {
+        let model : cgmath::Matrix4<f32> = std::convert::From::from(&*self.root.borrow());
+        let transform = &mut *self.root.borrow_mut();
+        let forward = model.transform_vector(cgmath::vec3(0., 0., 1.) * dt);
+        match input.movement {
+            controls::Movement::Forward => transform.pos += forward,
+            _ => (),
+        }
     }
+
 
 }
 impl draw_traits::Viewer for Player {

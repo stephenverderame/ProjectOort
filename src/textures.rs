@@ -3,7 +3,7 @@ use glium::Surface;
 /// Loads a 16 bit RGB texture
 fn load_hdr(path: &str) -> glium::texture::RawImage2d<u16> {
     //let img = image::codecs::hdr::read_raw_file(path).unwrap();
-    let f = std::fs::File::open(path).unwrap();
+    let f = std::fs::File::open(path).expect(&format!("Could not load '{}'", path));
     let img = image::load(std::io::BufReader::new(f),
         image::ImageFormat::from_path(path).unwrap()).unwrap().to_rgb16();
     let dims = img.dimensions();
@@ -12,7 +12,7 @@ fn load_hdr(path: &str) -> glium::texture::RawImage2d<u16> {
 
 /// Loads an 8bit RGBA image from `path`, reversing it on load if `rev` is `true`
 fn load_img(path: &str, rev: bool) -> glium::texture::RawImage2d<u8> {
-    let f = std::fs::File::open(path).unwrap();
+    let f = std::fs::File::open(path).expect(&format!("Could not load '{}'", path));
     let img = image::load(std::io::BufReader::new(f), 
         image::ImageFormat::from_path(path).unwrap()).unwrap().to_rgba8();
     let dims = img.dimensions();

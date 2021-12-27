@@ -11,6 +11,8 @@ uniform sampler2D normal_map;
 uniform sampler2D metallic_map;
 uniform sampler2D roughness_map;
 uniform sampler2D emission_map;
+uniform sampler2D ao_map;
+uniform bool use_ao;
 
 uniform samplerCube irradiance_map;
 uniform samplerCube prefilter_map;
@@ -142,6 +144,7 @@ void main() {
     vec3 emission = texture(emission_map, f_tex_coords).rgb;
     float metallic = texture(metallic_map, f_tex_coords).r;
     float roughness = texture(roughness_map, f_tex_coords).r;
+    vec3 ao = use_ao ? texture(ao_map, f_tex_coords).rgb : vec3(0.7);
 
     vec3 norm = normalize(getNormal());
     vec3 view_dir = normalize(cam_pos - frag_pos);
@@ -163,7 +166,7 @@ void main() {
     // irradiance map is precomputed integral of light intensity over hemisphere
     vec3 diffuse = irradiance * albedo;
     vec3 specular = prefilter_color * (ks * env_brdf.x + env_brdf.y);
-    vec3 ambient = (kd * diffuse + specular) * vec3(0.8); //* ao (multiply by factor since we don't have ao map)
+    vec3 ambient = (kd * diffuse + specular) * ao;
     vec3 color = ambient + direct_radiance + emission;
 
     frag_color = vec4(color, 1.0);

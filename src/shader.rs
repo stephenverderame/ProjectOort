@@ -75,6 +75,7 @@ pub struct PBRData<'a> {
     pub metallic_map: Option<&'a glium::texture::Texture2d>,
     pub normal_map: Option<&'a glium::texture::Texture2d>,
     pub emission_map: Option<&'a glium::texture::SrgbTexture2d>,
+    pub ao_map: Option<&'a glium::texture::Texture2d>,
 }
 /// Shader inputs for Spherical Texture shader
 pub struct EqRectData<'a> {
@@ -143,11 +144,12 @@ use glium::uniforms::*;
 pub enum UniformType<'a> {
     //BSUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    PbrUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, 
+    PbrUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
+        UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, 
         Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
-        UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>>>),
+        UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     ExtractBrightUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
     UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
@@ -295,7 +297,7 @@ impl ShaderManager {
                 equirectangular_map: sample_linear_clamp!(env_map),
             }),
             (ShaderType::Pbr, PBRInfo(PBRData { scene_data, model, 
-                diffuse_tex, roughness_map, metallic_map, emission_map, normal_map })) 
+                diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map })) 
             => UniformType::PbrUniform(glium::uniform! {
                 viewproj: scene_data.viewproj,
                 model: model.clone(),
@@ -308,6 +310,8 @@ impl ShaderManager {
                 irradiance_map: sample_linear_clamp!(scene_data.ibl_maps.unwrap().diffuse_ibl),
                 prefilter_map: sample_mip_clamp!(scene_data.ibl_maps.unwrap().spec_ibl),
                 brdf_lut: sample_linear_clamp!(scene_data.ibl_maps.unwrap().brdf_lut),
+                ao_map: sample_mip_repeat!(ao_map.unwrap_or(&self.empty_2d)),
+                use_ao: ao_map.is_some(),
             }),
             (ShaderType::UiShader, UiInfo(UiData {model, diffuse, do_blend, blend_tex })) => UniformType::UiUniform(glium::uniform! {
                 model: *model,

@@ -13,6 +13,7 @@ use glium::*;
 use glium::framebuffer::ToDepthAttachment;
 use framebuffer::ToColorAttachment;
 
+/// Gets the vertex and index buffer for a rectangle
 fn get_rect_vbo_ebo<F : glium::backend::Facade>(facade: &F) 
     -> (VertexBuffer<Vertex>, IndexBuffer<u16>) 
 {

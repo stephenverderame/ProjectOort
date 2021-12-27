@@ -18,6 +18,7 @@ mod player;
 mod scene;
 mod render_target;
 mod render_pass;
+mod controls;
 
 use draw_traits::Drawable;
 use glutin::platform::run_return::*;
@@ -85,23 +86,27 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
 
 
 fn main() {
+    let render_width = 1920;
+    let render_height = 1080;
+
     let mut e_loop = EventLoop::new();
     let window_builder = WindowBuilder::new().with_title("Rust Graphics")
         .with_decorations(true).with_inner_size(glium::glutin::dpi::PhysicalSize::<u32>{
-            width: 1920, height: 1080,
+            width: render_width, height: render_height,
         });
-    let wnd_ctx = ContextBuilder::new().with_multisampling(4).with_depth_buffer(24);
+    let wnd_ctx = ContextBuilder::new().with_multisampling(4).with_depth_buffer(24)
+        .with_srgb(true);
     let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
 
     let ship_model = model::Model::load("assets/Ships/StarSparrow01.obj", &wnd_ctx);
+    //let asteroid_model = model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx);
     let mut user = player::Player::new(ship_model);
-
-    //let sky = model::Model::load("assets/skybox/sky.obj", &wnd_ctx);
-    //let sky = model::Model::load("assets/Milkyway/sky.obj", &wnd_ctx);
+    let mut asteroid1 = entity::Entity::new(model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx));
+    asteroid1.transform.scale = 0.08;
+    asteroid1.transform.pos = cgmath::point3(5., 2., 5.);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
 
-    let mut theta = 0.;
     let (sky_cbo, sky_hdr_cbo) = gen_skybox(1024, &shader_manager, &wnd_ctx);
     let main_skybox = Rc::new(RefCell::new(skybox::Skybox::new(skybox::SkyboxTex::Cube(sky_cbo), &wnd_ctx)));
     let (pre_filter, brdf_lut) = gen_prefilter_hdr_env(main_skybox.clone(), 128, &shader_manager, &wnd_ctx);
@@ -112,9 +117,9 @@ fn main() {
         diffuse_ibl: sky_hdr_cbo, spec_ibl: pre_filter, brdf_lut
     });
 
-    let mut msaa = render_target::MsaaRenderTarget::new(8, 1920, 1080, &wnd_ctx);
-    let mut eb = render_target::ExtractBrightProcessor::new(&wnd_ctx, 1920, 1080);
-    let mut blur = render_target::SepConvProcessor::new(1920, 1080, 10, &wnd_ctx);
+    let mut msaa = render_target::MsaaRenderTarget::new(8, render_width, render_height, &wnd_ctx);
+    let mut eb = render_target::ExtractBrightProcessor::new(&wnd_ctx, render_width, render_height);
+    let mut blur = render_target::SepConvProcessor::new(render_width, render_height, 10, &wnd_ctx);
     let mut compose = render_target::UiCompositeProcessor::new(&wnd_ctx, || { 
         let mut surface = wnd_ctx.draw();
         surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
@@ -124,10 +129,12 @@ fn main() {
         render_pass::Pipeline::new(vec![0], vec![(0, 1), (1, 2), (2, 3), (0, 3)]));
 
     let mut prev_time = Instant::now();
+    let mut wnd_size : (u32, u32) = (render_width, render_height);
+    let wnd = wnd_ctx.gl_window();
+    let mut controller = controls::PlayerControls::new(wnd.window());
     e_loop.run_return(|ev, _, control| {
         let dt = Instant::now().duration_since(prev_time).as_secs_f32();
         prev_time = Instant::now();
-        let mut wnd_size : (u32, u32) = (1920, 1080);
         match ev {
             Event::LoopDestroyed => return,
             Event::WindowEvent {event, ..} => {
@@ -140,16 +147,16 @@ fn main() {
                     _ => (),
                 }
             },
+            Event::DeviceEvent {event, ..} => controller.on_input(event),
             _ => (),
         };
         let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
-        let rot = Quaternion::<f32>::from_angle_y(Deg::<f32>(theta));
-        theta += dt * 45.;
-        user.set_rot(rot);
+        user.move_player(&controller, dt);
         main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
             main_skybox.borrow().render(fbo, &scene_data, &shader_manager);
             user.render(fbo, &scene_data, &shader_manager);
+            asteroid1.render(fbo, &scene_data, &shader_manager);
         });
     });
 

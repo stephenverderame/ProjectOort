@@ -15,6 +15,17 @@ pub struct Vertex {
 glium::implement_vertex!(Vertex, pos, normal, tex_coords);
 
 /// A model is geometry loaded from the filesystem
+/// Each model must have a main obj file with a material file at the specified path
+/// relative to the obj file's directory. The name of the material controls which
+/// shader is used for it. Texture files specified in the material file are relative to the obj file's
+/// directory.
+/// 
+/// # Special Materials
+/// 
+/// * **PBR** - Materials that contain "pbr" are PBR materials. PBR textures are loaded from the file
+/// `[material_name]-pbr.yml` which is expected to be in the same directory as the main obj file. This file must define
+/// a `roughness`, `metalness`, and optionally, `ao` parameter. Once again, these textures should be relative to the 
+/// obj file's directory
 pub struct Model {
     mesh_geom: Vec<MMesh>,
 
@@ -23,6 +34,7 @@ pub struct Model {
 struct PBRData {
     roughness_tex: glium::texture::Texture2d,
     metalness_tex: glium::texture::Texture2d,
+    ao_tex: Option<glium::texture::Texture2d>,
 }
 
 /// Material data for a mesh
@@ -71,7 +83,9 @@ fn get_mesh_data(mesh: &Mesh) -> (Vec<Vertex>, Vec<u32>) {
 /// 
 /// Returns the map of key value pairs as strings
 fn get_pbr_data(dir: &str, mat_name: &str) -> Option<BTreeMap<String, String>> {
-    match std::fs::File::open(format!("{}{}-pbr.yml", dir, mat_name)) {
+    let file = format!("{}{}-pbr.yml", dir, mat_name);
+    println!("{}", file);
+    match std::fs::File::open(file) {
         Ok(file) => {
             let mut map = BTreeMap::<String, String>::new();
             let line_iter = std::io::BufReader::new(file).lines();
@@ -96,9 +110,15 @@ fn get_pbr_textures<F>(dir: &str, mat_name: &str, facade: &F)
         Some(tex_maps) => {
             println!("{}", tex_maps["roughness"]);
             println!("{}", tex_maps["metalness"]);
+            if tex_maps.contains_key("ao") {
+                println!("ao: {}", tex_maps["ao"]);
+            }
             Some(PBRData {
                 roughness_tex: textures::load_texture_2d(&format!("{}{}", dir, tex_maps["roughness"]), facade),
                 metalness_tex: textures::load_texture_2d(&format!("{}{}", dir, tex_maps["metalness"]), facade),
+                ao_tex: if tex_maps.contains_key("ao") {
+                    Some(textures::load_texture_2d(&format!("{}{}", dir, tex_maps["ao"]), facade))
+                } else { None },
             })
         },
         _ => None,
@@ -149,22 +169,11 @@ fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::SceneData,
         diffuse_tex: &material.diffuse_tex,
         model: model,
         scene_data: mats,
-        roughness_map: match &material.pbr_data {
-            Some(pbr) => Some(&pbr.roughness_tex),
-            _ => None,
-        },
-        metallic_map: match &material.pbr_data {
-            Some(pbr) => Some(&pbr.metalness_tex),
-            _ => None,
-        },
-        normal_map: match &material.normal_tex {
-            Some(tex) => Some(tex),
-            _ => None,
-        },
-        emission_map: match &material.emission_tex {
-            Some(tex) => Some(tex),
-            _ => None,
-        },
+        roughness_map: material.pbr_data.as_ref().map(|data| { &data.roughness_tex }),
+        metallic_map: material.pbr_data.as_ref().map(|data| { &data.metalness_tex }),
+        normal_map: material.normal_tex.as_ref(),
+        emission_map: material.emission_tex.as_ref(),
+        ao_map: material.pbr_data.as_ref().and_then(|data| { data.ao_tex.as_ref() }),
     })
 }
 
