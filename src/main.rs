@@ -29,6 +29,7 @@ use render_target::*;
 use std::rc::Rc;
 use std::cell::RefCell;
 
+/// Generates the scene skybox and a cubemap version of the diffuse HDR
 fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::ShaderManager, facade: &F) 
     -> (glium::texture::Cubemap, glium::texture::Cubemap) 
 {
@@ -59,6 +60,7 @@ fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::Sh
     }
 }
 
+/// Generates the specular IBL Cubemap and the BRDF LUT
 fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::Skybox>>, size: u32, 
     shader_manager: &shader::ShaderManager, facade: &F) -> (glium::texture::Cubemap, glium::texture::Texture2d)
 {
@@ -84,6 +86,16 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
     }
 }
 
+fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, lasers: &mut entity::EntityFlyweight) {
+    if controller.fire {
+        let mut transform = user.root.borrow().clone();
+        transform.scale = cgmath::vec3(0.5, 0.5, 1.);
+        lasers.new_instance(entity::EntityInstanceData {
+            transform, visible: true, velocity: user.forward() * 40f64,
+        })
+    }
+}
+
 
 fn main() {
     let render_width = 1920;
@@ -102,8 +114,8 @@ fn main() {
     //let asteroid_model = model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx);
     let mut user = player::Player::new(ship_model);
     let mut asteroid1 = entity::Entity::new(model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx));
-    asteroid1.transform.scale = cgmath::vec3(0.08, 0.08, 0.08);
-    asteroid1.transform.pos = cgmath::point3(5., 2., 5.);
+    asteroid1.data.transform.scale = cgmath::vec3(0.08, 0.08, 0.08);
+    asteroid1.data.transform.pos = cgmath::point3(5., 2., 5.);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
 
@@ -132,9 +144,7 @@ fn main() {
     let mut wnd_size : (u32, u32) = (render_width, render_height);
     let wnd = wnd_ctx.gl_window();
     let mut controller = controls::PlayerControls::new(wnd.window());
-    let mut laser = entity::Entity::new(model::Model::load("assets/laser2.obj", &wnd_ctx));
-    let mut laser_dir = cgmath::vec3(0f64, 0f64, 0f64);
-    laser.visible = false;
+    let mut laser = entity::EntityFlyweight::new(model::Model::load("assets/laser2.obj", &wnd_ctx));
     e_loop.run_return(|ev, _, control| {
         let dt = Instant::now().duration_since(prev_time).as_secs_f64();
         prev_time = Instant::now();
@@ -154,11 +164,7 @@ fn main() {
         };
         let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
         user.move_player(&controller, dt);
-        if controller.fire {
-            laser.visible = true;
-            laser.transform.pos = user.root.borrow().pos;
-            laser_dir = user.forward();
-        }
+        handle_shots(&user, &controller, &mut laser);
         main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
             main_skybox.borrow().render(fbo, &scene_data, &shader_manager);
@@ -167,9 +173,7 @@ fn main() {
             laser.render(fbo, &scene_data, &shader_manager);
         });
         controller.reset_toggles();
-        if laser.visible {
-            laser.transform.pos += laser_dir;
-        }
+        laser.instance_motion(dt);
     });
 
 }
