@@ -20,7 +20,7 @@ pub struct Player {
 impl Player {
     pub fn new(model: Model) -> Player {
         let root_node = Rc::new(RefCell::new(Node::new(None, None, None, None)));
-        let mut cam = Node::new(Some(point3(0., 20., -20.)), None, None, None);
+        let mut cam = Node::new(Some(point3(0., 15., -25.)), None, None, None);
         cam.set_parent(root_node.clone());
         Player {
             root: root_node,
@@ -31,14 +31,19 @@ impl Player {
     /// Moves the player based on user input
     /// 
     /// `dt` - seconds per frame
-    pub fn move_player(&mut self, input: &controls::PlayerControls, dt: f32) {
-        let model : cgmath::Matrix4<f32> = std::convert::From::from(&*self.root.borrow());
+    pub fn move_player(&mut self, input: &controls::PlayerControls, dt: f64) {
+        use cgmath::*;
+        let model : cgmath::Matrix4<f64> = std::convert::From::from(&*self.root.borrow());
         let transform = &mut *self.root.borrow_mut();
         let forward = model.transform_vector(cgmath::vec3(0., 0., 1.) * dt);
         match input.movement {
-            controls::Movement::Forward => transform.pos += forward,
+            controls::Movement::Forward => transform.pos += forward * 30f64,
+            controls::Movement::Backwards => transform.pos -= forward * 10f64,
             _ => (),
         }
+        let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(input.pitch), 
+            Deg::<f64>(0.), Deg::<f64>(input.roll)).into();
+        transform.orientation = transform.orientation * q;
     }
 
 
@@ -56,7 +61,9 @@ impl draw_traits::Viewer for Player {
     fn view_mat(&self) -> Matrix4<f32> {
         let cam_pos = self.cam_pos();
         let view_pos = self.root.borrow().pos;
-        Matrix4::look_at_rh(cam_pos, view_pos, vec3(0., 1., 0.))
+        let up = Matrix4::<f64>::from(&self.cam).transform_vector(vec3(0., 1., 0.))
+            .cast::<f32>().unwrap();
+        Matrix4::look_at_rh(cam_pos, view_pos.cast::<f32>().unwrap(), up)
     }
 }
 

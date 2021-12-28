@@ -102,7 +102,7 @@ fn main() {
     //let asteroid_model = model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx);
     let mut user = player::Player::new(ship_model);
     let mut asteroid1 = entity::Entity::new(model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx));
-    asteroid1.transform.scale = 0.08;
+    asteroid1.transform.scale = cgmath::vec3(0.08, 0.08, 0.08);
     asteroid1.transform.pos = cgmath::point3(5., 2., 5.);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
@@ -133,7 +133,7 @@ fn main() {
     let wnd = wnd_ctx.gl_window();
     let mut controller = controls::PlayerControls::new(wnd.window());
     e_loop.run_return(|ev, _, control| {
-        let dt = Instant::now().duration_since(prev_time).as_secs_f32();
+        let dt = Instant::now().duration_since(prev_time).as_secs_f64();
         prev_time = Instant::now();
         match ev {
             Event::LoopDestroyed => return,
@@ -142,7 +142,6 @@ fn main() {
                     WindowEvent::CloseRequested => *control = ControlFlow::Exit,
                     WindowEvent::Resized(new_size) => {
                         wnd_size = (new_size.width, new_size.height);
-                        //hdr.resize_and_clear(new_size.width, new_size.height, 8, &wnd_ctx);
                     },
                     _ => (),
                 }
@@ -158,6 +157,7 @@ fn main() {
             user.render(fbo, &scene_data, &shader_manager);
             asteroid1.render(fbo, &scene_data, &shader_manager);
         });
+        controller.reset_toggles();
     });
 
 }

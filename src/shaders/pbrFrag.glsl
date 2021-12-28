@@ -140,7 +140,7 @@ vec3 directRadiance(vec3 norm, vec3 view_dir, vec3 f0, float roughness,
 }
 
 void main() {
-    vec3 albedo = pow(texture(albedo_map, f_tex_coords).rgb, vec3(2.2));
+    vec3 albedo = texture(albedo_map, f_tex_coords).rgb; // load textures using SRGB so no need to gamma correct
     vec3 emission = texture(emission_map, f_tex_coords).rgb;
     float metallic = texture(metallic_map, f_tex_coords).r;
     float roughness = texture(roughness_map, f_tex_coords).r;

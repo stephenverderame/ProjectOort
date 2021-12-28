@@ -116,11 +116,11 @@ impl<'a> RenderTarget for MsaaRenderTarget<'a> {
 /// Helper struct for render targets rendering to a cubemap with perspective
 struct CubemapRenderBase {
     view_dist: f32,
-    view_pos: cgmath::Point3<f32>,
+    view_pos: cgmath::Point3<f64>,
 }
 
 impl CubemapRenderBase {
-    fn new<F : backend::Facade>(view_dist: f32, view_pos: cgmath::Point3<f32>, size: u32,
+    fn new<F : backend::Facade>(view_dist: f32, view_pos: cgmath::Point3<f64>, size: u32,
         facade: &F) -> CubemapRenderBase
     {
         CubemapRenderBase {
@@ -130,7 +130,7 @@ impl CubemapRenderBase {
 
     /// Gets an array of tuples of view target direction, CubeFace, and up vector
     fn get_target_face_up() 
-        -> [(cgmath::Point3<f32>, glium::texture::CubeLayer, cgmath::Vector3<f32>); 6]
+        -> [(cgmath::Point3<f64>, glium::texture::CubeLayer, cgmath::Vector3<f64>); 6]
     {
         use texture::CubeLayer::*;
         use cgmath::*;
@@ -157,7 +157,7 @@ impl CubemapRenderBase {
         };
         let target_faces = Self::get_target_face_up();
         for (target, face, up) in target_faces {
-            let target : (f32, f32, f32) = (target.to_vec() + cam.cam.pos.to_vec()).into();
+            let target : (f64, f64, f64) = (target.to_vec() + cam.cam.pos.to_vec()).into();
             cam.target = std::convert::From::from(target);
             cam.up = up;
             func(face, &cam);
@@ -181,7 +181,7 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
     /// `size` - the square side length of each texture face in the cubemap
     /// 
     /// `view_pos` - the position in the scene the cubemap is rendered from
-    pub fn new(size: u32, view_dist: f32, view_pos: cgmath::Point3<f32>, facade: &'a F) -> CubemapRenderTarget<'a, F> {
+    pub fn new(size: u32, view_dist: f32, view_pos: cgmath::Point3<f64>, facade: &'a F) -> CubemapRenderTarget<'a, F> {
         CubemapRenderTarget {
             _size: size, 
             cubemap: CubemapRenderBase::new(view_dist, view_pos, size, facade),
@@ -225,7 +225,7 @@ impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
     /// `view_pos` - the position in the scene the cubemap is rendered from
     /// 
     /// `mip_levels` - the amount of mipmaps
-    pub fn new(size: u32, mip_levels: u32, view_dist: f32, view_pos: cgmath::Point3<f32>, facade: &'a F) -> MipCubemapRenderTarget<'a, F> {
+    pub fn new(size: u32, mip_levels: u32, view_dist: f32, view_pos: cgmath::Point3<f64>, facade: &'a F) -> MipCubemapRenderTarget<'a, F> {
         MipCubemapRenderTarget {
             mip_levels, facade, size,
             cubemap: CubemapRenderBase::new(view_dist, view_pos, size, facade),

@@ -6,10 +6,10 @@ pub struct PerspectiveCamera {
     pub cam: node::Node,
     pub aspect: f32,
     pub fov_deg: f32,
-    pub target: cgmath::Point3<f32>,
+    pub target: cgmath::Point3<f64>,
     pub near: f32,
     pub far: f32,
-    pub up: cgmath::Vector3<f32>,
+    pub up: cgmath::Vector3<f64>,
 
 }
 impl PerspectiveCamera {
@@ -34,6 +34,7 @@ impl draw_traits::Viewer for PerspectiveCamera {
 
     fn view_mat(&self) -> Matrix4<f32> {
         let cam_pos = self.cam_pos();
-        Matrix4::look_at_rh(cam_pos, self.target, self.up)
+        Matrix4::look_at_rh(cam_pos, self.target.cast::<f32>().unwrap(), 
+            self.up.cast::<f32>().unwrap())
     }
 }
