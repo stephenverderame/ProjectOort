@@ -32,5 +32,6 @@ pub fn default_scene_data(viewer: &dyn Viewer, aspect: f32) -> shader::SceneData
         proj: proj.into(),
         cam_pos: viewer.cam_pos().into(),
         ibl_maps: None,
+        lights: None,
     }
 }

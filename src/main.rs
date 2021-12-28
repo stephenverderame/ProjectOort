@@ -6,6 +6,8 @@ use glium::{Surface, Display};
 use std::time::Instant;
 
 extern crate cgmath;
+#[macro_use]
+extern crate glium;
 mod textures;
 mod shader;
 mod draw_traits;
@@ -145,6 +147,7 @@ fn main() {
     let wnd = wnd_ctx.gl_window();
     let mut controller = controls::PlayerControls::new(wnd.window());
     let mut laser = entity::EntityFlyweight::new(model::Model::load("assets/laser2.obj", &wnd_ctx));
+
     e_loop.run_return(|ev, _, control| {
         let dt = Instant::now().duration_since(prev_time).as_secs_f64();
         prev_time = Instant::now();
@@ -165,6 +168,15 @@ fn main() {
         let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
         user.move_player(&controller, dt);
         handle_shots(&user, &controller, &mut laser);
+        let light_positions = laser.positions();
+        let mut buf : glium::uniforms::UniformBuffer::<shader::LightBuffer> = 
+            glium::uniforms::UniformBuffer::empty_unsized_persistent(&wnd_ctx, std::mem::size_of::<shader::LightBuffer>()).unwrap();
+        buf.map().light_num = light_positions.len() as u32;
+        for i in 0 .. light_positions.len().min(1024) {
+            buf.map().light_positions[i] = [light_positions[i].x, light_positions[i].y,
+                light_positions[i].z, 0f32];
+        }
+        main_scene.set_lights(buf);
         main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
             main_skybox.borrow().render(fbo, &scene_data, &shader_manager);

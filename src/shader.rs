@@ -41,6 +41,19 @@ impl std::cmp::PartialOrd for ShaderType {
     }
 }
 
+//glium::implement_buffer_content!(LightInfo);
+//glium::implement_uniform_block!(LightInfo, pos);
+
+#[derive(Copy, Clone)]
+pub struct LightBuffer {
+    pub light_num: u32,
+    pub padding: [u32; 3],
+    pub light_positions: [[f32; 4]; 1024],
+}
+
+//glium::implement_buffer_content!(LightBuffer);
+glium::implement_uniform_block!(LightBuffer, light_num, light_positions);
+
 /// The ShaderManager stores all shaders and all draw parameters for each shader
 /// It converts shader inputs to OpenGL uniform parameters and selects the shader
 /// based on those shader inputs
@@ -65,6 +78,7 @@ pub struct SceneData<'a> {
     pub proj: [[f32; 4]; 4],
     pub cam_pos: [f32; 3],
     pub ibl_maps: Option<&'a PbrMaps>,
+    pub lights: Option<&'a glium::uniforms::UniformBuffer<LightBuffer>>,
 }
 /// Shader inputs for PBR shader
 pub struct PBRData<'a> {
@@ -152,12 +166,12 @@ use glium::uniforms::*;
 pub enum UniformType<'a> {
     LaserUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    PbrUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
+    PbrUniform(UniformsStorage<'a, &'a UniformBuffer<LightBuffer>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, 
         Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
-        UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>>>>>),
+        UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     ExtractBrightUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
     UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
@@ -325,6 +339,7 @@ impl ShaderManager {
                 brdf_lut: sample_linear_clamp!(scene_data.ibl_maps.unwrap().brdf_lut),
                 ao_map: sample_mip_repeat!(ao_map.unwrap_or(&self.empty_2d)),
                 use_ao: ao_map.is_some(),
+                LightUniform: scene_data.lights.unwrap(),
             }),
             (ShaderType::UiShader, UiInfo(UiData {model, diffuse, do_blend, blend_tex })) => UniformType::UiUniform(glium::uniform! {
                 model: *model,

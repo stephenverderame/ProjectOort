@@ -7,12 +7,13 @@ use crate::render_pass::*;
 /// strings together multiple render passes
 pub struct Scene {
     ibl_maps: Option<shader::PbrMaps>,
+    lights: Option<glium::uniforms::UniformBuffer<shader::LightBuffer>>,
 }
 
 impl Scene {
     pub fn new() -> Scene {
         Scene {
-            ibl_maps: None
+            ibl_maps: None, lights: None,
         }
     }
 
@@ -27,6 +28,7 @@ impl Scene {
             proj: proj.into(),
             cam_pos: viewer.cam_pos().into(),
             ibl_maps: self.ibl_maps.as_ref(),
+            lights: self.lights.as_ref(),
         }
     }
 
@@ -48,9 +50,9 @@ impl Scene {
         frame.read()
     }*/
 
-    pub fn render_pass<'a, F>(&self, pass: &'a mut RenderPass, viewer: &dyn draw_traits::Viewer, 
+    pub fn render_pass<'b, F>(&self, pass: &'b mut RenderPass, viewer: &dyn draw_traits::Viewer, 
         aspect: f32, shader: &shader::ShaderManager, func: F)
-        -> render_target::TextureType<'a> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)
+        -> render_target::TextureType<'b> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)
     {
         pass.run_pass(viewer, shader, &|fbo, viewer| {
             let mats = self.get_scene_data(viewer, aspect);
@@ -60,5 +62,9 @@ impl Scene {
 
     pub fn set_ibl_maps(&mut self, maps: shader::PbrMaps) {
         self.ibl_maps = Some(maps);
+    }
+
+    pub fn set_lights(&mut self, lights: glium::uniforms::UniformBuffer<shader::LightBuffer>) {
+        self.lights = Some(lights);
     }
 }

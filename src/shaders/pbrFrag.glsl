@@ -1,4 +1,4 @@
-#version 330 core
+#version 430 core
 in vec2 f_tex_coords;
 in vec3 frag_pos;
 in vec3 f_normal;
@@ -20,14 +20,15 @@ uniform sampler2D brdf_lut;
 
 const float max_reflection_mips = 4.0; // we use 5 mip maps (0 to 4)
 
-vec3 light_positions[4] = vec3[4](
-    vec3(10, 10, 0),
-    vec3(0, 5, 0),
-    vec3(-10, 10, 0),
-    vec3(1, 5, 15)
-);
 
-vec3 light_color = vec3(0.5451, 0, 0.5451);
+layout(std430, binding = 0) buffer LightUniform {
+    uint light_num;
+    vec4 light_positions[1024];
+    // vec3 always takes up the size of vec4 
+    // (buffer-backed blocks padded to 16 bytes)
+};
+
+const vec3 light_color = vec3(0.5451, 0, 0.5451);
 
 const float PI = 3.14159265359;
 
@@ -104,14 +105,16 @@ vec3 directRadiance(vec3 norm, vec3 view_dir, vec3 f0, float roughness,
 {
     vec3 radiance_out = vec3(0);
 
-    for(int i = 0; i < 4; ++i) {
+    for(int i = 0; i < light_num; ++i) {
         // using point lights, so we know where the light is coming from 
         // so not exactly integrating over total area
 
-        vec3 light_dir = normalize(light_positions[i] - frag_pos);
+        vec3 light_pos = light_positions[i].xyz;
+
+        vec3 light_dir = normalize(light_pos - frag_pos);
         vec3 halfway = normalize(light_dir + view_dir);
 
-        float dist = length(light_positions[i] - frag_pos);
+        float dist = length(light_pos - frag_pos);
         float attenuation = 1.0 / (dist * dist);
         vec3 light_radiance = light_color * attenuation;
 
@@ -155,7 +158,7 @@ void main() {
     vec3 f0 = getF0(albedo, metallic);
 
     vec3 direct_radiance = directRadiance(norm, view_dir, f0, roughness, 
-        metallic, albedo);
+        metallic, albedo) * 20;
 
     vec3 ks = fresnelSchlickRoughness(f0, view_dir, norm, roughness);
     vec2 env_brdf = texture(brdf_lut, vec2(max(dot(norm, view_dir), 0.0), roughness)).rg;

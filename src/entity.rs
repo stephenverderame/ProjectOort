@@ -75,6 +75,10 @@ impl EntityFlyweight {
             instance.transform.pos += instance.velocity * dt;
         }
     }
+
+    pub fn positions(&self) -> Vec<cgmath::Point3<f32>> {
+        self.instances.iter().map(|x| x.transform.pos.cast::<f32>().unwrap().into()).collect()
+    }
 }
 
 impl draw_traits::Drawable for EntityFlyweight {

@@ -120,8 +120,7 @@ struct CubemapRenderBase {
 }
 
 impl CubemapRenderBase {
-    fn new<F : backend::Facade>(view_dist: f32, view_pos: cgmath::Point3<f64>, size: u32,
-        facade: &F) -> CubemapRenderBase
+    fn new(view_dist: f32, view_pos: cgmath::Point3<f64>) -> CubemapRenderBase
     {
         CubemapRenderBase {
             view_dist, view_pos,
@@ -184,7 +183,7 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
     pub fn new(size: u32, view_dist: f32, view_pos: cgmath::Point3<f64>, facade: &'a F) -> CubemapRenderTarget<'a, F> {
         CubemapRenderTarget {
             _size: size, 
-            cubemap: CubemapRenderBase::new(view_dist, view_pos, size, facade),
+            cubemap: CubemapRenderBase::new(view_dist, view_pos),
             depth_buffer: glium::framebuffer::DepthRenderBuffer::new(facade, 
                 glium::texture::DepthFormat::F32, size, size).unwrap(),
             facade,
@@ -227,7 +226,7 @@ impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
     pub fn new(size: u32, mip_levels: u32, view_dist: f32, view_pos: cgmath::Point3<f64>, facade: &'a F) -> MipCubemapRenderTarget<'a, F> {
         MipCubemapRenderTarget {
             mip_levels, facade, size,
-            cubemap: CubemapRenderBase::new(view_dist, view_pos, size, facade),
+            cubemap: CubemapRenderBase::new(view_dist, view_pos),
         }
     }
 }
