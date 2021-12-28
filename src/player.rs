@@ -12,7 +12,7 @@ use cgmath::*;
 
 /// The player is the combination of the player's entity and the player's camera
 pub struct Player {
-    root: Rc<RefCell<Node>>,
+    pub root: Rc<RefCell<Node>>,
     cam: Node,
     geom: Model,
 }
@@ -44,6 +44,11 @@ impl Player {
         let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(input.pitch), 
             Deg::<f64>(0.), Deg::<f64>(input.roll)).into();
         transform.orientation = transform.orientation * q;
+    }
+
+    pub fn forward(&self) -> cgmath::Vector3<f64> {
+        let model : cgmath::Matrix4<f64> = std::convert::From::from(&*self.root.borrow());
+        model.transform_vector(cgmath::vec3(0., 0., 1.))
     }
 
 

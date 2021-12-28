@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 enum ShaderType {
-    BlinnPhong,
+    Laser,
     Pbr,
     Skybox,
     EquiRect,
@@ -17,7 +17,7 @@ enum ShaderType {
 /// This is to allow shader types to be keys in maps
 fn shader_type_to_int(typ: &ShaderType) -> i32 {
     match typ {
-        &ShaderType::BlinnPhong => 0,
+        &ShaderType::Laser => 0,
         &ShaderType::Skybox => 1,
         &ShaderType::Pbr => 2,
         &ShaderType::EquiRect => 3,
@@ -109,6 +109,12 @@ pub struct PrefilterHdrEnvData<'a> {
     pub env_map: &'a glium::texture::Cubemap,
     pub roughness: f32,
 }
+/// Shader inputs for laser shader
+pub struct LaserData<'a> {
+    pub scene_data: &'a SceneData<'a>,
+    pub color: [f32; 3],
+    pub model: [[f32; 4]; 4],
+}
 /// Shader inputs passed from a rendering object to the shader manager
 pub enum UniformInfo<'a> {
     PBRInfo(PBRData<'a>),
@@ -119,6 +125,7 @@ pub enum UniformInfo<'a> {
     ExtractBrightInfo(ExtractBrightData<'a>),
     PrefilterHdrEnvInfo(PrefilterHdrEnvData<'a>),
     GenLutInfo,
+    LaserInfo(LaserData<'a>),
 
 }
 
@@ -136,13 +143,14 @@ impl<'a> UniformInfo<'a> {
             ExtractBrightInfo(_) => ShaderType::BloomShader,
             PrefilterHdrEnvInfo(_) => ShaderType::PrefilterHdrShader,
             GenLutInfo => ShaderType::GenLutShader,
+            LaserInfo(_) => ShaderType::Laser,
         }
     }
 }
 
 use glium::uniforms::*;
 pub enum UniformType<'a> {
-    //BSUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    LaserUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     PbrUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, 
@@ -228,8 +236,8 @@ macro_rules! load_shader_srgb {
 
 impl ShaderManager {
     pub fn init<F : glium::backend::Facade>(facade: &F) -> ShaderManager {
-        let ship_shader = load_shader_source!(facade, 
-            "shaders/basicVert.glsl", "shaders/basicFrag.glsl").unwrap();
+        let laser_shader = load_shader_source!(facade, 
+            "shaders/basicVert.glsl", "shaders/laserFrag.glsl").unwrap();
         let skybox_shader = load_shader_source!(facade, 
             "shaders/skyVert.glsl", "shaders/skyFrag.glsl").unwrap();
         let pbr_shader = load_shader_source!(facade,
@@ -256,7 +264,7 @@ impl ShaderManager {
             .. Default::default()
         };
         let mut shaders = BTreeMap::<ShaderType, (glium::Program, glium::DrawParameters)>::new();
-        shaders.insert(ShaderType::BlinnPhong, (ship_shader, ship_params.clone()));
+        shaders.insert(ShaderType::Laser, (laser_shader, ship_params.clone()));
         shaders.insert(ShaderType::Skybox, (skybox_shader, Default::default()));
         shaders.insert(ShaderType::Pbr, (pbr_shader, ship_params));
         shaders.insert(ShaderType::EquiRect, (equirect_shader, Default::default()));
@@ -283,7 +291,12 @@ impl ShaderManager {
         let typ = data.corresp_shader_type();
         let (shader, params) = self.shaders.get(&typ).unwrap();
         let uniform = match (typ, data) {
-            (ShaderType::BlinnPhong, _) => panic!("Unimplemented"),
+            (ShaderType::Laser, LaserInfo(LaserData {scene_data, color, model})) => 
+                UniformType::LaserUniform(glium::uniform! {
+                    viewproj: scene_data.viewproj,
+                    color: *color,
+                    model: *model,
+                }),
             (ShaderType::Skybox,  SkyboxInfo(SkyboxData {scene_data, env_map})) 
             => UniformType::SkyboxUniform(glium::uniform! {
                 view: scene_data.view,

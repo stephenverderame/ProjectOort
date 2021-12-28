@@ -39,7 +39,7 @@ struct PBRData {
 
 /// Material data for a mesh
 struct MMaterial {
-    diffuse_tex: glium::texture::SrgbTexture2d,
+    diffuse_tex: Option<glium::texture::SrgbTexture2d>,
     name: String,
     pbr_data: Option<PBRData>,
     normal_tex: Option<glium::texture::Texture2d>,
@@ -137,7 +137,9 @@ fn get_material_data<F>(dir: &str, mat: &Material, facade: &F)
         println!("{}", mat.dissolve_texture);
     }
     MMaterial {
-        diffuse_tex: textures::load_tex_srgb_or_empty(&format!("{}{}", dir, mat.diffuse_texture), facade),
+        diffuse_tex: if mat.diffuse_texture.is_empty() { None } else {
+            Some(textures::load_texture_srgb(&format!("{}{}", dir, mat.diffuse_texture), facade))
+        },
         pbr_data: get_pbr_textures(dir, &mat.name, facade),
         normal_tex: if mat.normal_texture.is_empty() { None } else { 
             Some(textures::load_texture_2d(&format!("{}{}", dir, mat.normal_texture), facade))
@@ -162,19 +164,24 @@ fn get_material_or_none<F>(dir: &str, mesh: &Mesh, mats: &Vec<Material>, facade:
 fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::SceneData, 
     model: [[f32; 4]; 4]) -> shader::UniformInfo<'a>
 {
-    if material.name.find("pbr").is_none() {
-        panic!("Only PBR is implemented")
-    }
-    shader::UniformInfo::PBRInfo(shader::PBRData {
-        diffuse_tex: &material.diffuse_tex,
-        model: model,
-        scene_data: mats,
-        roughness_map: material.pbr_data.as_ref().map(|data| { &data.roughness_tex }),
-        metallic_map: material.pbr_data.as_ref().map(|data| { &data.metalness_tex }),
-        normal_map: material.normal_tex.as_ref(),
-        emission_map: material.emission_tex.as_ref(),
-        ao_map: material.pbr_data.as_ref().and_then(|data| { data.ao_tex.as_ref() }),
-    })
+    match &material.name[..] {
+        "Laser" => shader::UniformInfo::LaserInfo(shader::LaserData {
+            model: model,
+            scene_data: mats,
+            color: [0.29f32, 0f32, 0.51f32],
+        }),
+        x if x.find("pbr").is_some() => shader::UniformInfo::PBRInfo(shader::PBRData {
+            diffuse_tex: material.diffuse_tex.as_ref().unwrap(),
+            model: model,
+            scene_data: mats,
+            roughness_map: material.pbr_data.as_ref().map(|data| { &data.roughness_tex }),
+            metallic_map: material.pbr_data.as_ref().map(|data| { &data.metalness_tex }),
+            normal_map: material.normal_tex.as_ref(),
+            emission_map: material.emission_tex.as_ref(),
+            ao_map: material.pbr_data.as_ref().and_then(|data| { data.ao_tex.as_ref() }),
+        }),
+        x => panic!("Unimplemented texture with name: {}", x),
+    }   
 }
 
 impl Model {
@@ -185,7 +192,7 @@ impl Model {
             triangulate: true,
             single_index: true,
             ..Default::default()
-        }).unwrap();
+        }).expect(&format!("Could not open model file '{}'", file));
         let mut meshes = Vec::<MMesh>::new();
         let mats = materials.unwrap();
         let dir = textures::dir_stem(file);
@@ -217,8 +224,8 @@ impl Model {
             };
             let (shader, params, uniform) = manager.use_shader(&data);
             match uniform {
-               //shader::UniformType::BSUniform(uniform) => 
-               //     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
+               shader::UniformType::LaserUniform(uniform) => 
+                    wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::PbrUniform(uniform) => 
                     wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
                 shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 

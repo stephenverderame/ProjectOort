@@ -213,7 +213,6 @@ pub struct MipCubemapRenderTarget<'a, F : backend::Facade> {
     mip_levels: u32,
     facade: &'a F,
     size: u32,
-    cbo_tex: Option<texture::Cubemap>,
 }
 
 impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
@@ -229,7 +228,6 @@ impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
         MipCubemapRenderTarget {
             mip_levels, facade, size,
             cubemap: CubemapRenderBase::new(view_dist, view_pos, size, facade),
-            cbo_tex: None,
         }
     }
 }

@@ -132,6 +132,9 @@ fn main() {
     let mut wnd_size : (u32, u32) = (render_width, render_height);
     let wnd = wnd_ctx.gl_window();
     let mut controller = controls::PlayerControls::new(wnd.window());
+    let mut laser = entity::Entity::new(model::Model::load("assets/laser2.obj", &wnd_ctx));
+    let mut laser_dir = cgmath::vec3(0f64, 0f64, 0f64);
+    laser.visible = false;
     e_loop.run_return(|ev, _, control| {
         let dt = Instant::now().duration_since(prev_time).as_secs_f64();
         prev_time = Instant::now();
@@ -151,13 +154,22 @@ fn main() {
         };
         let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
         user.move_player(&controller, dt);
+        if controller.fire {
+            laser.visible = true;
+            laser.transform.pos = user.root.borrow().pos;
+            laser_dir = user.forward();
+        }
         main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
             main_skybox.borrow().render(fbo, &scene_data, &shader_manager);
             user.render(fbo, &scene_data, &shader_manager);
             asteroid1.render(fbo, &scene_data, &shader_manager);
+            laser.render(fbo, &scene_data, &shader_manager);
         });
         controller.reset_toggles();
+        if laser.visible {
+            laser.transform.pos += laser_dir;
+        }
     });
 
 }
