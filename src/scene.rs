@@ -2,18 +2,19 @@ use crate::draw_traits;
 use crate::shader;
 use crate::render_target;
 use crate::render_pass::*;
+use crate::ssbo;
 
 /// A Scene manages the scene parameters and
 /// strings together multiple render passes
 pub struct Scene {
     ibl_maps: Option<shader::PbrMaps>,
-    lights: Option<glium::uniforms::UniformBuffer<shader::LightBuffer>>,
+    lights: ssbo::SSBO<shader::LightData>,
 }
 
 impl Scene {
     pub fn new() -> Scene {
         Scene {
-            ibl_maps: None, lights: None,
+            ibl_maps: None, lights: ssbo::SSBO::<shader::LightData>::new(None),
         }
     }
 
@@ -28,7 +29,7 @@ impl Scene {
             proj: proj.into(),
             cam_pos: viewer.cam_pos().into(),
             ibl_maps: self.ibl_maps.as_ref(),
-            lights: self.lights.as_ref(),
+            lights: Some(&self.lights),
         }
     }
 
@@ -64,7 +65,7 @@ impl Scene {
         self.ibl_maps = Some(maps);
     }
 
-    pub fn set_lights(&mut self, lights: glium::uniforms::UniformBuffer<shader::LightBuffer>) {
-        self.lights = Some(lights);
+    pub fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
+        self.lights.update(lights)
     }
 }

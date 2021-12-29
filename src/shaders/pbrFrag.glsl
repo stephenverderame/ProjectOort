@@ -20,11 +20,14 @@ uniform sampler2D brdf_lut;
 
 const float max_reflection_mips = 4.0; // we use 5 mip maps (0 to 4)
 
+struct LightData {
+    vec4 start;
+    vec4 end;
+};
 
-layout(std430, binding = 0) buffer LightUniform {
+layout(std430, binding = 0) buffer LightBuffer {
     uint light_num;
-    vec4 light_starts[1024];
-    vec4 light_ends[1024];
+    LightData lights[];
     // vec3 always takes up the size of vec4 
     // (buffer-backed blocks padded to 16 bytes)
 };
@@ -177,10 +180,12 @@ vec3 directRadiance(vec3 norm, vec3 view_dir, vec3 f0, float roughness,
         // we want our light direction vector to be from the closest point on the light mesh to our frag_position
         // so we find the closest point on the mesh to our reflection ray
 
+        LightData light = lights[i];
+
         const float light_radius = 1.5;
         const float luminance = 10;
         
-        vec3 light_dir = lightDirTube(light_starts[i].xyz, light_ends[i].xyz, norm, R, light_radius);
+        vec3 light_dir = lightDirTube(light.start.xyz, light.end.xyz, norm, R, light_radius);
         float dist = max(length(light_dir), 0.00001);
 
         float attenuation = 1.0 / (dist * dist + 0.3);

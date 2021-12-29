@@ -21,7 +21,8 @@ mod scene;
 mod render_target;
 mod render_pass;
 mod controls;
-//mod ssbo;
+mod ssbo;
+extern crate gl;
 
 use draw_traits::Drawable;
 use glutin::platform::run_return::*;
@@ -112,6 +113,7 @@ fn main() {
     let wnd_ctx = ContextBuilder::new().with_multisampling(4).with_depth_buffer(24)
         .with_srgb(true);
     let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
+    gl::load_with(|s| wnd_ctx.gl_window().get_proc_address(s)); // for things I can't figure out how to do in glium
 
     let ship_model = model::Model::load("assets/Ships/StarSparrow01.obj", &wnd_ctx);
     //let asteroid_model = model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx);
@@ -175,18 +177,16 @@ fn main() {
         let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
         user.move_player(&controller, dt);
         handle_shots(&user, &controller, &mut laser, &wnd_ctx);
-        let light_positions = laser.positions();
-        let mut buf : glium::uniforms::UniformBuffer::<shader::LightBuffer> = 
-            glium::uniforms::UniformBuffer::empty_unsized_persistent(&wnd_ctx, std::mem::size_of::<shader::LightBuffer>()).unwrap();
-        buf.map().light_num = light_positions.len() as u32;
-        for i in 0 .. light_positions.len().min(1024) {
-            let mat : Matrix4<f64> = From::from(light_positions[i]);
-            let start = mat.transform_point(cgmath::point3(0., 0., 3.)).cast::<f32>().unwrap();
-            let end = mat.transform_point(cgmath::point3(0., 0., -3.)).cast::<f32>().unwrap();
-            buf.map().light_starts[i] = [start.x, start.y, start.z, 0f32];
-            buf.map().light_ends[i] = [end.x, end.y, end.z, 0f32];
-        }
-        main_scene.set_lights(buf);
+        let light_data : Vec<shader::LightData> = laser.positions().iter().map(|node| {
+            let mat : cgmath::Matrix4<f32> = From::from(*node);
+            let start = mat.transform_point(point3(0., 0., 3.));
+            let end = mat.transform_point(point3(0., 0., -3.));
+            shader::LightData {
+                light_start: [start.x, start.y, start.z, 0f32],
+                light_end: [end.x, end.y, end.z, 0f32],
+            }
+        }).collect();
+        main_scene.set_lights(&light_data);
         main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
             main_skybox.borrow().render(fbo, &scene_data, &shader_manager);
