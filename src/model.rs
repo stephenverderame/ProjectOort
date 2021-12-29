@@ -162,17 +162,15 @@ fn get_material_or_none<F>(dir: &str, mesh: &Mesh, mats: &Vec<Material>, facade:
 
 /// Converts a material to its relevant UniformType based on what material information is present
 fn mat_to_uniform_data<'a>(material: &'a MMaterial, mats: &'a shader::SceneData, 
-    model: [[f32; 4]; 4]) -> shader::UniformInfo<'a>
+    model: Option<[[f32; 4]; 4]>) -> shader::UniformInfo<'a>
 {
     match &material.name[..] {
         "Laser" => shader::UniformInfo::LaserInfo(shader::LaserData {
-            model: model,
             scene_data: mats,
-            color: [0.29f32, 0f32, 0.51f32],
         }),
         x if x.find("pbr").is_some() => shader::UniformInfo::PBRInfo(shader::PBRData {
             diffuse_tex: material.diffuse_tex.as_ref().unwrap(),
-            model: model,
+            model: model.unwrap(),
             scene_data: mats,
             roughness_map: material.pbr_data.as_ref().map(|data| { &data.roughness_tex }),
             metallic_map: material.pbr_data.as_ref().map(|data| { &data.metalness_tex }),
@@ -212,22 +210,29 @@ impl Model {
         
     }
 
-    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
+    fn render_helper<F, S>(&self, scene_data: &shader::SceneData, manager: &shader::ShaderManager, model: Option<[[f32; 4]; 4]>,
+        surface: &mut S, draw_func: F) where F : Fn(&MMesh, &glium::Program, &glium::DrawParameters, &shader::UniformType, &mut S), S : glium::Surface
+    {
         for mesh in &self.mesh_geom {
-            let _mat_name : String;
             let data = match &mesh.material {
                 Some(mat) => {
-                    _mat_name = mat.name.clone();
-                    mat_to_uniform_data(mat, mats, model)
+                    mat_to_uniform_data(mat, scene_data, model)
                 },
                 _ => panic!("No material"),
             };
             let (shader, params, uniform) = manager.use_shader(&data);
+            draw_func(mesh, shader, params, &uniform, surface);
+        }
+    }
+
+    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
+        self.render_helper(mats, manager, Some(model), wnd,
+        |mesh, shader, params, uniform, surface| {
             match uniform {
                shader::UniformType::LaserUniform(uniform) => 
-                    wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
+                    surface.draw(&mesh.verts, &mesh.indices, &shader, uniform, &params),
                 shader::UniformType::PbrUniform(uniform) => 
-                    wnd.draw(&mesh.verts, &mesh.indices, &shader, &uniform, &params),
+                    surface.draw(&mesh.verts, &mesh.indices, &shader, uniform, &params),
                 shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 
                  | shader::UniformType::UiUniform(_) | shader::UniformType::SepConvUniform(_) 
                  | shader::UniformType::ExtractBrightUniform(_) 
@@ -235,6 +240,28 @@ impl Model {
                  | shader::UniformType::BrdfLutUniform(_) => 
                     panic!("Model get invalid uniform type"),
             }.unwrap()
-        }
+        });
+    }
+
+    pub fn render_instanced<S : glium::Surface, T : Copy>(&self, wnd: &mut S, mats: &shader::SceneData, manager: &shader::ShaderManager, 
+        instance_buffer: glium::vertex::VertexBufferSlice<T>) 
+    {
+        self.render_helper(mats, manager, None, wnd,
+        |mesh, shader, params, uniform, surface| {
+            match uniform {
+               shader::UniformType::LaserUniform(uniform) => 
+                    surface.draw((&mesh.verts, instance_buffer.per_instance().unwrap()), 
+                        &mesh.indices, &shader, uniform, &params),
+                shader::UniformType::PbrUniform(uniform) => 
+                    surface.draw((&mesh.verts, instance_buffer.per_instance().unwrap()), 
+                        &mesh.indices, &shader, uniform, &params),
+                shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 
+                 | shader::UniformType::UiUniform(_) | shader::UniformType::SepConvUniform(_) 
+                 | shader::UniformType::ExtractBrightUniform(_) 
+                 | shader::UniformType::PrefilterHdrEnvUniform(_)
+                 | shader::UniformType::BrdfLutUniform(_) => 
+                    panic!("Model get invalid uniform type"),
+            }.unwrap()
+        });
     }
 }

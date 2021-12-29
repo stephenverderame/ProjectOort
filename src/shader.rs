@@ -126,9 +126,7 @@ pub struct PrefilterHdrEnvData<'a> {
 }
 /// Shader inputs for laser shader
 pub struct LaserData<'a> {
-    pub scene_data: &'a SceneData<'a>,
-    pub color: [f32; 3],
-    pub model: [[f32; 4]; 4],
+    pub scene_data: &'a SceneData<'a>
 }
 /// Shader inputs passed from a rendering object to the shader manager
 pub enum UniformInfo<'a> {
@@ -165,7 +163,7 @@ impl<'a> UniformInfo<'a> {
 
 use glium::uniforms::*;
 pub enum UniformType<'a> {
-    LaserUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    LaserUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     PbrUniform(UniformsStorage<'a, &'a UniformBuffer<LightBuffer>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, 
@@ -252,7 +250,7 @@ macro_rules! load_shader_srgb {
 impl ShaderManager {
     pub fn init<F : glium::backend::Facade>(facade: &F) -> ShaderManager {
         let laser_shader = load_shader_source!(facade, 
-            "shaders/basicVert.glsl", "shaders/laserFrag.glsl").unwrap();
+            "shaders/laserVert.glsl", "shaders/laserFrag.glsl").unwrap();
         let skybox_shader = load_shader_source!(facade, 
             "shaders/skyVert.glsl", "shaders/skyFrag.glsl").unwrap();
         let pbr_shader = load_shader_source!(facade,
@@ -306,11 +304,9 @@ impl ShaderManager {
         let typ = data.corresp_shader_type();
         let (shader, params) = self.shaders.get(&typ).unwrap();
         let uniform = match (typ, data) {
-            (ShaderType::Laser, LaserInfo(LaserData {scene_data, color, model})) => 
+            (ShaderType::Laser, LaserInfo(LaserData {scene_data })) => 
                 UniformType::LaserUniform(glium::uniform! {
-                    viewproj: scene_data.viewproj,
-                    color: *color,
-                    model: *model,
+                    viewproj: scene_data.viewproj
                 }),
             (ShaderType::Skybox,  SkyboxInfo(SkyboxData {scene_data, env_map})) 
             => UniformType::SkyboxUniform(glium::uniform! {

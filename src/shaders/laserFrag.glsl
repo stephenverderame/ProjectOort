@@ -1,7 +1,7 @@
 #version 430 core
 
 in vec2 tcoords;
-uniform vec3 color;
+flat in vec3 color;
 
 out vec4 frag_color;
 void main() {

@@ -21,6 +21,7 @@ mod scene;
 mod render_target;
 mod render_pass;
 mod controls;
+//mod ssbo;
 
 use draw_traits::Drawable;
 use glutin::platform::run_return::*;
@@ -88,13 +89,13 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
     }
 }
 
-fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, lasers: &mut entity::EntityFlyweight) {
+fn handle_shots<F : glium::backend::Facade>(user: &player::Player, controller: &controls::PlayerControls, lasers: &mut entity::EntityFlyweight, facade: &F) {
     if controller.fire {
         let mut transform = user.root.borrow().clone();
-        transform.scale = cgmath::vec3(0.5, 0.5, 1.);
+        transform.scale = cgmath::vec3(0.3, 0.3, 1.);
         lasers.new_instance(entity::EntityInstanceData {
             transform, visible: true, velocity: user.forward() * 40f64,
-        })
+        }, facade)
     }
 }
 
@@ -152,7 +153,7 @@ fn main() {
     laser.new_instance(entity::EntityInstanceData {
         transform: node::Node::new(Some(point3(0., 0., 0.)), None, Some(vec3(0.3, 0.3, 3.)), None),
         velocity: vec3(0., 0., 0.), visible: true,
-    });
+    }, &wnd_ctx);
     let mut prev_time = Instant::now();
     e_loop.run_return(|ev, _, control| {
         let dt = Instant::now().duration_since(prev_time).as_secs_f64();
@@ -173,7 +174,7 @@ fn main() {
         };
         let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
         user.move_player(&controller, dt);
-        handle_shots(&user, &controller, &mut laser);
+        handle_shots(&user, &controller, &mut laser, &wnd_ctx);
         let light_positions = laser.positions();
         let mut buf : glium::uniforms::UniformBuffer::<shader::LightBuffer> = 
             glium::uniforms::UniformBuffer::empty_unsized_persistent(&wnd_ctx, std::mem::size_of::<shader::LightBuffer>()).unwrap();
