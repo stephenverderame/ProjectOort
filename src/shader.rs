@@ -48,11 +48,12 @@ impl std::cmp::PartialOrd for ShaderType {
 pub struct LightBuffer {
     pub light_num: u32,
     pub padding: [u32; 3],
-    pub light_positions: [[f32; 4]; 1024],
+    pub light_starts: [[f32; 4]; 1024],
+    pub light_ends: [[f32; 4]; 1024],
 }
 
 //glium::implement_buffer_content!(LightBuffer);
-glium::implement_uniform_block!(LightBuffer, light_num, light_positions);
+glium::implement_uniform_block!(LightBuffer, light_num, light_starts, light_ends);
 
 /// The ShaderManager stores all shaders and all draw parameters for each shader
 /// It converts shader inputs to OpenGL uniform parameters and selects the shader

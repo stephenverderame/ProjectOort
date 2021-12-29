@@ -20,7 +20,7 @@ impl<'a> PlayerControls<'a> {
     pub fn new(window: &'a glutin::window::Window) -> PlayerControls {
         PlayerControls {
             movement: Movement::Stopped, window, 
-            mouse_capture: PlayerControls::change_mouse_mode(false, window),
+            mouse_capture: false,
             pitch: 0., roll: 0., fire: false,
         }
     }

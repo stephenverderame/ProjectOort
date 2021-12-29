@@ -117,7 +117,7 @@ fn main() {
     let mut user = player::Player::new(ship_model);
     let mut asteroid1 = entity::Entity::new(model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx));
     asteroid1.data.transform.scale = cgmath::vec3(0.08, 0.08, 0.08);
-    asteroid1.data.transform.pos = cgmath::point3(5., 2., 5.);
+    asteroid1.data.transform.pos = cgmath::point3(0., 2., 10.);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
 
@@ -142,12 +142,18 @@ fn main() {
     let mut main_pass = render_pass::RenderPass::new(&mut msaa, vec![&mut eb, &mut blur, &mut compose], 
         render_pass::Pipeline::new(vec![0], vec![(0, 1), (1, 2), (2, 3), (0, 3)]));
 
-    let mut prev_time = Instant::now();
     let mut wnd_size : (u32, u32) = (render_width, render_height);
     let wnd = wnd_ctx.gl_window();
     let mut controller = controls::PlayerControls::new(wnd.window());
     let mut laser = entity::EntityFlyweight::new(model::Model::load("assets/laser2.obj", &wnd_ctx));
+    let container = entity::Entity::from(model::Model::load("assets/BlackMarble/floor.obj", &wnd_ctx), 
+        node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None));
 
+    laser.new_instance(entity::EntityInstanceData {
+        transform: node::Node::new(Some(point3(0., 0., 0.)), None, Some(vec3(0.3, 0.3, 3.)), None),
+        velocity: vec3(0., 0., 0.), visible: true,
+    });
+    let mut prev_time = Instant::now();
     e_loop.run_return(|ev, _, control| {
         let dt = Instant::now().duration_since(prev_time).as_secs_f64();
         prev_time = Instant::now();
@@ -173,8 +179,11 @@ fn main() {
             glium::uniforms::UniformBuffer::empty_unsized_persistent(&wnd_ctx, std::mem::size_of::<shader::LightBuffer>()).unwrap();
         buf.map().light_num = light_positions.len() as u32;
         for i in 0 .. light_positions.len().min(1024) {
-            buf.map().light_positions[i] = [light_positions[i].x, light_positions[i].y,
-                light_positions[i].z, 0f32];
+            let mat : Matrix4<f64> = From::from(light_positions[i]);
+            let start = mat.transform_point(cgmath::point3(0., 0., 3.)).cast::<f32>().unwrap();
+            let end = mat.transform_point(cgmath::point3(0., 0., -3.)).cast::<f32>().unwrap();
+            buf.map().light_starts[i] = [start.x, start.y, start.z, 0f32];
+            buf.map().light_ends[i] = [end.x, end.y, end.z, 0f32];
         }
         main_scene.set_lights(buf);
         main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data| {
@@ -183,8 +192,13 @@ fn main() {
             user.render(fbo, &scene_data, &shader_manager);
             asteroid1.render(fbo, &scene_data, &shader_manager);
             laser.render(fbo, &scene_data, &shader_manager);
+            container.render(fbo, &scene_data, &shader_manager);
         });
         controller.reset_toggles();
+        let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 
+            Deg::<f64>(45. * dt), Deg::<f64>(0.)).into();
+        laser.instances[0].transform.orientation = laser.instances[0].transform.orientation *
+            q;
         laser.instance_motion(dt);
     });
 

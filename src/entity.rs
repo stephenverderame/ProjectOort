@@ -49,8 +49,9 @@ impl draw_traits::Drawable for Entity {
 /// Entities with shared geometry
 /// 
 /// TODO: free unnecessary instances
+/// TODO: make private
 pub struct EntityFlyweight {
-    instances: Vec<EntityInstanceData>,
+    pub instances: Vec<EntityInstanceData>,
     geometry: model::Model,
 }
 
@@ -76,8 +77,8 @@ impl EntityFlyweight {
         }
     }
 
-    pub fn positions(&self) -> Vec<cgmath::Point3<f32>> {
-        self.instances.iter().map(|x| x.transform.pos.cast::<f32>().unwrap().into()).collect()
+    pub fn positions(&self) -> Vec<&node::Node> {
+        self.instances.iter().map(|x| &x.transform).collect()
     }
 }
 
