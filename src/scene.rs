@@ -55,7 +55,8 @@ impl Scene {
         aspect: f32, shader: &shader::ShaderManager, func: F)
         -> render_target::TextureType<'b> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)
     {
-        pass.run_pass(viewer, shader, &|fbo, viewer| {
+        pass.run_pass(viewer, shader, &self.get_scene_data(viewer, aspect),
+        &|fbo, viewer, _, _| {
             let mats = self.get_scene_data(viewer, aspect);
             func(fbo, &mats);
         })

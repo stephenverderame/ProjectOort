@@ -45,7 +45,7 @@ fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::Sh
     let gen_sky_scene = scene::Scene::new();
     let mut gen_sky = render_target::CubemapRenderTarget::new(size, 10., cgmath::point3(0., 0., 0.), facade);
     let mut cp = render_target::CopyTextureProcessor::new(size, size, None, None, facade);
-    let mut gen_sky_pass = render_pass::RenderPass::new(&mut gen_sky, vec![&mut cp], render_pass::Pipeline::new(vec![0], vec![(0, 1)]));
+    let mut gen_sky_pass = render_pass::RenderPass::new(vec![&mut gen_sky], vec![&mut cp], render_pass::Pipeline::new(vec![0], vec![(0, 1)]));
     let gen_sky_ptr = &mut gen_sky_pass as *mut render_pass::RenderPass;
     unsafe {
         let sky_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, |fbo, scene_data| {
@@ -72,7 +72,7 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
     let mip_levels = 5;
     let mut rt = render_target::MipCubemapRenderTarget::new(size, mip_levels, 10., cgmath::point3(0., 0., 0.), facade);
     let iterations = RefCell::new(0);
-    let res = rt.draw(&cam, &|fbo, viewer| {
+    let res = rt.draw(&cam, None, &|fbo, viewer, _, _| {
         let its = *iterations.borrow();
         let mip_level = its / 6;
         skybox.borrow_mut().set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
@@ -82,7 +82,7 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
     });
     skybox.borrow_mut().set_mip_progress(None);
     let mut tp = render_target::GenLutProcessor::new(facade, 512, 512);
-    let brdf = tp.process(Vec::<&TextureType>::new(), shader_manager);
+    let brdf = tp.process(Vec::<&TextureType>::new(), shader_manager, None);
     match (res, brdf) {
         (TextureType::TexCube(Ownership::Own(x)), 
             TextureType::Tex2d(Ownership::Own(y))) => (x, y),
@@ -142,7 +142,7 @@ fn main() {
         surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
         surface
     }, |disp| disp.finish().unwrap());
-    let mut main_pass = render_pass::RenderPass::new(&mut msaa, vec![&mut eb, &mut blur, &mut compose], 
+    let mut main_pass = render_pass::RenderPass::new(vec![&mut msaa], vec![&mut eb, &mut blur, &mut compose], 
         render_pass::Pipeline::new(vec![0], vec![(0, 1), (1, 2), (2, 3), (0, 3)]));
 
     let mut wnd_size : (u32, u32) = (render_width, render_height);

@@ -79,10 +79,18 @@ impl Pipeline {
 /// A RenderPass is a render target followed by a series of texture transformations.
 /// A renderpass is rendered to and produces a texture result
 pub struct RenderPass<'a> {
-    target: &'a mut dyn RenderTarget,
+    targets: Vec<&'a mut dyn RenderTarget>,
     processes: Vec<&'a mut dyn TextureProcessor>,
     topo_order: Vec<u16>,
     pipeline: Pipeline,
+}
+
+macro_rules! get_inputs {
+    ($node:expr) => {
+        registers.get($node).map(|input_indices| {
+            input_indices.iter().map(|idx| { &saved_textures[*idx] }).collect::<Vec<&TextureType>>()
+        });
+    };
 }
 
 impl<'a> RenderPass<'a> {
@@ -90,8 +98,8 @@ impl<'a> RenderPass<'a> {
     /// 
     /// The `0`th node id in the pipeline refers to the render target and the id `1` refers to index `0` in `processes`.
     /// The Pipeline DAG must contain nodes ids in `[0, processes.len()]`
-    pub fn new(target: &'a mut dyn RenderTarget, processes: Vec<&'a mut dyn TextureProcessor>, pipeline: Pipeline) -> RenderPass<'a> {
-        RenderPass { target, processes, topo_order: pipeline.topo_order(), pipeline }
+    pub fn new(targets: Vec<&'a mut dyn RenderTarget>, processes: Vec<&'a mut dyn TextureProcessor>, pipeline: Pipeline) -> RenderPass<'a> {
+        RenderPass { targets, processes, topo_order: pipeline.topo_order(), pipeline }
     }
 
     /// Stores the index of the texture result `v`, in the stored results for the node `k`.
@@ -125,39 +133,62 @@ impl<'a> RenderPass<'a> {
 
     }
 
+    fn get_inputs<'b>(registers: &HashMap<u16, Vec<usize>>, saved_textures: &'b Vec<TextureType>, node: u16) 
+        -> Option<Vec<&'b TextureType<'b>>>
+    {
+        registers.get(&node).map(|input_indices| {
+            input_indices.iter().map(|idx| { &saved_textures[*idx] }).collect::<Vec<&TextureType>>()
+        })
+    }
+
     /// Calls the render function, saving the results to the render target
     /// Then runs the render target through the process pipeline until it procudes a texture
-    pub fn run_pass(&mut self, viewer: &dyn Viewer, shader: &shader::ShaderManager, 
-        render_func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer)) -> TextureType 
+    pub fn run_pass(&mut self, viewer: &dyn Viewer, shader: &shader::ShaderManager, sdata: &shader::SceneData,
+        render_func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderTargetType, &Option<Vec<&TextureType>>)) -> TextureType 
     {
         let mut saved_textures = Vec::<TextureType>::new();
         let mut registers = HashMap::<u16, Vec<usize>>::new();
-        let mut final_out : Option<usize>;
-        saved_textures.push(self.target.draw(viewer, render_func));
-        final_out = RenderPass::save_stage_out(
-            &mut registers, saved_textures.len() - 1, 0, &self.pipeline);
+        let mut final_out : Option<usize> = None;
+        let targets_len = self.targets.len();
         for node in &self.topo_order {
-            if *node == 0 {
-                continue;
+            let unode = *node as usize;
+            if unode < targets_len {
+                let index = unode;
+                let inputs = RenderPass::get_inputs(&registers, &saved_textures, *node);
+                let idx_ptr = self.targets.as_mut_ptr();
+                unsafe {
+                    let elem = idx_ptr.add(index);
+                    saved_textures.push((*elem).draw(viewer, inputs, render_func));
+                }
+                final_out = RenderPass::save_stage_out(
+                    &mut registers, saved_textures.len() - 1, *node, &self.pipeline);
             } else {
-                let index = (*node as usize) - 1;
+                let index = unode - targets_len;
                 // -1 because index 0 is the render target
                 match registers.get(&node) {
                     Some(data) => {
-                        let process_input = 
-                            data.iter().map(|idx| { &saved_textures[*idx] }).collect();
+                        let process_input = RenderPass::get_inputs(&registers, &saved_textures, *node);
                         let idx_ptr = self.processes.as_mut_ptr();
                         unsafe {
                             // need to use pointers because compiler can't know that we're borrowing
                             // different elements of the vector
                             let elem = idx_ptr.add(index);
-                            let tex = (*elem).process(process_input, shader);
+                            let tex = (*elem).process(process_input.unwrap(), shader, Some(sdata));
                             saved_textures.push(tex);
                         }
                         final_out = RenderPass::save_stage_out(&mut registers, 
                             saved_textures.len() - 1, *node, &self.pipeline);
                     },
-                    _ => panic!("No saved data for pipeline node"),
+                    None => {
+                        let idx_ptr = self.processes.as_mut_ptr();
+                        unsafe {
+                            let elem = idx_ptr.add(index);
+                            let tex = (*elem).process(Vec::<&TextureType>::new(), shader, Some(sdata));
+                            saved_textures.push(tex);
+                        }
+                        final_out = RenderPass::save_stage_out(&mut registers, 
+                            saved_textures.len() - 1, *node, &self.pipeline);
+                    },
                 }
             }
         }

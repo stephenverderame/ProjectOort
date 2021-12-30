@@ -12,6 +12,7 @@ enum ShaderType {
     BloomShader,
     PrefilterHdrShader,
     GenLutShader,
+    CullLightsCompute,
 }
 
 /// Converts a shader type to an integer
@@ -27,6 +28,7 @@ fn shader_type_to_int(typ: &ShaderType) -> i32 {
         &ShaderType::BlurShader => 6,
         &ShaderType::PrefilterHdrShader => 7,
         &ShaderType::GenLutShader => 8,
+        &ShaderType::CullLightsCompute => 9,
     }
 }
 
@@ -54,6 +56,7 @@ pub struct LightData {
 /// based on those shader inputs
 pub struct ShaderManager {
     shaders: BTreeMap<ShaderType, (glium::Program, glium::DrawParameters<'static>)>,
+    compute_shaders: BTreeMap<ShaderType, glium::program::ComputeShader>,
     empty_srgb: glium::texture::SrgbTexture2d,
     empty_2d: glium::texture::Texture2d,
 }
@@ -122,6 +125,11 @@ pub struct PrefilterHdrEnvData<'a> {
 pub struct LaserData<'a> {
     pub scene_data: &'a SceneData<'a>
 }
+/// Compute shader inputs for light culling
+pub struct LightCullData<'a> {
+    pub scene_data: &'a SceneData<'a>,
+    pub depth_tex: &'a glium::texture::DepthTexture2d,
+}
 /// Shader inputs passed from a rendering object to the shader manager
 pub enum UniformInfo<'a> {
     PBRInfo(PBRData<'a>),
@@ -133,6 +141,7 @@ pub enum UniformInfo<'a> {
     PrefilterHdrEnvInfo(PrefilterHdrEnvData<'a>),
     GenLutInfo,
     LaserInfo(LaserData<'a>),
+    LightCullInfo(LightCullData<'a>),
 
 }
 
@@ -151,6 +160,7 @@ impl<'a> UniformInfo<'a> {
             PrefilterHdrEnvInfo(_) => ShaderType::PrefilterHdrShader,
             GenLutInfo => ShaderType::GenLutShader,
             LaserInfo(_) => ShaderType::Laser,
+            LightCullInfo(_) => ShaderType::CullLightsCompute,
         }
     }
 }
@@ -261,6 +271,8 @@ impl ShaderManager {
             "shaders/skyVert.glsl", "shaders/prefilterEnvFrag.glsl").unwrap();
         let brdf_lut_shader = load_shader_source!(facade,
             "shaders/hdrVert.glsl", "shaders/specLutFrag.glsl").unwrap();
+        //let light_cull = glium::program::ComputeShader::from_source(facade,
+        //   include_str!("shaders/lightCullComp.glsl")).unwrap();
         let ship_params = glium::DrawParameters::<'static> {
             depth: glium::Depth {
                 test: glium::draw_parameters::DepthTest::IfLess,
@@ -280,8 +292,10 @@ impl ShaderManager {
         shaders.insert(ShaderType::BloomShader, (bloom_shader, Default::default()));
         shaders.insert(ShaderType::PrefilterHdrShader, (prefilter_shader, Default::default()));
         shaders.insert(ShaderType::GenLutShader, (brdf_lut_shader, Default::default()));
+        let mut compute_shaders = BTreeMap::<ShaderType, glium::program::ComputeShader>::new();
+        //compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         ShaderManager {
-            shaders: shaders,
+            shaders: shaders, compute_shaders,
             empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
             empty_2d: glium::texture::Texture2d::empty(facade, 0, 0).unwrap(),
         }
@@ -363,5 +377,22 @@ impl ShaderManager {
             (_, _) => panic!("Invalid shader/shader data combination"),
         };
         (shader, params, uniform)
+    }
+
+    /// Executes a computer shader with `x * y * z` working groups
+    pub fn execute_compute(&self, x: u32, y: u32, z: u32, args: UniformInfo) {
+        match args {
+            UniformInfo::LightCullInfo(LightCullData {scene_data, depth_tex}) => {
+                let uniform = glium::uniform! {
+                    view: scene_data.view,
+                    proj: scene_data.proj,
+                    depth_tex: depth_tex,
+                };
+                let compute = self.compute_shaders.get(&ShaderType::CullLightsCompute).unwrap();
+                scene_data.lights.unwrap().bind(0);
+                compute.execute(uniform, x, y, z);
+            },
+            _ => panic!("Unknown compute shader args"),
+        }
     }
 }

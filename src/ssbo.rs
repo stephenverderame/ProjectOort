@@ -16,6 +16,8 @@ pub struct SSBO<T : Copy> {
     buffer: gl::types::GLuint,
     buffer_count: u32,
     phantom: std::marker::PhantomData<T>,
+    // PhantomData which takes no space so compiler thinks this 
+    // owns a generic type. Prevents from accidentally passing in a different type
 }
 
 macro_rules! assert_no_error {
@@ -28,7 +30,7 @@ macro_rules! assert_no_error {
         }
     };
     () => {
-        unsafe {
+         {
             let error = gl::GetError();
             if error != gl::NO_ERROR {
                 panic!("GL error: '{}' at {}:{}::{}", error, std::file!(), std::line!(), std::column!());
