@@ -9,12 +9,14 @@ use crate::ssbo;
 pub struct Scene {
     ibl_maps: Option<shader::PbrMaps>,
     lights: ssbo::SSBO<shader::LightData>,
+    tiles_x: u32,
 }
 
 impl Scene {
     pub fn new() -> Scene {
         Scene {
-            ibl_maps: None, lights: ssbo::SSBO::<shader::LightData>::new(None),
+            ibl_maps: None, lights: ssbo::SSBO::<shader::LightData>::dynamic(None),
+            tiles_x: 0,
         }
     }
 
@@ -30,6 +32,7 @@ impl Scene {
             cam_pos: viewer.cam_pos().into(),
             ibl_maps: self.ibl_maps.as_ref(),
             lights: Some(&self.lights),
+            tiles_x: self.tiles_x,
         }
     }
 
@@ -53,12 +56,12 @@ impl Scene {
 
     pub fn render_pass<'b, F>(&self, pass: &'b mut RenderPass, viewer: &dyn draw_traits::Viewer, 
         aspect: f32, shader: &shader::ShaderManager, func: F)
-        -> render_target::TextureType<'b> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)
+        -> render_target::TextureType<'b> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData, render_target::RenderTargetType)
     {
         pass.run_pass(viewer, shader, &self.get_scene_data(viewer, aspect),
-        &|fbo, viewer, _, _| {
+        &|fbo, viewer, typ, _| {
             let mats = self.get_scene_data(viewer, aspect);
-            func(fbo, &mats);
+            func(fbo, &mats, typ);
         })
     }
 
@@ -68,5 +71,9 @@ impl Scene {
 
     pub fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
         self.lights.update(lights)
+    }
+
+    pub fn set_tiles_x(&mut self, tiles_x: u32) {
+        self.tiles_x = tiles_x;
     }
 }

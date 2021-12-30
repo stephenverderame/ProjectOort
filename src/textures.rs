@@ -24,6 +24,7 @@ fn load_img(path: &str, rev: bool) -> glium::texture::RawImage2d<u8> {
 }
 
 /// Loads an sRGB texture as 8bit RGBA with mipmaps from `path`. The image is reversed on load
+/// This will convert whatever texture is loaded from sRGB to linear color space
 pub fn load_texture_srgb<F : glium::backend::Facade>(path: &str, facade: &F) 
     -> glium::texture::SrgbTexture2d
 {
@@ -56,7 +57,7 @@ pub fn dir_stem(path: &str) -> String {
     }  
     
 }
-
+#[allow(dead_code)]
 pub fn load_tex_srgb_or_empty<F : glium::backend::Facade>(path: &str, facade: &F)
     -> glium::texture::SrgbTexture2d 
 {
@@ -66,7 +67,7 @@ pub fn load_tex_srgb_or_empty<F : glium::backend::Facade>(path: &str, facade: &F
         load_texture_srgb(path, facade)
     }
 }
-
+#[allow(dead_code)]
 pub fn load_tex_2d_or_empty<F : glium::backend::Facade>(path: &str, facade: &F)
     -> glium::texture::Texture2d 
 {
@@ -76,7 +77,7 @@ pub fn load_tex_2d_or_empty<F : glium::backend::Facade>(path: &str, facade: &F)
         load_texture_2d(path, facade)
     }
 }
-
+#[allow(dead_code)]
 pub fn load_cubemap<F>(file: &str, facade: &F) 
     -> glium::texture::Cubemap where F : glium::backend::Facade 
 {

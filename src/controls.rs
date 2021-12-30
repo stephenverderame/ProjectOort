@@ -34,7 +34,8 @@ impl<'a> PlayerControls<'a> {
 
     pub fn on_input(&mut self, ev: DeviceEvent) {
         match ev {
-            DeviceEvent::Key(KeyboardInput {scancode, state, virtual_keycode: Some(vk), modifiers}) => {
+            #[allow(deprecated)]
+            DeviceEvent::Key(KeyboardInput {scancode: _, state, virtual_keycode: Some(vk), modifiers: _}) => {
                 match (vk, state) {
                     (VirtualKeyCode::W, ElementState::Pressed) => self.movement = Movement::Forward,
                     (VirtualKeyCode::W, ElementState::Released) => self.movement = Movement::Stopped,

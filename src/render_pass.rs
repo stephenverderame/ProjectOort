@@ -85,19 +85,11 @@ pub struct RenderPass<'a> {
     pipeline: Pipeline,
 }
 
-macro_rules! get_inputs {
-    ($node:expr) => {
-        registers.get($node).map(|input_indices| {
-            input_indices.iter().map(|idx| { &saved_textures[*idx] }).collect::<Vec<&TextureType>>()
-        });
-    };
-}
-
 impl<'a> RenderPass<'a> {
     /// Creates a new RenderPass
     /// 
-    /// The `0`th node id in the pipeline refers to the render target and the id `1` refers to index `0` in `processes`.
-    /// The Pipeline DAG must contain nodes ids in `[0, processes.len()]`
+    /// The first `[0, targets.len())` ids refer to render targets. Then the next `[targets.len(), processes.len())` ids refer
+    /// to processes. Therefore, the pipeline must contain nodes from `0` to `targets.len() + processes.len()` with the upper bound being exclusive
     pub fn new(targets: Vec<&'a mut dyn RenderTarget>, processes: Vec<&'a mut dyn TextureProcessor>, pipeline: Pipeline) -> RenderPass<'a> {
         RenderPass { targets, processes, topo_order: pipeline.topo_order(), pipeline }
     }
@@ -133,6 +125,7 @@ impl<'a> RenderPass<'a> {
 
     }
 
+    /// Gets the inputs for `node`, or `None` if there are none saved
     fn get_inputs<'b>(registers: &HashMap<u16, Vec<usize>>, saved_textures: &'b Vec<TextureType>, node: u16) 
         -> Option<Vec<&'b TextureType<'b>>>
     {
@@ -158,6 +151,7 @@ impl<'a> RenderPass<'a> {
                 let idx_ptr = self.targets.as_mut_ptr();
                 unsafe {
                     let elem = idx_ptr.add(index);
+                    #[allow(mutable_borrow_reservation_conflict)]
                     saved_textures.push((*elem).draw(viewer, inputs, render_func));
                 }
                 final_out = RenderPass::save_stage_out(
@@ -165,31 +159,17 @@ impl<'a> RenderPass<'a> {
             } else {
                 let index = unode - targets_len;
                 // -1 because index 0 is the render target
-                match registers.get(&node) {
-                    Some(data) => {
-                        let process_input = RenderPass::get_inputs(&registers, &saved_textures, *node);
-                        let idx_ptr = self.processes.as_mut_ptr();
-                        unsafe {
-                            // need to use pointers because compiler can't know that we're borrowing
-                            // different elements of the vector
-                            let elem = idx_ptr.add(index);
-                            let tex = (*elem).process(process_input.unwrap(), shader, Some(sdata));
-                            saved_textures.push(tex);
-                        }
-                        final_out = RenderPass::save_stage_out(&mut registers, 
-                            saved_textures.len() - 1, *node, &self.pipeline);
-                    },
-                    None => {
-                        let idx_ptr = self.processes.as_mut_ptr();
-                        unsafe {
-                            let elem = idx_ptr.add(index);
-                            let tex = (*elem).process(Vec::<&TextureType>::new(), shader, Some(sdata));
-                            saved_textures.push(tex);
-                        }
-                        final_out = RenderPass::save_stage_out(&mut registers, 
-                            saved_textures.len() - 1, *node, &self.pipeline);
-                    },
+                let process_input = RenderPass::get_inputs(&registers, &saved_textures, *node);
+                let idx_ptr = self.processes.as_mut_ptr();
+                unsafe {
+                    // need to use pointers because compiler can't know that we're borrowing
+                    // different elements of the vector
+                    let elem = idx_ptr.add(index);
+                    let tex = (*elem).process(process_input.unwrap_or_else(|| Vec::<&TextureType>::new()), shader, Some(sdata));
+                    saved_textures.push(tex);
                 }
+                final_out = RenderPass::save_stage_out(&mut registers, 
+                    saved_textures.len() - 1, *node, &self.pipeline);
             }
         }
         final_out.map(|tex_idx| saved_textures.swap_remove(tex_idx)).unwrap()

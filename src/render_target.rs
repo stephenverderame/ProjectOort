@@ -9,6 +9,7 @@ glium::implement_vertex!(Vertex, pos, tex_coords);
 use glium::Surface;
 use crate::shader;
 use crate::draw_traits::*;
+use crate::ssbo;
 use glium::*;
 use glium::framebuffer::ToDepthAttachment;
 use framebuffer::ToColorAttachment;
@@ -27,12 +28,14 @@ fn get_rect_vbo_ebo<F : glium::backend::Facade>(facade: &F)
     IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &indices).unwrap())
 }
 
+/// Either a `T` or `&T`
 pub enum Ownership<'a, T> {
     Own(T),
     Ref(&'a T),
 }
 
 impl<'a, T> Ownership<'a, T> {
+    /// Gets a reference of the data, regardless of the onwership type
     pub fn to_ref(&self) -> &T {
         match &self {
             Own(s) => &s,
@@ -51,6 +54,7 @@ pub enum TextureType<'a> {
 }
 
 /// The type of objects that should be rendered to a render target
+#[derive(PartialEq, Eq)]
 pub enum RenderTargetType {
     Visual,
     Depth
@@ -76,11 +80,19 @@ pub trait RenderTarget {
 /// A TextureProcessor transforms input textures into an output texture. It is basically
 /// a function on textures
 pub trait TextureProcessor {
+    /// `source` - input textures for the processor
+    /// 
+    /// `shader` - shader manager
+    /// 
+    /// `data` - the scene data for the processor or `None`
     fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager,
         data: Option<&shader::SceneData>) -> TextureType;
 }
 
 /// RenderTarget which renders to an MSAA color and depth buffer
+/// 
+/// ### Output
+/// 2D RGBA F16 texture with multisampling already resolved
 pub struct MsaaRenderTarget<'a> {
     fbo: framebuffer::SimpleFrameBuffer<'a>,
     _tex: Box<texture::Texture2dMultisample>,
@@ -132,11 +144,12 @@ impl<'a> RenderTarget for MsaaRenderTarget<'a> {
 }
 
 /// RenderTarget which renders to Depth buffer
+/// 
+/// ### Output
+/// F32 2D DepthTexture
 pub struct DepthRenderTarget<'a> {
     fbo: framebuffer::SimpleFrameBuffer<'a>,
     rbo: Box<texture::DepthTexture2d>,
-    width: u32,
-    height: u32,
 }
 
 impl<'a> DepthRenderTarget<'a> {
@@ -147,7 +160,7 @@ impl<'a> DepthRenderTarget<'a> {
         unsafe {
             DepthRenderTarget {
                 fbo: glium::framebuffer::SimpleFrameBuffer::depth_only(facade, &*rbo_ptr).unwrap(),
-                rbo, width, height,
+                rbo,
                 
             }
         }
@@ -214,6 +227,10 @@ impl CubemapRenderBase {
 }
 
 /// RenderTarget which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
+/// and that its called once per face
+/// 
+/// ### Output
+/// F16 RGB cubemap
 pub struct CubemapRenderTarget<'a, F : backend::Facade> {
     cubemap: CubemapRenderBase,
     cbo_tex: texture::Cubemap,
@@ -259,6 +276,10 @@ impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
 }
 
 /// RenderTarget which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
+/// and that it is called once per face, per mipmap level, starting at level 0.
+/// 
+/// ### Output
+/// RGB F16 Cubemap texture with mipmapping
 pub struct MipCubemapRenderTarget<'a, F : backend::Facade> {
     cubemap: CubemapRenderBase,
     mip_levels: u32,
@@ -270,7 +291,8 @@ impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
     /// Creates a new CubemapRenderTarget. The cubemap is a F16 RGB texture with no mipmapping
     /// `view_dist` - the view distance for the viewer when rendering to a cubemap
     /// 
-    /// `size` - the square side length of each texture face in the cubemap
+    /// `size` - the square side length of each texture face in the cubemap at the highest detail mipmap (level 0)
+    /// Each successive mipmap level has half the previous size
     /// 
     /// `view_pos` - the position in the scene the cubemap is rendered from
     /// 
@@ -308,6 +330,11 @@ impl<'a, F : backend::Facade> RenderTarget for MipCubemapRenderTarget<'a, F> {
 }
 
 /// Texture processor which extracts bright parts of a texture for Bloom
+/// 
+/// ### Inputs
+/// 2D texture
+/// ### Outputs
+/// 2D RGBA F16 texture
 pub struct ExtractBrightProcessor<'a> {
     bright_color_tex: Box<glium::texture::Texture2d>,
     bright_color_fbo: framebuffer::SimpleFrameBuffer<'a>,
@@ -358,6 +385,11 @@ impl<'a> TextureProcessor for ExtractBrightProcessor<'a> {
 }
 
 /// Texture processor which performs a separable convolution
+/// 
+/// ### Inputs
+/// 2D texture
+/// ### Outputs
+/// 2D RGBA F16 Texture
 pub struct SepConvProcessor<'a> {
     ping_pong_tex: [Box<texture::Texture2d>; 2],
     ping_pong_fbo: [framebuffer::SimpleFrameBuffer<'a>; 2],
@@ -430,6 +462,12 @@ impl<'a> TextureProcessor for SepConvProcessor<'a> {
 }
 
 /// A processor which additively blends together textures and renders them to a surface
+/// 
+/// ### Inputs
+/// 2D Main texture
+/// 2D additive texture
+/// ### Outputs
+/// None (result is drawn as a quad to main FBO)
 pub struct UiCompositeProcessor<S : Surface, F : Fn() -> S, G : Fn(S)> {
     vbo: VertexBuffer<Vertex>,
     ebo: IndexBuffer<u16>,
@@ -494,6 +532,11 @@ impl<S : Surface, F : Fn() -> S, G : Fn(S)> TextureProcessor for UiCompositeProc
 }
 
 /// Texture processor which copies its input texture by performing a framebuffer blit
+/// 
+/// ### Inputs
+/// Any texture
+/// ### Outputs
+/// An owned texture that is exactly the same as the input
 pub struct CopyTextureProcessor<'a, F : backend::Facade> {
     facade: &'a F,
     width: u32,
@@ -558,6 +601,11 @@ impl<'a, F : backend::Facade> TextureProcessor for CopyTextureProcessor<'a, F> {
 
 /// Texture processor which generates a BRDF lookup texture
 /// Can assume that this processor ignores its inputs
+/// 
+/// ### Inputs
+/// None
+/// ### Outputs
+/// RGB_F16 Look up texture
 pub struct GenLutProcessor<'a, F : backend::Facade> {
     vbo: VertexBuffer<Vertex>,
     ebo: IndexBuffer<u16>,
@@ -597,17 +645,33 @@ impl<'a, F : backend::Facade> TextureProcessor for GenLutProcessor<'a, F> {
 
 /// Texture processor for culling lights from the input depth map
 /// Results are stored in a shared shader storage buffer
+/// 
+/// ### Inputs
+/// 2D Depth Texture
+/// ### Outputs
+/// None (results stored in SSBO owned by this processor)
 pub struct CullLightProcessor {
     work_groups_x: u32,
     work_groups_y: u32,
+    visible_light_buffer: ssbo::SSBO<i32>,
+    width: u32,
+    height: u32,
 }
 
 impl CullLightProcessor {
     pub fn new(width: u32, height: u32, tile_size: u32) -> CullLightProcessor {
+        let max_lights = 1024;
+        let work_groups_x = (width + width % tile_size) / tile_size;
+        let work_groups_y = (height + height % tile_size) / tile_size;
         CullLightProcessor {
-            work_groups_x: (width + width % tile_size) / tile_size,
-            work_groups_y: (height + height % tile_size) / tile_size,
+            work_groups_x, work_groups_y,
+            visible_light_buffer: ssbo::SSBO::<i32>::static_empty(work_groups_x * work_groups_y * max_lights),
+            width, height,
         }
+    }
+
+    pub fn get_groups_x(&self) -> u32 {
+        self.work_groups_x
     }
 }
 
@@ -621,7 +685,10 @@ impl TextureProcessor for CullLightProcessor {
             let params = shader::UniformInfo::LightCullInfo(shader::LightCullData {
                 scene_data,
                 depth_tex: depth_tex,
+                scr_width: self.width,
+                scr_height: self.height,
             });
+            self.visible_light_buffer.bind(1);
             shader.execute_compute(self.work_groups_x, self.work_groups_y, 1, params);
             TextureType::ToDefaultFbo
         } else {

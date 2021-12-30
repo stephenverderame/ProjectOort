@@ -6,7 +6,6 @@ use glium::{Surface, Display};
 use std::time::Instant;
 
 extern crate cgmath;
-#[macro_use]
 extern crate glium;
 mod textures;
 mod shader;
@@ -48,11 +47,11 @@ fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::Sh
     let mut gen_sky_pass = render_pass::RenderPass::new(vec![&mut gen_sky], vec![&mut cp], render_pass::Pipeline::new(vec![0], vec![(0, 1)]));
     let gen_sky_ptr = &mut gen_sky_pass as *mut render_pass::RenderPass;
     unsafe {
-        let sky_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, |fbo, scene_data| {
+        let sky_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, |fbo, scene_data, _| {
             sky.render(fbo, scene_data, &shader_manager)
         });
         // safe bx we finish using the first borrow here
-        let sky_hdr_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, |fbo, scene_data| {
+        let sky_hdr_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, |fbo, scene_data, _| {
             sky_hdr.render(fbo, scene_data, shader_manager)
         });
 
@@ -142,8 +141,11 @@ fn main() {
         surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
         surface
     }, |disp| disp.finish().unwrap());
-    let mut main_pass = render_pass::RenderPass::new(vec![&mut msaa], vec![&mut eb, &mut blur, &mut compose], 
-        render_pass::Pipeline::new(vec![0], vec![(0, 1), (1, 2), (2, 3), (0, 3)]));
+    let mut depth_render = render_target::DepthRenderTarget::new(render_width, render_height, &wnd_ctx);
+    let mut cull_lights = render_target::CullLightProcessor::new(render_width, render_height, 16);
+    main_scene.set_tiles_x(cull_lights.get_groups_x());
+    let mut main_pass = render_pass::RenderPass::new(vec![&mut depth_render, &mut msaa], vec![&mut cull_lights, &mut eb, &mut blur, &mut compose], 
+        render_pass::Pipeline::new(vec![0], vec![(0, 2), (2, 1), (1, 3), (3, 4), (4, 5), (1, 5)]));
 
     let mut wnd_size : (u32, u32) = (render_width, render_height);
     let wnd = wnd_ctx.gl_window();
@@ -187,9 +189,11 @@ fn main() {
             }
         }).collect();
         main_scene.set_lights(&light_data);
-        main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data| {
+        main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data, rt| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
-            main_skybox.borrow().render(fbo, &scene_data, &shader_manager);
+            if rt == RenderTargetType::Visual {
+                main_skybox.borrow().render(fbo, &scene_data, &shader_manager);
+            }
             user.render(fbo, &scene_data, &shader_manager);
             asteroid1.render(fbo, &scene_data, &shader_manager);
             laser.render(fbo, &scene_data, &shader_manager);

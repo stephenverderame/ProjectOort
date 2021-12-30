@@ -4,6 +4,7 @@ use cgmath::*;
 use std::cell::RefCell;
 
 /// Rotation matrix or quaternion
+#[allow(dead_code)]
 #[derive(Clone)]
 pub enum Rot {
     Quat(Quaternion<f32>),
@@ -11,6 +12,7 @@ pub enum Rot {
 }
 
 /// Converts `rot` to matrix form
+#[allow(dead_code)]
 fn rot_to_mat(rot: &Rot) -> Matrix4<f32> {
     match rot {
         Rot::Quat(q) => Matrix4::<f32>::from(q.clone()),
@@ -23,7 +25,7 @@ fn rot_to_mat(rot: &Rot) -> Matrix4<f32> {
 /// the parent's coordinate space. A node without an explicit parent is implicitly the child of the 
 /// root scene node.
 /// 
-/// Conversion of a Node into a `Matrix4<f32>` returns the transformation matrix from
+/// Conversion of a Node into a `Matrix4` returns the transformation matrix from
 /// this node's local space to world space. 
 #[derive(Clone)]
 pub struct Node {
@@ -68,9 +70,6 @@ impl Node {
         }
     }
 
-    /*pub fn add_child(&mut self, node: Node, name: &str) {
-        self.children.insert(String::from(name), Box::new(node));
-    }*/
     pub fn set_parent(&mut self, parent: Rc<RefCell<Node>>) {
         self.parent = Some(parent);
     }

@@ -18,6 +18,9 @@ uniform samplerCube irradiance_map;
 uniform samplerCube prefilter_map;
 uniform sampler2D brdf_lut;
 
+uniform int tile_num_x;
+#define MAX_LIGHTS_PER_TILE 1024
+
 const float max_reflection_mips = 4.0; // we use 5 mip maps (0 to 4)
 
 struct LightData {
@@ -25,12 +28,17 @@ struct LightData {
     vec4 end;
 };
 
-layout(std430, binding = 0) buffer LightBuffer {
+layout(std430, binding = 0) readonly buffer LightBuffer {
     uint light_num;
     LightData lights[];
     // vec3 always takes up the size of vec4 
     // (buffer-backed blocks padded to 16 bytes)
 };
+
+layout(std430, binding = 1) readonly buffer VisibleLightIndices {
+    // flattened 2D array of work_groups x visible_lights
+    int indices[];
+} visibleLightBuffer;
 
 const vec3 light_color = vec3(0.5451, 0, 0.5451);
 
@@ -170,9 +178,14 @@ vec3 lightDirTube(vec3 tubeStart, vec3 tubeEnd, vec3 norm, vec3 R, float radius)
 vec3 directRadiance(vec3 norm, vec3 view_dir, vec3 f0, float roughness, 
     float metallic, vec3 albedo, vec3 R) 
 {
+    ivec2 location = ivec2(gl_FragCoord.xy);
+    ivec2 tileId = location / ivec2(16, 16);
+    uint workGroupIndex = tileId.y * tile_num_x + tileId.x;
+    uint offset = workGroupIndex * MAX_LIGHTS_PER_TILE;
+
     vec3 radiance_out = vec3(0);
 
-    for(int i = 0; i < light_num; ++i) {
+    for(int i = 0; i < MAX_LIGHTS_PER_TILE && visibleLightBuffer.indices[offset + i] != -1; ++i) {
         // using point lights, so we know where the light is coming from 
         // so not exactly integrating over total area
 
@@ -180,7 +193,7 @@ vec3 directRadiance(vec3 norm, vec3 view_dir, vec3 f0, float roughness,
         // we want our light direction vector to be from the closest point on the light mesh to our frag_position
         // so we find the closest point on the mesh to our reflection ray
 
-        LightData light = lights[i];
+        LightData light = lights[visibleLightBuffer.indices[offset + i]];
 
         const float light_radius = 1.5;
         const float luminance = 10;
