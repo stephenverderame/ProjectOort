@@ -47,12 +47,14 @@ fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::Sh
     let mut gen_sky_pass = render_pass::RenderPass::new(vec![&mut gen_sky], vec![&mut cp], render_pass::Pipeline::new(vec![0], vec![(0, 1)]));
     let gen_sky_ptr = &mut gen_sky_pass as *mut render_pass::RenderPass;
     unsafe {
-        let sky_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, |fbo, scene_data, _| {
-            sky.render(fbo, scene_data, &shader_manager)
+        let sky_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, 
+        |fbo, scene_data, _, cache| {
+            sky.render(fbo, scene_data, &cache, &shader_manager)
         });
         // safe bx we finish using the first borrow here
-        let sky_hdr_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, |fbo, scene_data, _| {
-            sky_hdr.render(fbo, scene_data, shader_manager)
+        let sky_hdr_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, 
+        |fbo, scene_data, _, cache| {
+            sky_hdr.render(fbo, scene_data, &cache, shader_manager)
         });
 
         match (sky_cbo, sky_hdr_cbo) {
@@ -71,17 +73,18 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
     let mip_levels = 5;
     let mut rt = render_target::MipCubemapRenderTarget::new(size, mip_levels, 10., cgmath::point3(0., 0., 0.), facade);
     let iterations = RefCell::new(0);
-    let res = rt.draw(&cam, None, &|fbo, viewer, _, _| {
+    let mut cache = shader::PipelineCache::new();
+    let res = rt.draw(&cam, None, &cache, &|fbo, viewer, _, cache, _| {
         let its = *iterations.borrow();
         let mip_level = its / 6;
         skybox.borrow_mut().set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
         let sd = draw_traits::default_scene_data(viewer, 1.);
-        skybox.borrow().render(fbo, &sd, shader_manager);
+        skybox.borrow().render(fbo, &sd, &cache, shader_manager);
         *iterations.borrow_mut() = its + 1;
     });
     skybox.borrow_mut().set_mip_progress(None);
     let mut tp = render_target::GenLutProcessor::new(facade, 512, 512);
-    let brdf = tp.process(None, shader_manager, None);
+    let brdf = tp.process(None, shader_manager, &mut cache, None);
     match (res.unwrap(), brdf.unwrap()) {
         (TextureType::TexCube(Ownership::Own(x)), 
             TextureType::Tex2d(Ownership::Own(y))) => (x, y),
@@ -205,15 +208,16 @@ fn main() {
             }
         }).collect();
         main_scene.set_lights(&light_data);
-        main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data, rt| {
+        main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, 
+            |fbo, scene_data, rt, cache| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
             if rt == shader::RenderPassType::Visual {
-                main_skybox.borrow().render(fbo, &scene_data, &shader_manager);
-                laser.render(fbo, &scene_data, &shader_manager);
+                main_skybox.borrow().render(fbo, &scene_data, cache, &shader_manager);
+                laser.render(fbo, &scene_data, cache, &shader_manager);
             }
-            user.render(fbo, &scene_data, &shader_manager);
-            asteroid.render(fbo, &scene_data, &shader_manager);
-            container.render(fbo, &scene_data, &shader_manager);
+            user.render(fbo, &scene_data, cache, &shader_manager);
+            asteroid.render(fbo, &scene_data, cache, &shader_manager);
+            container.render(fbo, &scene_data, cache, &shader_manager);
         });
         controller.reset_toggles();
         let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 

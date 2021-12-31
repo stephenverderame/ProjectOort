@@ -94,8 +94,6 @@ pub struct SceneData<'a> {
     pub viewer: ViewerData,
     pub ibl_maps: Option<&'a PbrMaps>,
     pub lights: Option<&'a ssbo::SSBO<LightData>>,
-    pub tiles_x: Option<u32>,
-    pub depth_tex: Option<&'a glium::texture::DepthTexture2d>,
     pub pass_type: RenderPassType,
 }
 /// Shader inputs for PBR shader
@@ -143,6 +141,19 @@ pub struct LightCullData<'a> {
     pub depth_tex: &'a glium::texture::DepthTexture2d,
     pub scr_width: u32,
     pub scr_height: u32,
+}
+pub struct PipelineCache<'a> {
+    pub depth_tex: Option<&'a glium::texture::DepthTexture2d>,
+    pub tiles_x: Option<u32>,
+}
+
+impl<'a> PipelineCache<'a> {
+    pub fn new() -> PipelineCache<'a> {
+        PipelineCache {
+            depth_tex: None,
+            tiles_x: None,
+        }
+    }
 }
 /// Shader inputs passed from a rendering object to the shader manager
 pub enum UniformInfo<'a> {
@@ -334,7 +345,7 @@ impl ShaderManager {
     /// the shader's draw parameters, and `data` converted to a uniform
     /// Panics if `data` is missing required fields or if `data` does not match a 
     /// shader
-    pub fn use_shader<'b>(&'b self, data: &'b UniformInfo, scene_data: Option<&'b SceneData<'b>>) 
+    pub fn use_shader<'b>(&'b self, data: &'b UniformInfo, scene_data: Option<&'b SceneData<'b>>, cache: Option<&'b PipelineCache<'b>>) 
         -> (&'b glium::Program, &'b glium::DrawParameters, UniformType<'b>)
     {
         use UniformInfo::*;
@@ -380,7 +391,7 @@ impl ShaderManager {
                     brdf_lut: sample_linear_clamp!(sd.ibl_maps.unwrap().brdf_lut),
                     ao_map: sample_mip_repeat!(ao_map.unwrap_or(&self.empty_2d)),
                     use_ao: ao_map.is_some(),
-                    tile_num_x: sd.tiles_x.unwrap() as i32,
+                    tile_num_x: cache.unwrap().tiles_x.unwrap() as i32,
                 })
             },
             (UiInfo(UiData {model, diffuse, do_blend, blend_tex }), _) => UniformType::UiUniform(glium::uniform! {

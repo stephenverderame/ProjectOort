@@ -207,7 +207,8 @@ impl Model {
         
     }
 
-    fn render_helper<F, S>(&self, scene_data: &shader::SceneData, manager: &shader::ShaderManager, model: Option<[[f32; 4]; 4]>, instancing: bool,
+    fn render_helper<F, S>(&self, scene_data: &shader::SceneData, manager: &shader::ShaderManager, local_data: &shader::PipelineCache,
+        model: Option<[[f32; 4]; 4]>, instancing: bool,
         surface: &mut S, draw_func: F) where F : Fn(&MMesh, &glium::Program, &glium::DrawParameters, &shader::UniformType, &mut S), S : glium::Surface
     {
         for mesh in &self.mesh_geom {
@@ -217,13 +218,13 @@ impl Model {
                 },
                 _ => panic!("No material"),
             };
-            let (shader, params, uniform) = manager.use_shader(&data, Some(scene_data));
+            let (shader, params, uniform) = manager.use_shader(&data, Some(scene_data), Some(local_data));
             draw_func(mesh, shader, params, &uniform, surface);
         }
     }
 
-    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
-        self.render_helper(mats, manager, Some(model), false, wnd,
+    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
+        self.render_helper(mats, manager, local_data, Some(model), false, wnd,
         |mesh, shader, params, uniform, surface| {
             match uniform {
                shader::UniformType::LaserUniform(uniform) => 
@@ -242,10 +243,10 @@ impl Model {
         });
     }
 
-    pub fn render_instanced<S : glium::Surface, T : Copy>(&self, wnd: &mut S, mats: &shader::SceneData, manager: &shader::ShaderManager, 
+    pub fn render_instanced<S : glium::Surface, T : Copy>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, manager: &shader::ShaderManager, 
         instance_buffer: glium::vertex::VertexBufferSlice<T>) 
     {
-        self.render_helper(mats, manager, None, true, wnd,
+        self.render_helper(mats, manager, local_data, None, true, wnd,
         |mesh, shader, params, uniform, surface| {
             match uniform {
                shader::UniformType::LaserUniform(uniform) => 

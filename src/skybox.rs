@@ -52,7 +52,7 @@ impl Skybox {
 }
 
 impl draw_traits::Drawable for Skybox {
-    fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, shader: &shader::ShaderManager) {
+    fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) {
         let args = match (&self.tex, self.mip_progress) {
             (SkyboxTex::Sphere(map), _) => shader::UniformInfo::EquiRectInfo(shader::EqRectData {
                 env_map: map,
@@ -66,7 +66,7 @@ impl draw_traits::Drawable for Skybox {
                 roughness: progress,
             }),
         };
-        let (program, params, uniform) = shader.use_shader(&args, Some(mats));
+        let (program, params, uniform) = shader.use_shader(&args, Some(mats), Some(local_data));
         match uniform {
             shader::UniformType::SkyboxUniform(uniform) =>
                 frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),

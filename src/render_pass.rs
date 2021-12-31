@@ -4,6 +4,7 @@ use glium::*;
 use crate::shader;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use shader::PipelineCache;
 
 /// A pipeline is a connected DAG with start nodes. Pipeline stores the indices of
 /// transformations in a RenderPass
@@ -137,12 +138,14 @@ impl<'a> RenderPass<'a> {
     /// Calls the render function, saving the results to the render target
     /// Then runs the render target through the process pipeline until it procudes a texture
     pub fn run_pass(&mut self, viewer: &dyn Viewer, shader: &shader::ShaderManager, sdata: std::rc::Rc<std::cell::RefCell<shader::SceneData>>,
-        render_func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, shader::RenderPassType, &Option<Vec<&TextureType>>)) -> Option<TextureType>
+        render_func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, 
+            shader::RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) -> Option<TextureType>
     {
         let mut saved_textures = Vec::<TextureType>::new();
         let mut registers = HashMap::<u16, Vec<usize>>::new();
         let mut final_out : Option<usize> = None;
         let targets_len = self.targets.len();
+        let mut cache = PipelineCache::new();
         for node in &self.topo_order {
             let unode = *node as usize;
             if unode < targets_len {
@@ -152,7 +155,7 @@ impl<'a> RenderPass<'a> {
                 unsafe {
                     let elem = idx_ptr.add(index);
                     #[allow(mutable_borrow_reservation_conflict)]
-                    let tex = (*elem).draw(viewer, inputs, render_func);
+                    let tex = (*elem).draw(viewer, inputs, &cache, render_func);
                     if tex.is_some() {
                         saved_textures.push(tex.unwrap());
                         final_out = RenderPass::save_stage_out(
@@ -163,14 +166,13 @@ impl<'a> RenderPass<'a> {
                 let index = unode - targets_len;
                 // -1 because index 0 is the render target
                 let process_input = RenderPass::get_inputs(&registers, &saved_textures, *node);
-                let mut sd = sdata.borrow_mut();
-                let sd = &mut *sd;
                 let idx_ptr = self.processes.as_mut_ptr();
+                let sd = sdata.borrow();
                 unsafe {
                     // need to use pointers because compiler can't know that we're borrowing
                     // different elements of the vector
                     let elem = idx_ptr.add(index);
-                    let tex = (*elem).process(process_input, shader, Some(sd));
+                    let tex = (*elem).process(process_input, shader, &mut cache, Some(&*sd));
                     if tex.is_some() { 
                         saved_textures.push(tex.unwrap());
                         final_out = RenderPass::save_stage_out(&mut registers, 

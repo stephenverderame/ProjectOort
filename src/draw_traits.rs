@@ -3,7 +3,7 @@ use crate::shader;
 pub trait Drawable {
     /// Draws the drawable to the given surface `frame`, with the provided scene information
     /// and shader manager.
-    fn render<S>(&self, frame: &mut S, mats: &shader::SceneData, shader: &shader::ShaderManager)
+    fn render<S>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager)
         where S : glium::Surface;
 }
 
@@ -40,8 +40,6 @@ pub fn default_scene_data(viewer: &dyn Viewer, aspect: f32) -> shader::SceneData
         viewer: viewer_data_from(viewer, aspect),
         ibl_maps: None,
         lights: None,
-        tiles_x: None,
-        depth_tex: None,
         pass_type: shader::RenderPassType::Visual,
     }
 }

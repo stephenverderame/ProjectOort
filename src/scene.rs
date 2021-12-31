@@ -25,8 +25,6 @@ impl Scene {
             viewer,
             ibl_maps: self.ibl_maps.as_ref(),
             lights: Some(&self.lights),
-            tiles_x: None,
-            depth_tex: None,
             pass_type: pass,
         }
     }
@@ -51,21 +49,22 @@ impl Scene {
 
     pub fn render_pass<'b, F>(&self, pass: &'b mut RenderPass, viewer: &dyn draw_traits::Viewer, 
         aspect: f32, shader: &shader::ShaderManager, func: F)
-        -> Option<render_target::TextureType<'b>> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData, shader::RenderPassType)
+        -> Option<render_target::TextureType<'b>> 
+        where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData, shader::RenderPassType, &shader::PipelineCache)
     {
         use std::rc::*;
         use std::cell::*;
         let vd = draw_traits::viewer_data_from(viewer, aspect);
         let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
         pass.run_pass(viewer, shader, sd.clone(),
-        &|fbo, viewer, typ, _| {
+        &|fbo, viewer, typ, cache, _| {
             {
                 let mut sdm = sd.borrow_mut();
                 sdm.viewer = draw_traits::viewer_data_from(viewer, aspect);
                 sdm.pass_type = typ;
             }
             let sd = sd.borrow();
-            func(fbo, &*sd, typ);
+            func(fbo, &*sd, typ, cache);
         })
     }
 

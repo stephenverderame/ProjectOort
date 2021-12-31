@@ -37,12 +37,12 @@ impl Entity {
 }
 
 impl draw_traits::Drawable for Entity {
-    fn render<S>(&self, frame: &mut S, mats: &shader::SceneData, shader: &shader::ShaderManager) 
+    fn render<S>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) 
         where S : glium::Surface
     {
         if self.data.visible {
             let mat : cgmath::Matrix4<f32> = std::convert::From::from(&self.data.transform);
-            self.geometry.render(frame, mats, mat.into(), shader)
+            self.geometry.render(frame, mats, local_data, mat.into(), shader)
         }
     }
 }
@@ -138,11 +138,11 @@ impl EntityFlyweight {
 }
 
 impl draw_traits::Drawable for EntityFlyweight {
-    fn render<S>(&self, frame: &mut S, scene_data: &shader::SceneData, shader: &shader::ShaderManager)
+    fn render<S>(&self, frame: &mut S, scene_data: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager)
         where S : glium::Surface
     {
         if let Some(instance_data) = &self.instance_data {
-            self.geometry.render_instanced(frame, scene_data, shader, 
+            self.geometry.render_instanced(frame, scene_data, local_data, shader, 
                 instance_data.slice(.. self.instances.len()).unwrap());
         }
     }
