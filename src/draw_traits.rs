@@ -34,5 +34,6 @@ pub fn default_scene_data(viewer: &dyn Viewer, aspect: f32) -> shader::SceneData
         ibl_maps: None,
         lights: None,
         tiles_x: 0,
+        pass_type: shader::RenderPassType::Visual,
     }
 }

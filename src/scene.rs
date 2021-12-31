@@ -20,7 +20,7 @@ impl Scene {
         }
     }
 
-    fn get_scene_data(&self, viewer: &dyn draw_traits::Viewer, aspect: f32) 
+    fn get_scene_data(&self, viewer: &dyn draw_traits::Viewer, aspect: f32, pass: shader::RenderPassType) 
         -> shader::SceneData
     {
         let view = viewer.view_mat();
@@ -33,6 +33,7 @@ impl Scene {
             ibl_maps: self.ibl_maps.as_ref(),
             lights: Some(&self.lights),
             tiles_x: self.tiles_x,
+            pass_type: pass,
         }
     }
 
@@ -56,11 +57,11 @@ impl Scene {
 
     pub fn render_pass<'b, F>(&self, pass: &'b mut RenderPass, viewer: &dyn draw_traits::Viewer, 
         aspect: f32, shader: &shader::ShaderManager, func: F)
-        -> render_target::TextureType<'b> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData, render_target::RenderTargetType)
+        -> render_target::TextureType<'b> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData, shader::RenderPassType)
     {
-        pass.run_pass(viewer, shader, &self.get_scene_data(viewer, aspect),
+        pass.run_pass(viewer, shader, &self.get_scene_data(viewer, aspect, shader::RenderPassType::Visual),
         &|fbo, viewer, typ, _| {
-            let mats = self.get_scene_data(viewer, aspect);
+            let mats = self.get_scene_data(viewer, aspect, typ);
             func(fbo, &mats, typ);
         })
     }

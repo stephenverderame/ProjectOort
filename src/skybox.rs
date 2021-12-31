@@ -56,20 +56,17 @@ impl draw_traits::Drawable for Skybox {
         let args = match (&self.tex, self.mip_progress) {
             (SkyboxTex::Sphere(map), _) => shader::UniformInfo::EquiRectInfo(shader::EqRectData {
                 env_map: map,
-                scene_data: mats,
             }),
             (SkyboxTex::Cube(map), None) => shader::UniformInfo::SkyboxInfo(shader::SkyboxData {
                 env_map: map,
-                scene_data: mats
             }),
             (SkyboxTex::Cube(map), Some(progress)) => shader::UniformInfo::PrefilterHdrEnvInfo(
                 shader::PrefilterHdrEnvData {
                 env_map: map,
-                scene_data: mats,
                 roughness: progress,
             }),
         };
-        let (program, params, uniform) = shader.use_shader(&args);
+        let (program, params, uniform) = shader.use_shader(&args, Some(mats));
         match uniform {
             shader::UniformType::SkyboxUniform(uniform) =>
                 frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),

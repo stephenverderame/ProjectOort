@@ -99,6 +99,24 @@ fn handle_shots<F : glium::backend::Facade>(user: &player::Player, controller: &
     }
 }
 
+fn gen_asteroid_field<F : glium::backend::Facade>(obj: &mut entity::EntityFlyweight, facade: &F) {
+    use rand::distributions::*;
+    let scale_distrib = rand::distributions::Uniform::from(0.01 .. 0.3);
+    let pos_distrib = rand::distributions::Uniform::from(-100.0 .. 100.0);
+    let angle_distrib = rand::distributions::Uniform::from(0.0 .. 360.0);
+    let mut rng = rand::thread_rng();
+    for _ in 0 .. 400 {
+        let scale = scale_distrib.sample(&mut rng);
+        let axis = vec3(pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng)).normalize();
+        let rot = Quaternion::<f64>::from_axis_angle(axis, Deg::<f64>(angle_distrib.sample(&mut rng)));
+        let transform = node::Node::new(Some(point3(pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng))),
+            Some(rot), Some(vec3(scale, scale, scale)), None);
+        obj.new_instance(entity::EntityInstanceData {
+            transform, velocity: vec3(0., 0., 0.), visible: true,
+        }, facade)
+    }
+}
+
 
 fn main() {
     let render_width = 1920;
@@ -117,9 +135,8 @@ fn main() {
     let ship_model = model::Model::load("assets/Ships/StarSparrow01.obj", &wnd_ctx);
     //let asteroid_model = model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx);
     let mut user = player::Player::new(ship_model);
-    let mut asteroid1 = entity::Entity::new(model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx));
-    asteroid1.data.transform.scale = cgmath::vec3(0.08, 0.08, 0.08);
-    asteroid1.data.transform.pos = cgmath::point3(0., 2., 10.);
+    let mut asteroid = entity::EntityFlyweight::new(model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx));
+    gen_asteroid_field(&mut asteroid, &wnd_ctx);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
 
@@ -191,12 +208,12 @@ fn main() {
         main_scene.set_lights(&light_data);
         main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, |fbo, scene_data, rt| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
-            if rt == RenderTargetType::Visual {
+            if rt == shader::RenderPassType::Visual {
                 main_skybox.borrow().render(fbo, &scene_data, &shader_manager);
+                laser.render(fbo, &scene_data, &shader_manager);
             }
             user.render(fbo, &scene_data, &shader_manager);
-            asteroid1.render(fbo, &scene_data, &shader_manager);
-            laser.render(fbo, &scene_data, &shader_manager);
+            asteroid.render(fbo, &scene_data, &shader_manager);
             container.render(fbo, &scene_data, &shader_manager);
         });
         controller.reset_toggles();

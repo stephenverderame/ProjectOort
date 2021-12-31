@@ -19,6 +19,7 @@ pub struct Entity {
 }
 
 impl Entity {
+    #[allow(dead_code)]
     pub fn new(model: model::Model) -> Entity {
         Entity::from(model, node::Node::new(None, None, None, None))
     }
