@@ -56,8 +56,8 @@ fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::Sh
         });
 
         match (sky_cbo, sky_hdr_cbo) {
-            (TextureType::TexCube(Ownership::Own(sky)), 
-            TextureType::TexCube(Ownership::Own(sky_hdr))) => (sky, sky_hdr),
+            (Some(TextureType::TexCube(Ownership::Own(sky))), 
+            Some(TextureType::TexCube(Ownership::Own(sky_hdr)))) => (sky, sky_hdr),
             _ => panic!("Unexpected return from sky generation"),
         }
     }
@@ -81,8 +81,8 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
     });
     skybox.borrow_mut().set_mip_progress(None);
     let mut tp = render_target::GenLutProcessor::new(facade, 512, 512);
-    let brdf = tp.process(Vec::<&TextureType>::new(), shader_manager, None);
-    match (res, brdf) {
+    let brdf = tp.process(None, shader_manager, None);
+    match (res.unwrap(), brdf.unwrap()) {
         (TextureType::TexCube(Ownership::Own(x)), 
             TextureType::Tex2d(Ownership::Own(y))) => (x, y),
         _ => panic!("Unexpected return from read"),
@@ -158,9 +158,8 @@ fn main() {
         surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
         surface
     }, |disp| disp.finish().unwrap());
-    let mut depth_render = render_target::DepthRenderTarget::new(render_width, render_height, &wnd_ctx);
+    let mut depth_render = render_target::DepthRenderTarget::new(render_width, render_height, None, &wnd_ctx);
     let mut cull_lights = render_target::CullLightProcessor::new(render_width, render_height, 16);
-    main_scene.set_tiles_x(cull_lights.get_groups_x());
     let mut main_pass = render_pass::RenderPass::new(vec![&mut depth_render, &mut msaa], vec![&mut cull_lights, &mut eb, &mut blur, &mut compose], 
         render_pass::Pipeline::new(vec![0], vec![(0, 2), (2, 1), (1, 3), (3, 4), (4, 5), (1, 5)]));
 

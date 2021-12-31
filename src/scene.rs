@@ -9,30 +9,24 @@ use crate::ssbo;
 pub struct Scene {
     ibl_maps: Option<shader::PbrMaps>,
     lights: ssbo::SSBO<shader::LightData>,
-    tiles_x: u32,
 }
 
 impl Scene {
     pub fn new() -> Scene {
         Scene {
             ibl_maps: None, lights: ssbo::SSBO::<shader::LightData>::dynamic(None),
-            tiles_x: 0,
         }
     }
 
-    fn get_scene_data(&self, viewer: &dyn draw_traits::Viewer, aspect: f32, pass: shader::RenderPassType) 
+    fn get_scene_data(&self, viewer: shader::ViewerData, pass: shader::RenderPassType) 
         -> shader::SceneData
     {
-        let view = viewer.view_mat();
-        let proj = viewer.proj_mat(aspect);
         shader::SceneData {
-            viewproj: (proj * view).into(),
-            view: view.into(),
-            proj: proj.into(),
-            cam_pos: viewer.cam_pos().into(),
+            viewer,
             ibl_maps: self.ibl_maps.as_ref(),
             lights: Some(&self.lights),
-            tiles_x: self.tiles_x,
+            tiles_x: None,
+            depth_tex: None,
             pass_type: pass,
         }
     }
@@ -57,12 +51,21 @@ impl Scene {
 
     pub fn render_pass<'b, F>(&self, pass: &'b mut RenderPass, viewer: &dyn draw_traits::Viewer, 
         aspect: f32, shader: &shader::ShaderManager, func: F)
-        -> render_target::TextureType<'b> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData, shader::RenderPassType)
+        -> Option<render_target::TextureType<'b>> where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData, shader::RenderPassType)
     {
-        pass.run_pass(viewer, shader, &self.get_scene_data(viewer, aspect, shader::RenderPassType::Visual),
+        use std::rc::*;
+        use std::cell::*;
+        let vd = draw_traits::viewer_data_from(viewer, aspect);
+        let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
+        pass.run_pass(viewer, shader, sd.clone(),
         &|fbo, viewer, typ, _| {
-            let mats = self.get_scene_data(viewer, aspect, typ);
-            func(fbo, &mats, typ);
+            {
+                let mut sdm = sd.borrow_mut();
+                sdm.viewer = draw_traits::viewer_data_from(viewer, aspect);
+                sdm.pass_type = typ;
+            }
+            let sd = sd.borrow();
+            func(fbo, &*sd, typ);
         })
     }
 
@@ -72,9 +75,5 @@ impl Scene {
 
     pub fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
         self.lights.update(lights)
-    }
-
-    pub fn set_tiles_x(&mut self, tiles_x: u32) {
-        self.tiles_x = tiles_x;
     }
 }

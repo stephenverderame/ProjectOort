@@ -81,16 +81,21 @@ pub struct PbrMaps {
     pub brdf_lut: glium::texture::Texture2d,
 }
 
-/// Stores scene-wide information such as view and projection matrices
-/// and IBL images
-pub struct SceneData<'a> {
+pub struct ViewerData {
     pub viewproj: [[f32; 4]; 4],
     pub view: [[f32; 4]; 4],
     pub proj: [[f32; 4]; 4],
     pub cam_pos: [f32; 3],
+}
+
+/// Stores scene-wide information passed to uniforms such as view and projection matrices
+/// and IBL images
+pub struct SceneData<'a> {
+    pub viewer: ViewerData,
     pub ibl_maps: Option<&'a PbrMaps>,
     pub lights: Option<&'a ssbo::SSBO<LightData>>,
-    pub tiles_x: u32,
+    pub tiles_x: Option<u32>,
+    pub depth_tex: Option<&'a glium::texture::DepthTexture2d>,
     pub pass_type: RenderPassType,
 }
 /// Shader inputs for PBR shader
@@ -340,18 +345,18 @@ impl ShaderManager {
         let uniform = match (data, pass_tp) {
             (LaserInfo, Visual) => 
                 UniformType::LaserUniform(glium::uniform! {
-                    viewproj: scene_data.unwrap().viewproj
+                    viewproj: scene_data.unwrap().viewer.viewproj
                 }),
             (SkyboxInfo(SkyboxData {env_map}), Visual) 
             => UniformType::SkyboxUniform(glium::uniform! {
-                view: scene_data.unwrap().view,
-                proj: scene_data.unwrap().proj,
+                view: scene_data.unwrap().viewer.view,
+                proj: scene_data.unwrap().viewer.proj,
                 skybox: sample_linear_clamp!(env_map),
             }),
             (EquiRectInfo(EqRectData{env_map}), Visual) 
             => UniformType::EqRectUniform(glium::uniform! {
-                view: scene_data.unwrap().view,
-                proj: scene_data.unwrap().proj,
+                view: scene_data.unwrap().viewer.view,
+                proj: scene_data.unwrap().viewer.proj,
                 equirectangular_map: sample_linear_clamp!(env_map),
             }),
             (PBRInfo(PBRData { model, 
@@ -362,20 +367,20 @@ impl ShaderManager {
                 sd.lights.unwrap().bind(0);
                 // NOTE: requires the compute shader's SSBO for visible indices is still bound
                 UniformType::PbrUniform(glium::uniform! {
-                    viewproj: sd.viewproj,
+                    viewproj: sd.viewer.viewproj,
                     model: model.clone(),
                     albedo_map: sample_mip_repeat!(diffuse_tex),
                     roughness_map: sample_mip_repeat!(roughness_map.unwrap()),
                     normal_map: sample_mip_repeat!(normal_map.unwrap()),
                     metallic_map: sample_mip_repeat!(metallic_map.unwrap()),
-                    cam_pos: sd.cam_pos,
+                    cam_pos: sd.viewer.cam_pos,
                     emission_map: sample_mip_repeat!(emission_map.unwrap_or(&self.empty_srgb)),
                     irradiance_map: sample_linear_clamp!(sd.ibl_maps.unwrap().diffuse_ibl),
                     prefilter_map: sample_mip_clamp!(sd.ibl_maps.unwrap().spec_ibl),
                     brdf_lut: sample_linear_clamp!(sd.ibl_maps.unwrap().brdf_lut),
                     ao_map: sample_mip_repeat!(ao_map.unwrap_or(&self.empty_2d)),
                     use_ao: ao_map.is_some(),
-                    tile_num_x: sd.tiles_x as i32,
+                    tile_num_x: sd.tiles_x.unwrap() as i32,
                 })
             },
             (UiInfo(UiData {model, diffuse, do_blend, blend_tex }), _) => UniformType::UiUniform(glium::uniform! {
@@ -396,8 +401,8 @@ impl ShaderManager {
             (PrefilterHdrEnvInfo(PrefilterHdrEnvData {
                 env_map, roughness }), _) 
             => UniformType::PrefilterHdrEnvUniform(glium::uniform! {
-                view: scene_data.unwrap().view,
-                proj: scene_data.unwrap().proj,
+                view: scene_data.unwrap().viewer.view,
+                proj: scene_data.unwrap().viewer.proj,
                 env_map: sample_linear_clamp!(env_map),
                 roughness: *roughness,
             }),
@@ -405,7 +410,7 @@ impl ShaderManager {
                 model: cgmath::Matrix4::from_scale(1f32).into(),
             }),
             (PBRInfo(PBRData {model, ..}), Depth) => UniformType::DepthUniform(glium::uniform! {
-                viewproj: scene_data.unwrap().viewproj,
+                viewproj: scene_data.unwrap().viewer.viewproj,
                 model: model.clone(),
             }),
             (_, pass) => panic!("Invalid shader/shader data combination with shader '{:?}' during pass '{:?}'", typ, pass),
@@ -419,10 +424,10 @@ impl ShaderManager {
             UniformInfo::LightCullInfo(LightCullData {depth_tex, scr_width, scr_height}) => {
                 let scene_data = scene_data.unwrap();
                 let uniform = glium::uniform! {
-                    view: scene_data.view,
-                    proj: scene_data.proj,
+                    view: scene_data.viewer.view,
+                    proj: scene_data.viewer.proj,
                     depth_tex: depth_tex,
-                    viewproj: scene_data.viewproj,
+                    viewproj: scene_data.viewer.viewproj,
                     screen_size: [scr_width as i32, scr_height as i32],
                 };
                 let compute = self.compute_shaders.get(&ShaderType::CullLightsCompute).unwrap();

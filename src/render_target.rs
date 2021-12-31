@@ -51,7 +51,6 @@ pub enum TextureType<'a> {
     Tex2d(Ownership<'a, texture::Texture2d>),
     Depth2d(Ownership<'a, texture::DepthTexture2d>),
     TexCube(Ownership<'a, texture::Cubemap>),
-    ToDefaultFbo,
 }
 
 /// A RenderTarget is something that can be rendered to and produces a texture
@@ -68,7 +67,7 @@ pub trait RenderTarget {
     /// Returns the texture output of rendering to this render target
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>,
         func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, 
-        RenderPassType, &Option<Vec<&TextureType>>)) -> TextureType;
+        RenderPassType, &Option<Vec<&TextureType>>)) -> Option<TextureType>;
 }
 
 /// A TextureProcessor transforms input textures into an output texture. It is basically
@@ -79,8 +78,8 @@ pub trait TextureProcessor {
     /// `shader` - shader manager
     /// 
     /// `data` - the scene data for the processor or `None`
-    fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager,
-        data: Option<&shader::SceneData>) -> TextureType;
+    fn process(&mut self, source: Option<Vec<&TextureType>>, shader: &shader::ShaderManager,
+        data: Option<&mut shader::SceneData>) -> Option<TextureType>;
 }
 
 /// RenderTarget which renders to an MSAA color and depth buffer
@@ -122,7 +121,7 @@ impl<'a> MsaaRenderTarget<'a> {
 impl<'a> RenderTarget for MsaaRenderTarget<'a> {
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>,
         func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &Option<Vec<&TextureType>>)) 
-        -> TextureType 
+        -> Option<TextureType>
     {
         func(&mut self.fbo, viewer, RenderPassType::Visual, &pipeline_inputs);
         let dst_target = glium::BlitTarget {
@@ -133,7 +132,7 @@ impl<'a> RenderTarget for MsaaRenderTarget<'a> {
         };
         self.fbo.blit_whole_color_to(&self.out_fbo, 
             &dst_target, glium::uniforms::MagnifySamplerFilter::Linear);
-        TextureType::Tex2d(Ref(&self.out_tex))
+        Some(TextureType::Tex2d(Ref(&self.out_tex)))
     }
 }
 
@@ -144,17 +143,26 @@ impl<'a> RenderTarget for MsaaRenderTarget<'a> {
 pub struct DepthRenderTarget<'a> {
     fbo: framebuffer::SimpleFrameBuffer<'a>,
     rbo: Box<texture::DepthTexture2d>,
+    viewer: Option<Box<dyn Viewer>>,
 }
 
 impl<'a> DepthRenderTarget<'a> {
-    pub fn new<F : glium::backend::Facade>(width: u32, height: u32, facade: &F) -> DepthRenderTarget {
+    /// `width` - width of depth texture
+    /// 
+    /// `height` - height of depth texture
+    /// 
+    /// `viewer` - custom viewer for this render target or `None` to use whatever viewer
+    /// is being used in the rest of the pipeline
+    pub fn new<F : glium::backend::Facade>(width: u32, height: u32, 
+        viewer: Option<Box<dyn Viewer>>, facade: &F) -> DepthRenderTarget 
+    {
         let rbo = Box::new(texture::DepthTexture2d::empty_with_format(facade, texture::DepthFormat::F32, 
             texture::MipmapsOption::NoMipmap, width, height).unwrap());
         let rbo_ptr = &*rbo as *const texture::DepthTexture2d;
         unsafe {
             DepthRenderTarget {
                 fbo: glium::framebuffer::SimpleFrameBuffer::depth_only(facade, &*rbo_ptr).unwrap(),
-                rbo,
+                rbo, viewer,
                 
             }
         }
@@ -164,9 +172,9 @@ impl<'a> DepthRenderTarget<'a> {
 
 impl<'a> RenderTarget for DepthRenderTarget<'a> {
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>,
-        func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &Option<Vec<&TextureType>>)) -> TextureType {
-        func(&mut self.fbo, viewer, RenderPassType::Depth, &pipeline_inputs);
-        TextureType::Depth2d(Ref(&*self.rbo))
+        func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &Option<Vec<&TextureType>>)) -> Option<TextureType> {
+        func(&mut self.fbo, self.viewer.as_ref().map(|x| &**x).unwrap_or(viewer), RenderPassType::Depth, &pipeline_inputs);
+        Some(TextureType::Depth2d(Ref(&*self.rbo)))
     }
 }
 /// Helper struct for render targets rendering to a cubemap with perspective
@@ -256,7 +264,7 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
 impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
     fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>,
         func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &Option<Vec<&TextureType>>)) 
-        -> TextureType 
+        -> Option<TextureType>
     {
         self.cubemap.draw(&|face, cam| {
             let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(self.facade, 
@@ -264,7 +272,7 @@ impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
             func(&mut fbo, cam, RenderPassType::Visual, &pipeline_inputs);
         });
-        TextureType::TexCube(Ref(&self.cbo_tex))
+        Some(TextureType::TexCube(Ref(&self.cbo_tex)))
     }
 
 }
@@ -302,7 +310,7 @@ impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
 impl<'a, F : backend::Facade> RenderTarget for MipCubemapRenderTarget<'a, F> {
     fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>,
         func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &Option<Vec<&TextureType>>)) 
-        -> TextureType 
+        -> Option<TextureType>
     {
         let cbo_tex = texture::Cubemap::empty_with_format(self.facade, texture::UncompressedFloatFormat::F16F16F16,
         texture::MipmapsOption::AutoGeneratedMipmaps, self.size).unwrap();
@@ -318,7 +326,7 @@ impl<'a, F : backend::Facade> RenderTarget for MipCubemapRenderTarget<'a, F> {
                 func(&mut fbo, cam, RenderPassType::Visual, &pipeline_inputs);
             });
         }
-        TextureType::TexCube(Own(cbo_tex))
+        Some(TextureType::TexCube(Own(cbo_tex)))
     }
 
 }
@@ -354,15 +362,15 @@ impl<'a> ExtractBrightProcessor<'a> {
 }
 
 impl<'a> TextureProcessor for ExtractBrightProcessor<'a> {
-    fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager,
-        sd: Option<&shader::SceneData>) -> TextureType 
+    fn process(&mut self, source: Option<Vec<&TextureType>>, shader: &shader::ShaderManager,
+        sd: Option<&mut shader::SceneData>) -> Option<TextureType>
     {
-        if let TextureType::Tex2d(source) = source[0] {
+        if let TextureType::Tex2d(source) = source.unwrap()[0] {
             let source = source.to_ref();
             let data = shader::UniformInfo::ExtractBrightInfo(shader::ExtractBrightData {
                 tex: source
             });
-            let (program, params, uniform) = shader.use_shader(&data, sd);
+            let (program, params, uniform) = shader.use_shader(&data, sd.map(|x| &*x));
             match uniform {
                 shader::UniformType::ExtractBrightUniform(uniform) => {
                     let fbo = &mut self.bright_color_fbo;
@@ -371,7 +379,7 @@ impl<'a> TextureProcessor for ExtractBrightProcessor<'a> {
                 },
                 _ => panic!("Invalid uniform type returned for RenderTarget"),
             };
-            TextureType::Tex2d(Ref(&self.bright_color_tex))
+            Some(TextureType::Tex2d(Ref(&self.bright_color_tex)))
         } else {
             panic!("Invalid texture source for extract bright");
         }
@@ -437,10 +445,10 @@ impl<'a> SepConvProcessor<'a> {
 }
 
 impl<'a> TextureProcessor for SepConvProcessor<'a> {
-    fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager,
-        _: Option<&shader::SceneData>) -> TextureType 
+    fn process(&mut self, source: Option<Vec<&TextureType>>, shader: &shader::ShaderManager,
+        _: Option<&mut shader::SceneData>) -> Option<TextureType>
     {
-        if let TextureType::Tex2d(source) = source[0] {
+        if let TextureType::Tex2d(source) = source.unwrap()[0] {
             let source = source.to_ref();
             SepConvProcessor::pass(&mut self.ping_pong_fbo[0], source, &self.vbo, &self.ebo, 0, shader);
             for i in 1 .. self.iterations {
@@ -448,7 +456,7 @@ impl<'a> TextureProcessor for SepConvProcessor<'a> {
                 let dst = &mut self.ping_pong_fbo[i % 2];
                 SepConvProcessor::pass(dst, tex, &self.vbo, &self.ebo, i, shader);
             }
-            TextureType::Tex2d(Ref(&*self.ping_pong_tex[(self.iterations - 1) % 2]))
+            Some(TextureType::Tex2d(Ref(&*self.ping_pong_tex[(self.iterations - 1) % 2])))
         } else {
             panic!("Invalid source type for separable convolution");
         }
@@ -501,21 +509,22 @@ impl<S : Surface, F : Fn() -> S, G : Fn(S)> UiCompositeProcessor<S, F, G> {
 }
 
 impl<S : Surface, F : Fn() -> S, G : Fn(S)> TextureProcessor for UiCompositeProcessor<S, F, G> {
-    fn process(&mut self, source: Vec<&TextureType>, shader: &shader::ShaderManager,
-        _: Option<&shader::SceneData>) -> TextureType 
+    fn process(&mut self, source: Option<Vec<&TextureType>>, shader: &shader::ShaderManager,
+        _: Option<&mut shader::SceneData>) -> Option<TextureType>
     {
+        let source = source.unwrap();
         if source.len() == 2 {
             match (source[0], source[1]) {
                 (TextureType::Tex2d(diffuse), TextureType::Tex2d(blend)) => {
                     self.render(diffuse, Some(blend), shader);
-                    TextureType::ToDefaultFbo
+                    None
                 },
                 _ => panic!("Invalid texture type passed to texture processor")
             }
         } else if source.len() == 1 {
             if let TextureType::Tex2d(diffuse) = source[0] {
                 self.render(diffuse, None, shader);
-                TextureType::ToDefaultFbo
+                None
             } else {
                 panic!("Invalid texture type passed to ui composer")
             }
@@ -564,17 +573,19 @@ impl<'a, F : backend::Facade> CopyTextureProcessor<'a, F> {
 }
 
 impl<'a, F : backend::Facade> TextureProcessor for CopyTextureProcessor<'a, F> {
-    fn process(&mut self, source: Vec<&TextureType>, _: &shader::ShaderManager, 
-        _: Option<&shader::SceneData>) -> TextureType 
+    fn process(&mut self, source: Option<Vec<&TextureType>>, _: &shader::ShaderManager, 
+        _: Option<&mut shader::SceneData>) -> Option<TextureType>
     {
-        match source[0] {
-            TextureType::ToDefaultFbo => TextureType::ToDefaultFbo,
+        if source.is_none() {
+            return None
+        }
+        match source.unwrap()[0] {
             TextureType::Tex2d(Ref(x)) => {
                 let out = texture::Texture2d::empty_with_format(self.facade,
                     self.tex_format, self.mipmap,
                     self.width, self.height).unwrap();
                 self.blit_src_to_dst(*x, &out);
-                TextureType::Tex2d(Own(out))
+                Some(TextureType::Tex2d(Own(out)))
             },
             TextureType::TexCube(Ref(x)) => {
                 use texture::CubeLayer::*;
@@ -586,7 +597,7 @@ impl<'a, F : backend::Facade> TextureProcessor for CopyTextureProcessor<'a, F> {
                     self.blit_src_to_dst(x.main_level().image(layer), 
                         out.main_level().image(layer));
                 }
-                TextureType::TexCube(Own(out))
+                Some(TextureType::TexCube(Own(out)))
             },
             _ => panic!("Not implemented copy type"),
         }
@@ -617,8 +628,8 @@ impl<'a, F : backend::Facade> GenLutProcessor<'a, F> {
 }
 
 impl<'a, F : backend::Facade> TextureProcessor for GenLutProcessor<'a, F> {
-    fn process(&mut self, _: Vec<&TextureType>, shader: &shader::ShaderManager, 
-        sd: Option<&shader::SceneData>) -> TextureType 
+    fn process(&mut self, _: Option<Vec<&TextureType>>, shader: &shader::ShaderManager, 
+        sd: Option<&mut shader::SceneData>) -> Option<TextureType>
     {
         let tex = texture::Texture2d::empty_with_format(self.facade,
             texture::UncompressedFloatFormat::F16F16, texture::MipmapsOption::NoMipmap,
@@ -627,13 +638,13 @@ impl<'a, F : backend::Facade> TextureProcessor for GenLutProcessor<'a, F> {
             self.width, self.height).unwrap();
         let mut fbo = framebuffer::SimpleFrameBuffer::with_depth_buffer(self.facade, &tex, &rbo).unwrap();
         fbo.clear_color_and_depth((0., 0., 0., 0.), 1.);
-        let (program, params, uniform) = shader.use_shader(&shader::UniformInfo::GenLutInfo, sd);
+        let (program, params, uniform) = shader.use_shader(&shader::UniformInfo::GenLutInfo, sd.map(|x| &*x));
         match uniform {
             shader::UniformType::BrdfLutUniform(uniform) => 
                 fbo.draw(&self.vbo, &self.ebo, program, &uniform, params).unwrap(),
             _ => panic!("Gen lut got unexepected uniform type")
         };
-        TextureType::Tex2d(Own(tex))
+        Some(TextureType::Tex2d(Own(tex)))
     }
 }
 
@@ -644,6 +655,8 @@ impl<'a, F : backend::Facade> TextureProcessor for GenLutProcessor<'a, F> {
 /// 2D Depth Texture
 /// ### Outputs
 /// None (results stored in SSBO owned by this processor)
+/// ### Mutators
+/// Saves the horizontal work group number to SceneData's tiles_x param
 pub struct CullLightProcessor {
     work_groups_x: u32,
     work_groups_y: u32,
@@ -664,16 +677,17 @@ impl CullLightProcessor {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_groups_x(&self) -> u32 {
         self.work_groups_x
     }
 }
 
 impl TextureProcessor for CullLightProcessor {
-    fn process(&mut self, input: Vec<&TextureType>, shader: &shader::ShaderManager, 
-        data: Option<&shader::SceneData>) -> TextureType 
+    fn process(&mut self, input: Option<Vec<&TextureType>>, shader: &shader::ShaderManager, 
+        data: Option<&mut shader::SceneData>) -> Option<TextureType>
     {
-        if let TextureType::Depth2d(depth) = input[0] {
+        if let TextureType::Depth2d(depth) = input.unwrap()[0] {
             let depth_tex = depth.to_ref();
             let params = shader::UniformInfo::LightCullInfo(shader::LightCullData {
                 depth_tex: depth_tex,
@@ -681,10 +695,31 @@ impl TextureProcessor for CullLightProcessor {
                 scr_height: self.height,
             });
             self.visible_light_buffer.bind(1);
-            shader.execute_compute(self.work_groups_x, self.work_groups_y, 1, params, data);
-            TextureType::ToDefaultFbo
+            let data = data.map(|x| { x.tiles_x = Some(self.work_groups_x); x });
+            shader.execute_compute(self.work_groups_x, self.work_groups_y, 1, params, data.map(|x| &*x));
+            None
         } else {
             panic!("Unexpected texture input!");
         }
     }
 }
+// Texture processor that stores its inputs in SceneData to be used as
+// shader uniform inputs for subsequent stages
+/*pub struct ToSceneDataProcessor {}
+
+impl TextureProcessor for ToSceneDataProcessor {
+    fn process<'a>(&mut self, input: Option<Vec<&'a TextureType<'a>>>, shader: &shader::ShaderManager, 
+        data: Option<&mut shader::SceneData<'a>>) -> Option<TextureType>
+    {
+        let sd = data.unwrap();
+        if input.is_none() { return None }
+        else {
+            let mut input = input.unwrap();
+            match input.swap_remove(0) {
+                TextureType::Depth2d(Own(tex)) => sd.depth_tex = Some(tex),
+                _ => panic!(),
+            }
+        }
+        None
+    }
+}*/
