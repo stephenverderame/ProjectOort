@@ -142,6 +142,9 @@ pub struct LightCullData<'a> {
     pub scr_width: u32,
     pub scr_height: u32,
 }
+/// Stores shader inputs that can change from stage to stage within a 
+/// render pass. Shader stages can read and write from the pipeline chache,
+/// which is reset every iteration of a render pass
 pub struct PipelineCache<'a> {
     pub depth_tex: Option<&'a glium::texture::DepthTexture2d>,
     pub tiles_x: Option<u32>,

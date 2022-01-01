@@ -80,8 +80,8 @@ pub trait TextureProcessor {
     /// `shader` - shader manager
     /// 
     /// `data` - the scene data for the processor or `None`
-    fn process(&mut self, source: Option<Vec<&TextureType>>, shader: &shader::ShaderManager,
-        cache: &mut PipelineCache, data: Option<&shader::SceneData>) -> Option<TextureType>;
+    fn process<'a>(&mut self, source: Option<Vec<&'a TextureType>>, shader: &shader::ShaderManager,
+        cache: &mut PipelineCache<'a>, data: Option<&shader::SceneData>) -> Option<TextureType>;
 }
 
 /// RenderTarget which renders to an MSAA color and depth buffer
@@ -708,23 +708,23 @@ impl TextureProcessor for CullLightProcessor {
         }
     }
 }
-// Texture processor that stores its inputs in SceneData to be used as
-// shader uniform inputs for subsequent stages
-/*pub struct ToSceneDataProcessor {}
+/// Texture processor that stores its inputs in PipelineCache to be used as
+/// shader uniform inputs for subsequent stages
+pub struct ToSceneDataProcessor {}
 
 impl TextureProcessor for ToSceneDataProcessor {
-    fn process<'a>(&mut self, input: Option<Vec<&'a TextureType<'a>>>, shader: &shader::ShaderManager, 
-        data: Option<&mut shader::SceneData<'a>>) -> Option<TextureType>
+    fn process<'a>(&mut self, input: Option<Vec<&'a TextureType>>, _: &shader::ShaderManager, 
+        cache: &mut PipelineCache<'a>, _: Option<&shader::SceneData>) -> Option<TextureType>
     {
-        let sd = data.unwrap();
         if input.is_none() { return None }
         else {
             let mut input = input.unwrap();
             match input.swap_remove(0) {
-                TextureType::Depth2d(Own(tex)) => sd.depth_tex = Some(tex),
+                TextureType::Depth2d(Own(tex)) => cache.depth_tex = Some(tex),
+                TextureType::Depth2d(Ref(tex)) => cache.depth_tex = Some(tex),
                 _ => panic!(),
             }
         }
         None
     }
-}*/
+}

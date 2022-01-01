@@ -127,7 +127,7 @@ impl<'a> RenderPass<'a> {
     }
 
     /// Gets the inputs for `node`, or `None` if there are none saved
-    fn get_inputs<'b>(registers: &HashMap<u16, Vec<usize>>, saved_textures: &'b Vec<TextureType>, node: u16) 
+    fn get_inputs<'b>(registers: &HashMap<u16, Vec<usize>>, saved_textures: &'b Vec<TextureType<'b>>, node: u16) 
         -> Option<Vec<&'b TextureType<'b>>>
     {
         registers.get(&node).map(|input_indices| {
@@ -146,21 +146,19 @@ impl<'a> RenderPass<'a> {
         let mut final_out : Option<usize> = None;
         let targets_len = self.targets.len();
         let mut cache = PipelineCache::new();
+        let mut tex_count : usize = 0;
+        let tex_buf_ptr = &mut saved_textures as *mut Vec<TextureType>;
         for node in &self.topo_order {
             let unode = *node as usize;
+            #[allow(unused_assignments)]
+            let mut stage_out_tex : Option<TextureType> = None;
             if unode < targets_len {
                 let index = unode;
                 let inputs = RenderPass::get_inputs(&registers, &saved_textures, *node);
                 let idx_ptr = self.targets.as_mut_ptr();
                 unsafe {
                     let elem = idx_ptr.add(index);
-                    #[allow(mutable_borrow_reservation_conflict)]
-                    let tex = (*elem).draw(viewer, inputs, &cache, render_func);
-                    if tex.is_some() {
-                        saved_textures.push(tex.unwrap());
-                        final_out = RenderPass::save_stage_out(
-                            &mut registers, saved_textures.len() - 1, *node, &self.pipeline);
-                    }                  
+                    stage_out_tex = (*elem).draw(viewer, inputs, &cache, render_func);              
                 }
             } else {
                 let index = unode - targets_len;
@@ -172,14 +170,15 @@ impl<'a> RenderPass<'a> {
                     // need to use pointers because compiler can't know that we're borrowing
                     // different elements of the vector
                     let elem = idx_ptr.add(index);
-                    let tex = (*elem).process(process_input, shader, &mut cache, Some(&*sd));
-                    if tex.is_some() { 
-                        saved_textures.push(tex.unwrap());
-                        final_out = RenderPass::save_stage_out(&mut registers, 
-                            saved_textures.len() - 1, *node, &self.pipeline);
-                    };
+                    stage_out_tex = (*elem).process(process_input, shader, &mut cache, Some(&*sd));
                 }
             }
+            if stage_out_tex.is_some() {
+                unsafe { (*tex_buf_ptr).push(stage_out_tex.unwrap()); }
+                final_out = RenderPass::save_stage_out(
+                    &mut registers, tex_count, *node, &self.pipeline);
+                tex_count += 1;
+            }    
         }
         final_out.map(|tex_idx| saved_textures.swap_remove(tex_idx))
     }
