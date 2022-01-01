@@ -108,7 +108,7 @@ fn gen_asteroid_field<F : glium::backend::Facade>(obj: &mut entity::EntityFlywei
     let pos_distrib = rand::distributions::Uniform::from(-100.0 .. 100.0);
     let angle_distrib = rand::distributions::Uniform::from(0.0 .. 360.0);
     let mut rng = rand::thread_rng();
-    for _ in 0 .. 400 {
+    for _ in 0 .. 100 {
         let scale = scale_distrib.sample(&mut rng);
         let axis = vec3(pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng)).normalize();
         let rot = Quaternion::<f64>::from_axis_angle(axis, Deg::<f64>(angle_distrib.sample(&mut rng)));
@@ -162,9 +162,15 @@ fn main() {
         surface
     }, |disp| disp.finish().unwrap());
     let mut depth_render = render_target::DepthRenderTarget::new(render_width, render_height, None, &wnd_ctx);
+    let dir_light = camera::OrthoCamera::new(400., 400., 1., 300., point3(-120., 120., 0.), Some(point3(0., 0., 0.)), 
+        Some(vec3(0., 1., 0.)));
+    let mut dir_light_depth_render = render_target::DepthRenderTarget::new(2048, 2048, Some(Box::new(dir_light.clone())), &wnd_ctx);
+    main_scene.set_dir_light(Box::new(dir_light), 1.);
     let mut cull_lights = render_target::CullLightProcessor::new(render_width, render_height, 16);
-    let mut main_pass = render_pass::RenderPass::new(vec![&mut depth_render, &mut msaa], vec![&mut cull_lights, &mut eb, &mut blur, &mut compose], 
-        render_pass::Pipeline::new(vec![0], vec![(0, 2), (2, 1), (1, 3), (3, 4), (4, 5), (1, 5)]));
+    let mut to_cache = render_target::ToCacheProcessor{};
+    let mut main_pass = render_pass::RenderPass::new(vec![&mut depth_render, &mut msaa, &mut dir_light_depth_render], 
+        vec![&mut cull_lights, &mut eb, &mut blur, &mut compose, &mut to_cache], 
+        render_pass::Pipeline::new(vec![0], vec![(0, 3), (3, 2), (2, 7), (7, 1), (1, 4), (4, 5), (5, 6), (1, 6)]));
 
     let mut wnd_size : (u32, u32) = (render_width, render_height);
     let wnd = wnd_ctx.gl_window();
@@ -177,10 +183,12 @@ fn main() {
         transform: node::Node::new(Some(point3(0., 0., 0.)), None, Some(vec3(0.3, 0.3, 3.)), None),
         velocity: vec3(0., 0., 0.), visible: true,
     }, &wnd_ctx);
+    laser.new_instance(entity::EntityInstanceData {
+        transform: node::Node::new(Some(point3(-120., 120., 0.)), None, None, None),
+        velocity: vec3(0., 0., 0.), visible: true,
+    }, &wnd_ctx);
     let mut prev_time = Instant::now();
     e_loop.run_return(|ev, _, control| {
-        let dt = Instant::now().duration_since(prev_time).as_secs_f64();
-        prev_time = Instant::now();
         match ev {
             Event::LoopDestroyed => return,
             Event::WindowEvent {event, ..} => {
@@ -193,38 +201,42 @@ fn main() {
                 }
             },
             Event::DeviceEvent {event, ..} => controller.on_input(event),
+            Event::MainEventsCleared => {
+                let dt = Instant::now().duration_since(prev_time).as_secs_f64();
+                prev_time = Instant::now();
+                let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
+                user.move_player(&controller, dt);
+                handle_shots(&user, &controller, &mut laser, &wnd_ctx);
+                let light_data : Vec<shader::LightData> = laser.positions().iter().map(|node| {
+                    let mat : cgmath::Matrix4<f32> = From::from(*node);
+                    let start = mat.transform_point(point3(0., 0., 3.));
+                    let end = mat.transform_point(point3(0., 0., -3.));
+                    shader::LightData {
+                        light_start: [start.x, start.y, start.z, 0f32],
+                        light_end: [end.x, end.y, end.z, 0f32],
+                    }
+                }).collect();
+                main_scene.set_lights(&light_data);
+                main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, 
+                    |fbo, scene_data, rt, cache| {
+                    fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
+                    if rt == shader::RenderPassType::Visual {
+                        main_skybox.borrow().render(fbo, &scene_data, cache, &shader_manager);
+                        laser.render(fbo, &scene_data, cache, &shader_manager);
+                    }
+                    user.render(fbo, &scene_data, cache, &shader_manager);
+                    asteroid.render(fbo, &scene_data, cache, &shader_manager);
+                    container.render(fbo, &scene_data, cache, &shader_manager);
+                });
+                controller.reset_toggles();
+                let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 
+                    Deg::<f64>(45. * dt), Deg::<f64>(0.)).into();
+                laser.instances[0].transform.orientation = laser.instances[0].transform.orientation *
+                    q;
+                laser.instance_motion(dt);
+            }
             _ => (),
         };
-        let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
-        user.move_player(&controller, dt);
-        handle_shots(&user, &controller, &mut laser, &wnd_ctx);
-        let light_data : Vec<shader::LightData> = laser.positions().iter().map(|node| {
-            let mat : cgmath::Matrix4<f32> = From::from(*node);
-            let start = mat.transform_point(point3(0., 0., 3.));
-            let end = mat.transform_point(point3(0., 0., -3.));
-            shader::LightData {
-                light_start: [start.x, start.y, start.z, 0f32],
-                light_end: [end.x, end.y, end.z, 0f32],
-            }
-        }).collect();
-        main_scene.set_lights(&light_data);
-        main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, 
-            |fbo, scene_data, rt, cache| {
-            fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
-            if rt == shader::RenderPassType::Visual {
-                main_skybox.borrow().render(fbo, &scene_data, cache, &shader_manager);
-                laser.render(fbo, &scene_data, cache, &shader_manager);
-            }
-            user.render(fbo, &scene_data, cache, &shader_manager);
-            asteroid.render(fbo, &scene_data, cache, &shader_manager);
-            container.render(fbo, &scene_data, cache, &shader_manager);
-        });
-        controller.reset_toggles();
-        let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 
-            Deg::<f64>(45. * dt), Deg::<f64>(0.)).into();
-        laser.instances[0].transform.orientation = laser.instances[0].transform.orientation *
-            q;
-        laser.instance_motion(dt);
     });
 
 }

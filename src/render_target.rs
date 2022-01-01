@@ -710,9 +710,9 @@ impl TextureProcessor for CullLightProcessor {
 }
 /// Texture processor that stores its inputs in PipelineCache to be used as
 /// shader uniform inputs for subsequent stages
-pub struct ToSceneDataProcessor {}
+pub struct ToCacheProcessor {}
 
-impl TextureProcessor for ToSceneDataProcessor {
+impl TextureProcessor for ToCacheProcessor {
     fn process<'a>(&mut self, input: Option<Vec<&'a TextureType>>, _: &shader::ShaderManager, 
         cache: &mut PipelineCache<'a>, _: Option<&shader::SceneData>) -> Option<TextureType>
     {
@@ -722,7 +722,7 @@ impl TextureProcessor for ToSceneDataProcessor {
             match input.swap_remove(0) {
                 TextureType::Depth2d(Own(tex)) => cache.depth_tex = Some(tex),
                 TextureType::Depth2d(Ref(tex)) => cache.depth_tex = Some(tex),
-                _ => panic!(),
+                _ => panic!("Not implemented for to cache"),
             }
         }
         None

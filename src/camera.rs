@@ -2,6 +2,7 @@ use crate::node;
 use crate::draw_traits;
 use cgmath::*;
 
+#[derive(Clone)]
 pub struct PerspectiveCamera {
     pub cam: node::Node,
     pub aspect: f32,
@@ -38,7 +39,7 @@ impl draw_traits::Viewer for PerspectiveCamera {
             self.up.cast::<f32>().unwrap())
     }
 }
-
+#[derive(Clone)]
 pub struct OrthoCamera {
     pub left: f32,
     pub right: f32,

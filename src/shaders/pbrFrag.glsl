@@ -2,6 +2,7 @@
 in vec2 f_tex_coords;
 in vec3 frag_pos;
 in vec3 f_normal;
+in vec4 frag_pos_light;
 
 out vec4 frag_color;
 
@@ -13,6 +14,11 @@ uniform sampler2D roughness_map;
 uniform sampler2D emission_map;
 uniform sampler2D ao_map;
 uniform bool use_ao;
+
+uniform sampler2D depth_tex;
+uniform vec3 dir_light_pos;
+const float dir_light_near = 1;
+const float light_size_uv = 0.03;
 
 uniform samplerCube irradiance_map;
 uniform samplerCube prefilter_map;
@@ -43,6 +49,130 @@ layout(std430, binding = 1) readonly buffer VisibleLightIndices {
 const vec3 light_color = vec3(0.5451, 0, 0.5451);
 
 const float PI = 3.14159265359;
+
+float pcssSearchWidth(float lightSize, float recvDist) {
+    return lightSize * (recvDist - dir_light_near) / recvDist;
+}
+
+float RadicalInverse_VdC(uint bits) 
+{
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
+}
+
+// Monte Carlo Integration LDS
+// returns floats in the range -1 to 1
+vec2 Hammersley(uint i, uint N)
+{
+    return vec2(float(i)/float(N), RadicalInverse_VdC(i)) * 2.0 - 1.0;
+} 
+
+const vec2 poissonDisk[16] = {
+    vec2( -0.94201624, -0.39906216 ),
+    vec2( 0.94558609, -0.76890725 ),
+    vec2( -0.094184101, -0.92938870 ),
+    vec2( 0.34495938, 0.29387760 ),
+    vec2( -0.91588581, 0.45771432 ),
+    vec2( -0.81544232, -0.87912464 ),
+    vec2( -0.38277543, 0.27676845 ),
+    vec2( 0.97484398, 0.75648379 ),
+    vec2( 0.44323325, -0.97511554 ),
+    vec2( 0.53742981, -0.47373420 ),
+    vec2( -0.26496911, -0.41893023 ),
+    vec2( 0.79197514, 0.19090188 ),
+    vec2( -0.24188840, 0.99706507 ),
+    vec2( -0.81409955, 0.91437590 ),
+    vec2( 0.19984126, 0.78641367 ),
+    vec2( 0.14383161, -0.14100790 )
+};
+
+// Gets the average blocker distance
+// `shadowCoords` - fragment position in light space uv coordinates
+// `depth_map` - depth map to use
+// returns (avgBlockerDist, # blockers)
+vec2 findBlockerDist(vec3 shadowCoords, float searchWidth, sampler2D depth_map) {
+    int blockers = 0;
+    float avgBlockerDistance = 0;
+    const int blocker_search_samples = 64;
+
+    for(int i = 0; i < blocker_search_samples; ++i) {
+        vec2 rand_offset = Hammersley(i, blocker_search_samples) * searchWidth;
+        vec2 pos = shadowCoords.xy + rand_offset;
+        if (pos.x >= 0 && pos.y >= 0 && pos.x <= 1 && pos.y <= 1) {
+            float sample_depth = texture(depth_map, pos).r;
+            if (sample_depth < shadowCoords.z) {
+                ++blockers;
+                avgBlockerDistance += sample_depth;
+            }
+        }
+    }
+    /*const int radius = 2;
+    for(int x = -radius; x <= radius; ++x) {
+        for(int y = -radius; y <= radius; ++y) {
+            vec2 off = vec2(x, y) * (1.0 / textureSize(depth_map, 0));
+            vec2 pos = shadowCoords.xy + off;
+            if (pos.x >= 0 && pos.y >= 0 && pos.x <= 1 && pos.y <= 1) {
+                float sample_depth = texture(depth_map, pos).r;
+                if (sample_depth < shadowCoords.z) {
+                    ++blockers;
+                    avgBlockerDistance += sample_depth;
+                }
+            }
+        }
+    }*/
+
+    return vec2(avgBlockerDistance / float(blockers), blockers);
+}
+// Performs pcf on the depth map around `shadowCoords`
+// does so by randomly sampling positions within `filter_size`
+// `shadowCoords` - fragment position in light space uv coordinates
+// `filter_size` - size of the pcf kernel radius
+// returns the average shadow "boolean". 1 is fully in shadow, 0 is not in shadow
+float pcf(vec3 shadowCoords, sampler2D depth_map, float filter_size_uv, float bias) {
+    const int pcf_samples = 64;
+
+    float sum = 0;
+    for(int i = 0; i < pcf_samples; ++i) {
+        vec2 offset = Hammersley(i, pcf_samples) * filter_size_uv;
+        vec2 pos = shadowCoords.xy + offset;
+        //if (pos.x >= 0 && pos.y >= 0 && pos.x <= 1 && pos.y <= 1) {
+            float depth = texture(depth_map, pos).r;
+            sum += shadowCoords.z - bias > depth ? 1.0 : 0.0;
+        //}
+    }
+
+    return sum / pcf_samples;
+}
+// calculates the shadow for frag_pos
+// 1 represents fully in shadow and 0 represents fully out of shadow
+float calcShadow(vec3 norm) {
+    float zRecv = frag_pos_light.z;
+    vec3 projCoords = frag_pos_light.xyz / frag_pos_light.w;
+    projCoords = projCoords * 0.5 + 0.5;
+    if (projCoords.z > 1.0) return 0;
+
+    vec2 texel_size = 1.0 / textureSize(depth_tex, 0);
+
+    float searchWidth = pcssSearchWidth(light_size_uv, zRecv);
+    vec2 blockers = findBlockerDist(projCoords, searchWidth, depth_tex);
+    if (blockers.y < 1.0) return 0;
+    float avgBlockerDist = blockers.x; //uv coordinates
+    //if (projCoords.z > 1.0) return 0;
+
+    float penumbraWidth = (projCoords.z - avgBlockerDist) * light_size_uv / avgBlockerDist;
+    float pcfRadius = penumbraWidth;// * dir_light_near / zRecv;
+
+    vec3 lightDir = normalize(dir_light_pos - frag_pos);
+    float bias = max(0.05 * (1.0 - dot(norm, lightDir)), 0.005);
+    return pcf(projCoords, depth_tex, pcfRadius, bias);
+    //return projCoords.z - bias > texture(depth_tex, projCoords.xy).r ? 1.0 : 0.0;
+
+
+}
 
 /// Approximates amount of surface microfacets are aligned to the halfway vector
 float normalDistribGGX(vec3 norm, vec3 halfway, float roughness, float alphaPrime) {
@@ -260,7 +390,7 @@ void main() {
     // irradiance map is precomputed integral of light intensity over hemisphere
     vec3 diffuse = irradiance * albedo;
     vec3 specular = prefilter_color * (ks * env_brdf.x + env_brdf.y);
-    vec3 ambient = (kd * diffuse + specular) * ao;
+    vec3 ambient = (kd * diffuse + specular) * ao * ((1.0 - calcShadow(norm)) * 0.75);
     vec3 color = ambient + direct_radiance + emission * 4;
 
     frag_color = vec4(color, 1.0);

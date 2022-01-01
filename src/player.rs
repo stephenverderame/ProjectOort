@@ -55,7 +55,7 @@ impl Player {
 }
 impl draw_traits::Viewer for Player {
     fn proj_mat(&self, aspect: f32) -> cgmath::Matrix4<f32> {
-        cgmath::perspective(cgmath::Deg::<f32>(60f32), aspect, 0.1, 100.)
+        cgmath::perspective(cgmath::Deg::<f32>(60f32), aspect, 0.1, 1000.)
     }
 
     fn cam_pos(&self) -> cgmath::Point3<f32> {

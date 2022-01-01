@@ -9,12 +9,16 @@ use crate::ssbo;
 pub struct Scene {
     ibl_maps: Option<shader::PbrMaps>,
     lights: ssbo::SSBO<shader::LightData>,
+    dir_light_viewer: Option<Box<dyn draw_traits::Viewer>>,
+    dir_light_aspect: f32,
 }
 
 impl Scene {
     pub fn new() -> Scene {
         Scene {
             ibl_maps: None, lights: ssbo::SSBO::<shader::LightData>::dynamic(None),
+            dir_light_viewer: None,
+            dir_light_aspect: 1.,
         }
     }
 
@@ -26,6 +30,10 @@ impl Scene {
             ibl_maps: self.ibl_maps.as_ref(),
             lights: Some(&self.lights),
             pass_type: pass,
+            light_viewproj: self.dir_light_viewer.as_ref().map(
+                |v| (v.proj_mat(self.dir_light_aspect) * v.view_mat()).into()),
+            light_pos: self.dir_light_viewer.as_ref().map(
+                |v| v.cam_pos().into()),
         }
     }
 
@@ -74,5 +82,10 @@ impl Scene {
 
     pub fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
         self.lights.update(lights)
+    }
+
+    pub fn set_dir_light(&mut self, dir_light: Box<dyn draw_traits::Viewer>, aspect: f32) {
+        self.dir_light_viewer = Some(dir_light);
+        self.dir_light_aspect = aspect;
     }
 }
