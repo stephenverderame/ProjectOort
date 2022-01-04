@@ -12,7 +12,7 @@ use draw_traits::Viewer;
 
 use cgmath::*;
 
-fn far() -> f32 { 200f32 }
+fn far() -> f32 { 1000. }
 
 /// The player is the combination of the player's entity and the player's camera
 pub struct Player {

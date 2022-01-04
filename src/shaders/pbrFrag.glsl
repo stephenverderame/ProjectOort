@@ -16,10 +16,9 @@ uniform sampler2D emission_map;
 uniform sampler2D ao_map;
 uniform bool use_ao;
 
-uniform sampler2D depth_tex;
 uniform vec3 dir_light_dir;
 const float dir_light_near = 0.3;
-const float light_size_uv = 0.15;
+const float light_size_uv = 0.2;
 
 uniform samplerCube irradiance_map;
 uniform samplerCube prefilter_map;
@@ -213,15 +212,16 @@ float calcShadow(vec3 norm) {
     //if (projCoords.z > 1) return 0;
     sampler2D depth_map = getCascadeTex(cascIdx);
     vec3 lightDir = normalize(dir_light_dir);
-    float bias = max(0.05 * (1.0 - dot(norm, lightDir)), 0.005);// * (1.0 / (far_planes[cascIdx] * 0.5));
+    float bias = max(0.05 * (1.0 - dot(norm, lightDir)), 0.005) * (1.0 / (far_planes[cascIdx] * 0.1));
 
-    float searchWidth = pcssSearchWidth(light_size_uv, projCoords.z);
+    float adj_light_size = light_size_uv;// / far_planes[0] * far_planes[cascIdx];
+    float searchWidth = pcssSearchWidth(adj_light_size, projCoords.z) / far_planes[cascIdx] * far_planes[0];
     vec2 blockers = findBlockerDist(projCoords, searchWidth, depth_map, bias);
     if (blockers.y < 1.0) return 0;
     float avgBlockerDist = blockers.x; //uv coordinates
     //if (projCoords.z > 1.0) return 0;
 
-    float penumbraWidth = (projCoords.z - avgBlockerDist) * light_size_uv / avgBlockerDist;
+    float penumbraWidth = (projCoords.z - avgBlockerDist) * adj_light_size / avgBlockerDist;
     float pcfRadius = penumbraWidth * dir_light_near / projCoords.z;
 
     return pcf(projCoords, depth_map, pcfRadius, bias);
@@ -447,7 +447,7 @@ void main() {
     // irradiance map is precomputed integral of light intensity over hemisphere
     vec3 diffuse = irradiance * albedo;
     vec3 specular = prefilter_color * (ks * env_brdf.x + env_brdf.y);
-    vec3 ambient = (kd * diffuse + specular) * ao * ((1.0 - calcShadow(norm)) * 0.75);
+    vec3 ambient = (kd * diffuse + specular) * ao * (1.0 - calcShadow(norm) * 0.7);
     vec3 color = ambient + direct_radiance + emission * 4;
 
     frag_color = vec4(color, 1.0);

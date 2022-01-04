@@ -24,99 +24,38 @@ impl PerspectiveCamera {
     }
 
     pub fn get_cascade(&self, light_dir: Vector3<f32>, near: f32, far: f32, map_size: u32) -> Box<dyn Viewer> {
-        println!();
-        println!();
 
         let mut f = self.clone();
         f.near = near;
         f.far = far;
 
-        let (frustum, center) = get_frustum_world(&f);
-        //println!("Near: TL: {:?}, TR: {:?}, BR: {:?}, BL: {:?}", frustum[0], frustum[1], frustum[2], frustum[3]);
-        //println!("Far: TL: {:?}, TR: {:?}, BR: {:?}, BL: {:?}", frustum[4], frustum[5], frustum[6], frustum[7]);
-        println!("Frustum World center: {:?}", center);
-
-        let frustum_radius = (frustum[0] - frustum[6]).magnitude() / 2.0; // half distance between opposite corners
-        //println!("Frustum radius: {}", frustum_radius);
-        let texels_per_unit = map_size as f32 / frustum_radius * 2.0;
-
-        let view = Matrix4::look_at_rh(center + light_dir, center, vec3(0., 1., 0.)); //right-handed system, positive facing towards the camera
-        //println!("Center {:?}\n Light-view Center: {:?}", center, lc / lc.w);
-
-        let mut min_x = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut min_y = f32::MAX;
-        let mut max_y = f32::MIN;
-        let mut min_z = f32::MAX;
-        let mut max_z = f32::MIN;
+        let (frustum, mut center) = get_frustum_world(&f);
+        let mut radius = f32::MIN;
         for pt in &frustum {
-            let pt = view * vec4(pt.x, pt.y, pt.z, 1.0);
-            min_x = min_x.min(pt.x);
-            max_x = max_x.max(pt.x);
-            min_y = min_y.min(pt.y);
-            max_y = max_y.max(pt.y);
-            min_z = min_z.min(-pt.z);
-            max_z = max_z.max(-pt.z);
+            radius = radius.max((pt - center).magnitude());
         }
-        println!("{} {} {} {} {} {}", min_x, max_x, min_y, max_y, min_z, max_z);
-        //println!("View space center: {:?}", view.transform_point(center));
 
-        /*let lookat = Matrix4::from_scale(texels_per_unit) *
-            Matrix4::look_at_rh(point3(0f32, 0., 0.), light_dir_pt, self.up.cast::<f32>().unwrap());
+        let texels_per_unit = map_size as f32 / (radius * 2.0);
+        let lookat = Matrix4::look_at_rh(point3(light_dir.x, light_dir.y, light_dir.z), point3(0., 0., 0.), vec3(0., 1., 0.))
+            * Matrix4::from_scale(texels_per_unit);
         let lookat_inv = lookat.invert().unwrap();
-
         center = lookat.transform_point(center);
-        center.x = center.x.floor(); // keep frustum center to texel_sized increments
+        center.x = center.x.floor();
         center.y = center.y.floor();
+        center.z = center.z.floor();
         center = lookat_inv.transform_point(center);
 
-        let eye = center.to_vec() - (light_dir * frustum_radius * 2.0);
-        let eye_pt : Point3<f32> = From::from(Into::<(f32, f32, f32)>::into(eye));*/
+        let view = Matrix4::look_at_rh(center + light_dir, center, vec3(0., 1., 0.)); 
+        //right-handed system, positive z facing towards the camera (ortho expects positize z facing away)
 
-        let near = if min_z < 0f32 {
-            min_z * 6f32
-        } else {
-            min_z / 6f32
-        };
-        let far = if max_z < 0f32 {
-            max_z / 6f32
-        } else {
-            max_z * 6f32
-        };
-        /*Box::new(OrthoCamera { 
-            cam_pos: eye_pt, target: center,
-            left: min_x, right: max_x,
-            btm: min_y, top: max_y,
-            near, // use radius to ensure the split has a consistant size and includes things that cast shadows into the frustum
-            far,
-            up: vec3(0., 1., 0.),
-        });*/
-        //center = view.transform_point(center);
-        //let tl = view.transform_point(frustum[0]);
-        //let br = view.transform_point(frustum[6]);
-        //let frustum_radius = (tl - br).magnitude() / 2.0;
-        let c = Box::new(StaticCamera {
+        let z_factor = 6f32;
+        Box::new(StaticCamera {
             view,
             near: f.near,
             far: f.far,
-            proj: ortho(min_x, max_x, min_y, max_y, min_z, max_z),
+            proj: ortho(-radius, radius, -radius, radius, -radius * z_factor, radius * z_factor),
             cam_pos: center + light_dir,
-        });
-        //let (f, ce) = get_frustum_world(&*c);
-       // println!("Output world center: {:?}", ce);
-        c
-    }
-
-    pub fn get_cascade_2(&self, near: f32, far: f32, light_dir: Vector3<f32>) {
-        let mut cam = self.clone();
-        cam.near = near;
-        cam.far = far;
-
-        let proj = cam.proj_mat();
-
-        let scale_x = proj[0][0];
-        let scale_y = proj[1][1];
-
+        })
     }
 
     /// Gets the cameras for cascade splits of this frustum
