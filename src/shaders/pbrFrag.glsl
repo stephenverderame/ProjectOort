@@ -3,7 +3,6 @@
 in vec2 f_tex_coords;
 in vec3 frag_pos;
 in vec3 f_normal;
-in vec4 frag_pos_light;
 
 out vec4 frag_color;
 
@@ -419,6 +418,17 @@ vec3 directRadiance(vec3 norm, vec3 view_dir, vec3 f0, float roughness,
 
     return radiance_out;
 }
+/// Applies a fog effect to frag_color by mixing it with a constant fog color 
+/// based on distance of fragment to viewer
+vec3 applyFog(vec3 frag_color) {
+    float depth = abs((view * vec4(frag_pos, 1.0)).z);
+    const vec3 fog_color = vec3(0.4);
+    const float fog_density = 0.001;
+    float fog_factor = 1.0 / exp(depth * fog_density * depth * fog_density);
+    fog_factor = clamp(fog_factor, 0.0, 1.0);
+    return mix(fog_color, frag_color, fog_factor);
+
+}
 
 void main() {
     vec3 albedo = texture(albedo_map, f_tex_coords).rgb; // load textures using SRGB so no need to gamma correct
@@ -450,5 +460,5 @@ void main() {
     vec3 ambient = (kd * diffuse + specular) * ao * (1.0 - calcShadow(norm) * 0.7);
     vec3 color = ambient + direct_radiance + emission * 4;
 
-    frag_color = vec4(color, 1.0);
+    frag_color = vec4(applyFog(color), 1.0);
 }

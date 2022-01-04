@@ -176,6 +176,7 @@ impl<'a> std::default::Default for PipelineCache<'a> {
         }
     }
 }
+
 /// Shader inputs passed from a rendering object to the shader manager
 pub enum UniformInfo<'a> {
     PBRInfo(PBRData<'a>),
