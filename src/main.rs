@@ -44,15 +44,15 @@ fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::Sh
     let gen_sky_scene = scene::Scene::new();
     let mut gen_sky = render_target::CubemapRenderTarget::new(size, 10., cgmath::point3(0., 0., 0.), facade);
     let mut cp = render_target::CopyTextureProcessor::new(size, size, None, None, facade);
-    let mut gen_sky_pass = render_pass::RenderPass::new(vec![&mut gen_sky], vec![&mut cp], render_pass::Pipeline::new(vec![0], vec![(0, 1)]));
+    let mut gen_sky_pass = render_pass::RenderPass::new(vec![&mut gen_sky], vec![&mut cp], render_pass::Pipeline::new(vec![0], vec![(0, (1, 0))]));
     let gen_sky_ptr = &mut gen_sky_pass as *mut render_pass::RenderPass;
     unsafe {
-        let sky_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, 
+        let sky_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, shader_manager, 
         |fbo, scene_data, _, cache| {
             sky.render(fbo, scene_data, &cache, &shader_manager)
         });
         // safe bx we finish using the first borrow here
-        let sky_hdr_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, 1., shader_manager, 
+        let sky_hdr_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, shader_manager, 
         |fbo, scene_data, _, cache| {
             sky_hdr.render(fbo, scene_data, &cache, shader_manager)
         });
@@ -73,12 +73,12 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
     let mip_levels = 5;
     let mut rt = render_target::MipCubemapRenderTarget::new(size, mip_levels, 10., cgmath::point3(0., 0., 0.), facade);
     let iterations = RefCell::new(0);
-    let mut cache = shader::PipelineCache::new();
-    let res = rt.draw(&cam, None, &cache, &|fbo, viewer, _, cache, _| {
+    let mut cache = shader::PipelineCache::default();
+    let res = rt.draw(&cam, None, &mut cache, &|fbo, viewer, _, cache, _| {
         let its = *iterations.borrow();
         let mip_level = its / 6;
         skybox.borrow_mut().set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
-        let sd = draw_traits::default_scene_data(viewer, 1.);
+        let sd = draw_traits::default_scene_data(viewer);
         skybox.borrow().render(fbo, &sd, &cache, shader_manager);
         *iterations.borrow_mut() = its + 1;
     });
@@ -137,7 +137,7 @@ fn main() {
 
     let ship_model = model::Model::load("assets/Ships/StarSparrow01.obj", &wnd_ctx);
     //let asteroid_model = model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx);
-    let mut user = player::Player::new(ship_model);
+    let user = Rc::new(RefCell::new(player::Player::new(ship_model, render_width as f32 / render_height as f32)));
     let mut asteroid = entity::EntityFlyweight::new(model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx));
     gen_asteroid_field(&mut asteroid, &wnd_ctx);
 
@@ -161,16 +161,35 @@ fn main() {
         surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
         surface
     }, |disp| disp.finish().unwrap());
-    let mut depth_render = render_target::DepthRenderTarget::new(render_width, render_height, None, &wnd_ctx);
-    let dir_light = camera::OrthoCamera::new(400., 400., 1., 300., point3(-120., 120., 0.), Some(point3(0., 0., 0.)), 
-        Some(vec3(0., 1., 0.)));
-    let mut dir_light_depth_render = render_target::DepthRenderTarget::new(2048, 2048, Some(Box::new(dir_light.clone())), &wnd_ctx);
-    main_scene.set_dir_light(Box::new(dir_light), 1.);
+    let mut depth_render = render_target::DepthRenderTarget::new(render_width, render_height, None, None, &wnd_ctx);
+    let dir_light = Rc::new(RefCell::new(camera::OrthoCamera::new(400., 400., 1., 300., point3(-120., 120., 0.), Some(point3(0., 0., 0.)), 
+        Some(vec3(0., 1., 0.)))));
+    let dcc = dir_light.clone();
+    let (dir_f, dir_c) = camera::get_frustum_world(&*dir_light.borrow());
+    println!("Dir light center: {:?}", dir_c);
+    println!("Dir light world: {:?}", dir_f);
+    let mut dir_light_depth_render = render_target::DepthRenderTarget::new(2048, 2048, None, 
+        Some(Box::new(move |_| {Box::new(dcc.borrow().clone()) })), &wnd_ctx);
+    main_scene.set_dir_light(dir_light);
     let mut cull_lights = render_target::CullLightProcessor::new(render_width, render_height, 16);
-    let mut to_cache = render_target::ToCacheProcessor{};
-    let mut main_pass = render_pass::RenderPass::new(vec![&mut depth_render, &mut msaa, &mut dir_light_depth_render], 
+    let mut to_cache = render_target::ToCacheProcessor::new(&wnd_ctx);
+    //let uc = user.clone();
+    let ucc = Rc::new(RefCell::new(user.borrow().get_cam()));
+    let user_clone = user.clone();
+    let mut render_cascade_1 = render_target::DepthRenderTarget::new(2048, 2048, None, 
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 30., 2048) })), &wnd_ctx);
+    //let uc = user.clone();
+    let user_clone = user.clone();
+    let mut render_cascade_2 = render_target::DepthRenderTarget::new(2048, 2048, None, 
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 30., 80., 2048) })), &wnd_ctx);
+    //let uc = user.clone();
+    let user_clone = user.clone();
+    let mut render_cascade_3 = render_target::DepthRenderTarget::new(2048, 2048, None, 
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 80., 400., 2048) })), &wnd_ctx);
+    let mut main_pass = render_pass::RenderPass::new(vec![&mut depth_render, &mut msaa, &mut render_cascade_1, &mut render_cascade_2, &mut render_cascade_3], 
         vec![&mut cull_lights, &mut eb, &mut blur, &mut compose, &mut to_cache], 
-        render_pass::Pipeline::new(vec![0], vec![(0, 3), (3, 2), (2, 7), (7, 1), (1, 4), (4, 5), (5, 6), (1, 6)]));
+        render_pass::Pipeline::new(vec![0], vec![(0, (5, 0)), (5, (2, 0)), (5, (3, 0)), (5, (4, 0)), (2, (9, 0)), (3, (9, 1)), (4, (9, 2)), (9, (1, 0)),
+            (1, (6, 0)), (6, (7, 0)), (7, (8, 1)), (1, (8, 0))]));
 
     let mut wnd_size : (u32, u32) = (render_width, render_height);
     let wnd = wnd_ctx.gl_window();
@@ -196,6 +215,7 @@ fn main() {
                     WindowEvent::CloseRequested => *control = ControlFlow::Exit,
                     WindowEvent::Resized(new_size) => {
                         wnd_size = (new_size.width, new_size.height);
+                        user.borrow_mut().aspect = new_size.width as f32 / new_size.height as f32;
                     },
                     _ => (),
                 }
@@ -204,9 +224,11 @@ fn main() {
             Event::MainEventsCleared => {
                 let dt = Instant::now().duration_since(prev_time).as_secs_f64();
                 prev_time = Instant::now();
-                let aspect = (wnd_size.0 as f32) / (wnd_size.1 as f32);
-                user.move_player(&controller, dt);
-                handle_shots(&user, &controller, &mut laser, &wnd_ctx);
+                user.borrow_mut().move_player(&controller, dt);
+                {
+                    let u = user.borrow();
+                    handle_shots(&u, &controller, &mut laser, &wnd_ctx);
+                }
                 let light_data : Vec<shader::LightData> = laser.positions().iter().map(|node| {
                     let mat : cgmath::Matrix4<f32> = From::from(*node);
                     let start = mat.transform_point(point3(0., 0., 3.));
@@ -217,14 +239,18 @@ fn main() {
                     }
                 }).collect();
                 main_scene.set_lights(&light_data);
-                main_scene.render_pass(&mut main_pass, &user, aspect, &shader_manager, 
+                let user_cam = {
+                    let u = user.borrow();
+                    u.get_cam()
+                };
+                main_scene.render_pass(&mut main_pass, &user_cam, &shader_manager, 
                     |fbo, scene_data, rt, cache| {
                     fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
                     if rt == shader::RenderPassType::Visual {
                         main_skybox.borrow().render(fbo, &scene_data, cache, &shader_manager);
                         laser.render(fbo, &scene_data, cache, &shader_manager);
                     }
-                    user.render(fbo, &scene_data, cache, &shader_manager);
+                    user.borrow().render(fbo, &scene_data, cache, &shader_manager);
                     asteroid.render(fbo, &scene_data, cache, &shader_manager);
                     container.render(fbo, &scene_data, cache, &shader_manager);
                 });

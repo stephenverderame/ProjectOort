@@ -10,7 +10,7 @@ use shader::PipelineCache;
 /// transformations in a RenderPass
 pub struct Pipeline {
     pub starts: Vec<u16>,
-    pub adj_list: HashMap<u16, Vec<u16>>,
+    pub adj_list: HashMap<u16, Vec<(u16, usize)>>,
 }
 
 impl Pipeline {
@@ -21,9 +21,10 @@ impl Pipeline {
     /// ## Arguments
     /// `starts` - a vector of the start node id's
     /// 
-    /// `edges` - a set of edges `(u, v)` that indicates a directed edge from `u` to `v`. Where
-    /// `u` and `v` are indexes of nodes.
-    pub fn new(starts: Vec<u16>, edges: Vec<(u16, u16)>) -> Pipeline {
+    /// `edges` - a set of edges `(u, (v, idx))` that indicates a directed edge from `u` to `v`. Where
+    /// `u` and `v` are indexes of nodes. `idx` is the index of `v`s input list that the output from `u` will
+    /// be sent to. Requires that all consecutive inputs are used. 
+    pub fn new(starts: Vec<u16>, edges: Vec<(u16, (u16, usize))>) -> Pipeline {
         Pipeline {
             starts,
             adj_list: Pipeline::to_adj_list(edges),
@@ -31,8 +32,8 @@ impl Pipeline {
     }
 
     /// Creates an adjacency list for the graph defined by the edge set `edges`
-    fn to_adj_list(edges: Vec<(u16, u16)>) -> HashMap<u16, Vec<u16>> {
-        let mut adj_list = HashMap::<u16, Vec<u16>>::new();
+    fn to_adj_list(edges: Vec<(u16, (u16, usize))>) -> HashMap<u16, Vec<(u16, usize)>> {
+        let mut adj_list = HashMap::<u16, Vec<(u16, usize)>>::new();
         for (u, v) in edges {
             match adj_list.get_mut(&u) {
                 Some(lst) => lst.push(v),
@@ -53,7 +54,7 @@ impl Pipeline {
     fn topo_sort(&self, node: u16, order: &mut Vec<u16>, discovered: &mut HashSet<u16>) {
         match self.adj_list.get(&node) {
             Some(neighbors) => {
-                for ns in neighbors {
+                for (ns, _) in neighbors {
                     if discovered.get(ns).is_none() {
                         discovered.insert(*ns);
                         self.topo_sort(*ns, order, discovered);
@@ -97,11 +98,29 @@ impl<'a> RenderPass<'a> {
 
     /// Stores the index of the texture result `v`, in the stored results for the node `k`.
     /// The stored results are in `registers`
-    fn add_to_reg(registers: &mut HashMap<u16, Vec<usize>>, k: u16, v: usize) {
-        match registers.get_mut(&k) {
-            Some(vals) => vals.push(v),
+    /// 
+    /// `k` the `(node, parameter index)` pair that will store `v`. So `v` will be the `k.1`th input argument
+    /// to `k.0`
+    fn add_to_reg(registers: &mut HashMap<u16, Vec<usize>>, k: (u16, usize), v: usize) {
+        match registers.get_mut(&k.0) {
+            Some(vals) => {
+                if vals.len() > k.1 {
+                    assert_eq!(vals[k.1], !(1 as usize));
+                    vals[k.1] = v;
+                } else {
+                    while vals.len() < k.1 {
+                        vals.push(!(1 as usize));
+                    }
+                    vals.push(v)
+                }
+            },
             None => {
-                registers.insert(k, vec![v]);
+                let mut vc = Vec::<usize>::new();
+                while vc.len() < k.1 {
+                    vc.push(!(1 as usize));
+                }
+                vc.push(v);
+                registers.insert(k.0, vc);
             }
         }
     }
@@ -145,7 +164,7 @@ impl<'a> RenderPass<'a> {
         let mut registers = HashMap::<u16, Vec<usize>>::new();
         let mut final_out : Option<usize> = None;
         let targets_len = self.targets.len();
-        let mut cache = PipelineCache::new();
+        let mut cache = PipelineCache::default();
         let mut tex_count : usize = 0;
         let tex_buf_ptr = &mut saved_textures as *mut Vec<TextureType>;
         for node in &self.topo_order {
@@ -158,7 +177,7 @@ impl<'a> RenderPass<'a> {
                 let idx_ptr = self.targets.as_mut_ptr();
                 unsafe {
                     let elem = idx_ptr.add(index);
-                    stage_out_tex = (*elem).draw(viewer, inputs, &cache, render_func);              
+                    stage_out_tex = (*elem).draw(viewer, inputs, &mut cache, render_func);              
                 }
             } else {
                 let index = unode - targets_len;
@@ -180,6 +199,6 @@ impl<'a> RenderPass<'a> {
                 tex_count += 1;
             }    
         }
-        final_out.map(|tex_idx| saved_textures.swap_remove(tex_idx))
+        final_out.map(|tex_idx| unsafe { (*tex_buf_ptr).swap_remove(tex_idx) })
     }
 }

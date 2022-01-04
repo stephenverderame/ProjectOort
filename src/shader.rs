@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use crate::ssbo;
+use glium::implement_uniform_block;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum ShaderType {
@@ -95,7 +96,6 @@ pub struct SceneData<'a> {
     pub ibl_maps: Option<&'a PbrMaps>,
     pub lights: Option<&'a ssbo::SSBO<LightData>>,
     pub pass_type: RenderPassType,
-    pub light_viewproj: Option<[[f32; 4]; 4]>,
     pub light_pos: Option<[f32; 3]>,
 }
 /// Shader inputs for PBR shader
@@ -144,19 +144,35 @@ pub struct LightCullData<'a> {
     pub scr_width: u32,
     pub scr_height: u32,
 }
+#[derive(Clone, Copy)]
+pub struct CascadeUniform {
+    pub far_planes: [f32; 4],
+    pub viewproj_mats: [[[f32; 4]; 4]; 5],
+    //pub depth_maps: [glium::texture::TextureHandle<'a>; 5], //texture handle is 64 bits
+}
+implement_uniform_block!(CascadeUniform, far_planes, viewproj_mats);
+
+#[derive(Clone, Copy)]
+pub struct CascadeMapUniform<'a> {
+    pub depth_maps: [glium::texture::TextureHandle<'a>; 5],
+}
+implement_uniform_block!(CascadeMapUniform<'a>, depth_maps);
+
 /// Stores shader inputs that can change from stage to stage within a 
 /// render pass. Shader stages can read and write from the pipeline chache,
 /// which is reset every iteration of a render pass
 pub struct PipelineCache<'a> {
-    pub depth_tex: Option<&'a glium::texture::DepthTexture2d>,
+    pub cascade_ubo: Option<glium::uniforms::UniformBuffer<CascadeUniform>>,
     pub tiles_x: Option<u32>,
+    pub cascade_maps: Option<Vec<&'a glium::texture::DepthTexture2d>>,
 }
 
-impl<'a> PipelineCache<'a> {
-    pub fn new() -> PipelineCache<'a> {
+impl<'a> std::default::Default for PipelineCache<'a> {
+    fn default() -> PipelineCache<'a> {
         PipelineCache {
-            depth_tex: None,
+            cascade_ubo: None,
             tiles_x: None,
+            cascade_maps: None,
         }
     }
 }
@@ -204,17 +220,20 @@ use glium::uniforms::*;
 pub enum UniformType<'a> {
     LaserUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    PbrUniform(UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, i32, 
+    PbrUniform(UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>,
+        UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, &'a glium::uniforms::UniformBuffer<CascadeUniform>, UniformsStorage<'a, i32, 
         UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, 
         Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
-        UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>>>>>>>>>),
+        UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>>>>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     ExtractBrightUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
-    UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
-        UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
+    UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, 
+        UniformsStorage<'a, &'a glium::uniforms::UniformBuffer<CascadeUniform>, 
+        UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
+        UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>),
     SepConvUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     PrefilterHdrEnvUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], 
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
@@ -391,6 +410,7 @@ impl ShaderManager {
                 let sd = scene_data.unwrap();
                 sd.lights.unwrap().bind(0);
                 let cache = cache.unwrap();
+                let maps = cache.cascade_maps.as_ref().unwrap();
                 // NOTE: requires the compute shader's SSBO for visible indices is still bound
                 UniformType::PbrUniform(glium::uniform! {
                     viewproj: sd.viewer.viewproj,
@@ -407,17 +427,28 @@ impl ShaderManager {
                     ao_map: sample_mip_repeat!(ao_map.unwrap_or(&self.empty_2d)),
                     use_ao: ao_map.is_some(),
                     tile_num_x: cache.tiles_x.unwrap() as i32,
-                    depth_tex: sample_nearest_border!(cache.depth_tex.unwrap()),
-                    light_viewproj: sd.light_viewproj.unwrap(),
-                    dir_light_pos: sd.light_pos.unwrap(),
+                    CascadeUniform: cache.cascade_ubo.as_ref().unwrap(),                
+                    view: sd.viewer.view,
+                    dir_light_dir: sd.light_pos.unwrap(),
+                    cascade0: sample_nearest_border!(maps[0]),
+                    cascade1: sample_nearest_border!(maps[1]),
+                    cascade2: sample_nearest_border!(maps[2]),
                 })
             },
-            (UiInfo(UiData {model, diffuse, do_blend, blend_tex }), _) => UniformType::UiUniform(glium::uniform! {
-                model: *model,
-                diffuse: sample_linear_clamp!(diffuse),
-                do_blend: *do_blend,
-                bloom_tex: sample_linear_clamp!(blend_tex.unwrap_or(&self.empty_2d)),
-            }),
+            (UiInfo(UiData {model, diffuse, do_blend, blend_tex }), _) => {
+                let c = cache.as_ref().unwrap();
+                let maps = c.cascade_maps.as_ref().unwrap();
+                UniformType::UiUniform(glium::uniform! {
+                    model: *model,
+                    diffuse: sample_linear_clamp!(diffuse),
+                    do_blend: *do_blend,
+                    bloom_tex: sample_linear_clamp!(blend_tex.unwrap_or(&self.empty_2d)),
+                    CascadeUniform: c.cascade_ubo.as_ref().unwrap(),
+                    cascade0: sample_nearest_border!(maps[0]),
+                    cascade1: sample_nearest_border!(maps[1]),
+                    cascade2: sample_nearest_border!(maps[2]),
+                })
+            },
             (SepConvInfo(SepConvData {tex, horizontal_pass}), _) => UniformType::SepConvUniform(glium::uniform! {
                 model: cgmath::Matrix4::from_scale(1f32).into(),
                 diffuse: sample_linear_clamp!(tex),

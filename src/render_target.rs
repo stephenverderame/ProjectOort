@@ -15,6 +15,8 @@ use glium::framebuffer::ToDepthAttachment;
 use framebuffer::ToColorAttachment;
 use shader::RenderPassType;
 use shader::PipelineCache;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 /// Gets the vertex and index buffer for a rectangle
 fn get_rect_vbo_ebo<F : glium::backend::Facade>(facade: &F) 
@@ -48,10 +50,16 @@ impl<'a, T> Ownership<'a, T> {
 
 use Ownership::*;
 
+pub enum StageArgs {
+    CascadeArgs([[f32; 4]; 4], f32),
+}
+
 pub enum TextureType<'a> {
     Tex2d(Ownership<'a, texture::Texture2d>),
     Depth2d(Ownership<'a, texture::DepthTexture2d>),
     TexCube(Ownership<'a, texture::Cubemap>),
+    Bindless(texture::ResidentTexture),
+    WithArg(Box<TextureType<'a>>, StageArgs),
 }
 
 /// A RenderTarget is something that can be rendered to and produces a texture
@@ -67,7 +75,7 @@ pub trait RenderTarget {
     /// 
     /// Returns the texture output of rendering to this render target
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>,
-        cache: &PipelineCache,
+        cache: &mut PipelineCache,
         func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType,
         &PipelineCache, &Option<Vec<&TextureType>>)) -> Option<TextureType>;
 }
@@ -121,7 +129,7 @@ impl<'a> MsaaRenderTarget<'a> {
 }
 
 impl<'a> RenderTarget for MsaaRenderTarget<'a> {
-    fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &PipelineCache,
+    fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
         func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache,&Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
@@ -142,54 +150,74 @@ impl<'a> RenderTarget for MsaaRenderTarget<'a> {
 /// 
 /// ### Output
 /// F32 2D DepthTexture
-pub struct DepthRenderTarget<'a> {
-    fbo: framebuffer::SimpleFrameBuffer<'a>,
-    rbo: Box<texture::DepthTexture2d>,
-    viewer: Option<Box<dyn Viewer>>,
+/// 
+/// If a custom view getter is specified, then returns the depth texture with 
+/// the used viewer's viewproj matrix
+pub struct DepthRenderTarget<'a, F : backend::Facade> {
+    width: u32, height: u32,
+    viewer: Option<Rc<RefCell<dyn Viewer>>>,
+    getter: Option<Box<dyn Fn(&dyn Viewer) -> Box<dyn Viewer>>>,
+    facade: &'a F,
 }
 
-impl<'a> DepthRenderTarget<'a> {
+impl<'a, F : backend::Facade> DepthRenderTarget<'a, F> {
     /// `width` - width of depth texture
     /// 
     /// `height` - height of depth texture
     /// 
     /// `viewer` - custom viewer for this render target or `None` to use whatever viewer
     /// is being used in the rest of the pipeline
-    pub fn new<F : glium::backend::Facade>(width: u32, height: u32, 
-        viewer: Option<Box<dyn Viewer>>, facade: &F) -> DepthRenderTarget 
+    pub fn new(width: u32, height: u32, 
+        viewer: Option<Rc<RefCell<dyn Viewer>>>, 
+        view_getter: Option<Box<dyn Fn(&dyn Viewer) -> Box<dyn Viewer>>>, facade: &'a F) -> DepthRenderTarget<'a, F> 
     {
-        let rbo = Box::new(texture::DepthTexture2d::empty_with_format(facade, texture::DepthFormat::F32, 
-            texture::MipmapsOption::NoMipmap, width, height).unwrap());
+        DepthRenderTarget {
+            width, height, viewer, getter: view_getter, facade
+        }
+    }
+
+    fn get_fbo_rbo<'b>(&self) -> (framebuffer::SimpleFrameBuffer<'b>, Box<texture::DepthTexture2d>) {
+        let rbo = Box::new(texture::DepthTexture2d::empty_with_format(self.facade, texture::DepthFormat::F32, 
+            texture::MipmapsOption::NoMipmap, self.width, self.height).unwrap());
         let rbo_ptr = &*rbo as *const texture::DepthTexture2d;
         unsafe {
-            DepthRenderTarget {
-                fbo: glium::framebuffer::SimpleFrameBuffer::depth_only(facade, &*rbo_ptr).unwrap(),
-                rbo, viewer,
-                
-            }
+            (glium::framebuffer::SimpleFrameBuffer::depth_only(self.facade, &*rbo_ptr).unwrap(), rbo)
         }
     }
   
 }
 
-impl<'a> RenderTarget for DepthRenderTarget<'a> {
-    fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &PipelineCache,
+impl<'a, F : backend::Facade> RenderTarget for DepthRenderTarget<'a, F> {
+    fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
         func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType> 
     {
-        func(&mut self.fbo, 
-            self.viewer.as_ref().map(|x| &**x).unwrap_or(viewer), RenderPassType::Depth, cache, &pipeline_inputs);
-        Some(TextureType::Depth2d(Ref(&*self.rbo)))
+        let (mut fbo, rbo) = self.get_fbo_rbo();
+        let maybe_view = self.viewer.as_ref().map(|x| x.borrow());
+        let maybe_processed_view = self.getter.as_ref().map(|f| f(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer)));
+        let viewer = maybe_processed_view.as_ref().map(|x| &**x).unwrap_or(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer));
+        let vp : [[f32; 4]; 4] = (viewer.proj_mat() * viewer.view_mat()).into();
+        func(&mut fbo, viewer, 
+            RenderPassType::Depth, cache, &pipeline_inputs);
+        //let tex = TextureType::Depth2d(Ref(&*self.rbo));
+        let tex = TextureType::Depth2d(Own(*rbo));
+        if maybe_processed_view.is_some() {
+            Some(TextureType::WithArg(Box::new(/*TextureType::Bindless(rbo.resident().unwrap())*/tex), StageArgs::CascadeArgs(vp, viewer.view_dist().1)))
+        } else {
+            Some(tex)
+        }
+       
     }
 }
+
 /// Helper struct for render targets rendering to a cubemap with perspective
 struct CubemapRenderBase {
     view_dist: f32,
-    view_pos: cgmath::Point3<f64>,
+    view_pos: cgmath::Point3<f32>,
 }
 
 impl CubemapRenderBase {
-    fn new(view_dist: f32, view_pos: cgmath::Point3<f64>) -> CubemapRenderBase
+    fn new(view_dist: f32, view_pos: cgmath::Point3<f32>) -> CubemapRenderBase
     {
         CubemapRenderBase {
             view_dist, view_pos,
@@ -198,7 +226,7 @@ impl CubemapRenderBase {
 
     /// Gets an array of tuples of view target direction, CubeFace, and up vector
     fn get_target_face_up() 
-        -> [(cgmath::Point3<f64>, glium::texture::CubeLayer, cgmath::Vector3<f64>); 6]
+        -> [(cgmath::Point3<f32>, glium::texture::CubeLayer, cgmath::Vector3<f32>); 6]
     {
         use texture::CubeLayer::*;
         use cgmath::*;
@@ -212,10 +240,9 @@ impl CubemapRenderBase {
     /// `func` - callable to render a single face of a cubemap. Passed a cube face and camera
     fn draw(&self, func: &dyn Fn(texture::CubeLayer, &dyn Viewer)) {
         use crate::camera::*;
-        use crate::node;
         use cgmath::*;
         let mut cam = PerspectiveCamera {
-            cam: node::Node::new(Some(self.view_pos), None, None, None),
+            cam: self.view_pos,
             aspect: 1f32,
             fov_deg: 90f32,
             target: cgmath::point3(0., 0., 0.),
@@ -225,7 +252,7 @@ impl CubemapRenderBase {
         };
         let target_faces = Self::get_target_face_up();
         for (target, face, up) in target_faces {
-            let target : (f64, f64, f64) = (target.to_vec() + cam.cam.pos.to_vec()).into();
+            let target : (f32, f32, f32) = (target.to_vec() + cam.cam.to_vec()).into();
             cam.target = std::convert::From::from(target);
             cam.up = up;
             func(face, &cam);
@@ -253,7 +280,7 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
     /// `size` - the square side length of each texture face in the cubemap
     /// 
     /// `view_pos` - the position in the scene the cubemap is rendered from
-    pub fn new(size: u32, view_dist: f32, view_pos: cgmath::Point3<f64>, facade: &'a F) -> CubemapRenderTarget<'a, F> {
+    pub fn new(size: u32, view_dist: f32, view_pos: cgmath::Point3<f32>, facade: &'a F) -> CubemapRenderTarget<'a, F> {
         CubemapRenderTarget {
             _size: size, 
             cubemap: CubemapRenderBase::new(view_dist, view_pos),
@@ -267,7 +294,7 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
 }
 
 impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
-    fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &PipelineCache,
+    fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
         func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
@@ -304,7 +331,7 @@ impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
     /// `view_pos` - the position in the scene the cubemap is rendered from
     /// 
     /// `mip_levels` - the amount of mipmaps
-    pub fn new(size: u32, mip_levels: u32, view_dist: f32, view_pos: cgmath::Point3<f64>, facade: &'a F) -> MipCubemapRenderTarget<'a, F> {
+    pub fn new(size: u32, mip_levels: u32, view_dist: f32, view_pos: cgmath::Point3<f32>, facade: &'a F) -> MipCubemapRenderTarget<'a, F> {
         MipCubemapRenderTarget {
             mip_levels, facade, size,
             cubemap: CubemapRenderBase::new(view_dist, view_pos),
@@ -313,7 +340,7 @@ impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
 }
 
 impl<'a, F : backend::Facade> RenderTarget for MipCubemapRenderTarget<'a, F> {
-    fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &PipelineCache,
+    fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
         func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
@@ -492,7 +519,7 @@ impl<S : Surface, F : Fn() -> S, G : Fn(S)> UiCompositeProcessor<S, F, G> {
         UiCompositeProcessor { vbo, ebo, get_surface, clean_surface }
     }
 
-    fn render<'a>(&self, tex_a: &Ownership<'a, texture::Texture2d>, 
+    fn render<'a>(&self, tex_a: &Ownership<'a, texture::Texture2d>, cache: &PipelineCache,
         tex_b: Option<&Ownership<'a, texture::Texture2d>>, shader: &shader::ShaderManager) 
     {
         let diffuse = tex_a.to_ref();
@@ -501,7 +528,7 @@ impl<S : Surface, F : Fn() -> S, G : Fn(S)> UiCompositeProcessor<S, F, G> {
             diffuse, do_blend: blend_tex.is_some(), blend_tex,
             model: cgmath::Matrix4::from_scale(1f32).into(),
         });
-        let (program, params, uniform) = shader.use_shader(&args, None, None);
+        let (program, params, uniform) = shader.use_shader(&args, None, Some(cache));
         match uniform {
             shader::UniformType::UiUniform(uniform) => {
                 let mut surface = (self.get_surface)();
@@ -515,20 +542,20 @@ impl<S : Surface, F : Fn() -> S, G : Fn(S)> UiCompositeProcessor<S, F, G> {
 
 impl<S : Surface, F : Fn() -> S, G : Fn(S)> TextureProcessor for UiCompositeProcessor<S, F, G> {
     fn process(&mut self, source: Option<Vec<&TextureType>>, shader: &shader::ShaderManager,
-        _: &mut PipelineCache, _: Option<&shader::SceneData>) -> Option<TextureType>
+        c: &mut PipelineCache, _: Option<&shader::SceneData>) -> Option<TextureType>
     {
         let source = source.unwrap();
         if source.len() == 2 {
             match (source[0], source[1]) {
                 (TextureType::Tex2d(diffuse), TextureType::Tex2d(blend)) => {
-                    self.render(diffuse, Some(blend), shader);
+                    self.render(diffuse, c, Some(blend), shader);
                     None
                 },
                 _ => panic!("Invalid texture type passed to texture processor")
             }
         } else if source.len() == 1 {
             if let TextureType::Tex2d(diffuse) = source[0] {
-                self.render(diffuse, None, shader);
+                self.render(diffuse, c, None, shader);
                 None
             } else {
                 panic!("Invalid texture type passed to ui composer")
@@ -710,19 +737,67 @@ impl TextureProcessor for CullLightProcessor {
 }
 /// Texture processor that stores its inputs in PipelineCache to be used as
 /// shader uniform inputs for subsequent stages
-pub struct ToCacheProcessor {}
+pub struct ToCacheProcessor<'a, F : backend::Facade> {
+    facade: &'a F,
+}
 
-impl TextureProcessor for ToCacheProcessor {
-    fn process<'a>(&mut self, input: Option<Vec<&'a TextureType>>, _: &shader::ShaderManager, 
-        cache: &mut PipelineCache<'a>, _: Option<&shader::SceneData>) -> Option<TextureType>
+impl<'a, F : backend::Facade> ToCacheProcessor<'a, F> {
+    pub fn new(facade: &'a F) -> ToCacheProcessor<'a, F> {
+        ToCacheProcessor { facade }
+    }
+}
+
+impl<'a, F : backend::Facade> TextureProcessor for ToCacheProcessor<'a, F> {
+    fn process<'b>(&mut self, input: Option<Vec<&'b TextureType>>, _: &shader::ShaderManager, 
+        cache: &mut PipelineCache<'b>, _: Option<&shader::SceneData>) -> Option<TextureType>
     {
+        use std::mem::MaybeUninit;
+        use glium::uniforms::SamplerWrapFunction::*;
+        use glium::uniforms::MinifySamplerFilter;
+        use glium::uniforms::MagnifySamplerFilter;
         if input.is_none() { return None }
         else {
-            let mut input = input.unwrap();
-            match input.swap_remove(0) {
-                TextureType::Depth2d(Own(tex)) => cache.depth_tex = Some(tex),
-                TextureType::Depth2d(Ref(tex)) => cache.depth_tex = Some(tex),
-                _ => panic!("Not implemented for to cache"),
+            let input = input.unwrap();
+            assert_eq!(input.len(), 3);
+            let mut depth_texs = Vec::<&'b glium::texture::DepthTexture2d>::new();
+            let mut mats: [MaybeUninit<[[f32; 4]; 4]>; 5] = unsafe { MaybeUninit::uninit().assume_init() };
+            let mut fars: [MaybeUninit<f32>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
+            let sb = glium::uniforms::SamplerBehavior {
+                wrap_function: (BorderClamp, BorderClamp, BorderClamp),
+                minify_filter:  MinifySamplerFilter::Nearest,
+                magnify_filter: MagnifySamplerFilter::Nearest,
+                ..Default::default() 
+            };
+            for (tex, i) in input.into_iter().zip(0..3) {
+                match tex {
+                    TextureType::WithArg(b, StageArgs::CascadeArgs(mat, far)) => {
+                        match &**b {
+                            TextureType::Depth2d(tex) => {                            
+                                //depth_texs[i].write(glium::texture::TextureHandle::new(tex, &sb));
+                                depth_texs.push(tex.to_ref());
+                                mats[i].write(*mat);
+                                fars[i].write(*far);
+                            },
+                            _ => panic!("Unimplemented"),
+                        }
+                    },
+                    _ => panic!("Unimplemented"),
+                }
+            }
+            //fars[0].write(30f32);
+            //fars[1].write(80f32);
+            //fars[2].write(400f32);
+            fars[3].write(1f32);
+            mats[3].write(cgmath::Matrix4::<f32>::from_scale(1f32).into());
+            mats[4].write(cgmath::Matrix4::<f32>::from_scale(1f32).into());
+            unsafe {
+                cache.cascade_ubo = glium::uniforms::UniformBuffer::persistent(self.facade, shader::CascadeUniform {
+                    //depth_maps: std::mem::transmute::<_, [glium::texture::TextureHandle<'b>; 5]>(depth_texs),
+                    far_planes: std::mem::transmute::<_, [f32; 4]>(fars),
+                    viewproj_mats: std::mem::transmute::<_, [[[f32; 4]; 4]; 5]>(mats),
+
+                }).ok();
+                cache.cascade_maps = Some(depth_texs);
             }
         }
         None

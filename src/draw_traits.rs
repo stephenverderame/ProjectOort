@@ -10,18 +10,21 @@ pub trait Drawable {
 /// Something that encapsulates control of a view of the scene
 pub trait Viewer {
     /// Gets the viewer's projection matrix
-    fn proj_mat(&self, aspect: f32) -> cgmath::Matrix4<f32>;
+    fn proj_mat(&self) -> cgmath::Matrix4<f32>;
 
     /// Gets the viewer's position
     fn cam_pos(&self) -> cgmath::Point3<f32>;
 
     /// Gets the viewer's view matrix
     fn view_mat(&self) -> cgmath::Matrix4<f32>;
+
+    /// Gets the viewer's near and far plane as a tuple
+    fn view_dist(&self) -> (f32, f32);
 }
 
-pub fn viewer_data_from(viewer: &dyn Viewer, aspect: f32) -> shader::ViewerData {
+pub fn viewer_data_from(viewer: &dyn Viewer) -> shader::ViewerData {
     let view = viewer.view_mat();
-    let proj = viewer.proj_mat(aspect);
+    let proj = viewer.proj_mat();
     shader::ViewerData {
         viewproj: (proj * view).into(),
         view: view.into(),
@@ -34,14 +37,13 @@ pub fn viewer_data_from(viewer: &dyn Viewer, aspect: f32) -> shader::ViewerData 
 /// `viewer` and the aspect ratio `aspect`.
 /// 
 /// All other scene information is set to `None`
-pub fn default_scene_data(viewer: &dyn Viewer, aspect: f32) -> shader::SceneData {
+pub fn default_scene_data(viewer: &dyn Viewer) -> shader::SceneData {
     
     shader::SceneData {
-        viewer: viewer_data_from(viewer, aspect),
+        viewer: viewer_data_from(viewer),
         ibl_maps: None,
         lights: None,
         pass_type: shader::RenderPassType::Visual,
-        light_viewproj: None,
         light_pos: None,
     }
 }
