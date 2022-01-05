@@ -23,7 +23,7 @@ mod controls;
 mod ssbo;
 extern crate gl;
 
-use draw_traits::Drawable;
+use draw_traits::{Drawable, Viewer};
 use glutin::platform::run_return::*;
 
 use cgmath::*;
@@ -164,17 +164,10 @@ fn main() {
     let mut depth_render = render_target::DepthRenderTarget::new(render_width, render_height, None, None, &wnd_ctx);
     let dir_light = Rc::new(RefCell::new(camera::OrthoCamera::new(400., 400., 1., 300., point3(-120., 120., 0.), Some(point3(0., 0., 0.)), 
         Some(vec3(0., 1., 0.)))));
-    let dcc = dir_light.clone();
-    let (dir_f, dir_c) = camera::get_frustum_world(&*dir_light.borrow());
-    println!("Dir light center: {:?}", dir_c);
-    println!("Dir light world: {:?}", dir_f);
-    let mut dir_light_depth_render = render_target::DepthRenderTarget::new(2048, 2048, None, 
-        Some(Box::new(move |_| {Box::new(dcc.borrow().clone()) })), &wnd_ctx);
-    main_scene.set_dir_light(dir_light);
+    main_scene.set_light_dir((*dir_light.borrow()).cam_pos().to_vec());
     let mut cull_lights = render_target::CullLightProcessor::new(render_width, render_height, 16);
     let mut to_cache = render_target::ToCacheProcessor::new(&wnd_ctx);
     //let uc = user.clone();
-    let ucc = Rc::new(RefCell::new(user.borrow().get_cam()));
     let user_clone = user.clone();
     let mut render_cascade_1 = render_target::DepthRenderTarget::new(2048, 2048, None, 
     Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 30., 2048) })), &wnd_ctx);

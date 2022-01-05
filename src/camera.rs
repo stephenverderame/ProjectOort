@@ -23,6 +23,11 @@ impl PerspectiveCamera {
         }
     }
 
+    /// Gets a viewer for a cascade that spans the perspective frustum from `near` to `far` along the view space z axis
+    /// 
+    /// `light_dir` - direction of light/angle to view the cascade at
+    /// 
+    /// `map_size` - shadow map size for texel snapping
     pub fn get_cascade(&self, light_dir: Vector3<f32>, near: f32, far: f32, map_size: u32) -> Box<dyn Viewer> {
 
         let mut f = self.clone();
@@ -48,7 +53,7 @@ impl PerspectiveCamera {
         let view = Matrix4::look_at_rh(center + light_dir, center, vec3(0., 1., 0.)); 
         //right-handed system, positive z facing towards the camera (ortho expects positize z facing away)
 
-        let z_factor = 6f32;
+        let z_factor = 6f32; // expand in the z-direction to include objects that might cast a shadow into the map
         Box::new(StaticCamera {
             view,
             near: f.near,
@@ -65,6 +70,7 @@ impl PerspectiveCamera {
     /// Requires `splits` to be ordered closest to farthest cascade
     /// 
     /// Returns the cameras specified from the first split to the last one
+    #[allow(dead_code)]
     pub fn get_cascades(&self, splits: Vec<(f32, u32)>, light_dir: Vector3<f32>) -> Vec<Box<dyn Viewer>> {
         let mut last_depth = self.near;
         let mut cams = Vec::<Box<dyn Viewer>>::new();
@@ -170,7 +176,6 @@ pub fn get_frustum_world(viewer: &dyn Viewer) -> (Vec<Point3<f32>>, Point3<f32>)
         point3(-1., -1., 1.),
     ];
     let inv = (viewer.proj_mat() * viewer.view_mat()).invert().unwrap();
-    //let inv = viewer.view_mat().invert().unwrap();
     let mut out = Vec::<Point3<f32>>::new();
     let mut center = vec3(0f32, 0., 0.);
    for pt in cube {
@@ -184,27 +189,7 @@ pub fn get_frustum_world(viewer: &dyn Viewer) -> (Vec<Point3<f32>>, Point3<f32>)
     
 }
 
-pub fn get_frustum_view(viewer: &dyn Viewer) -> [Point3<f32>; 8] {
-    let proj = viewer.proj_mat();
-    let (near, far) = viewer.view_dist();
-    let scale_x_inv = 1.0 / proj[0][0];
-    let scale_y_inv = 1.0 / proj[1][1];
-    let near_x = scale_x_inv * near;
-    let near_y = scale_y_inv * near;
-    let far_x = scale_x_inv * far;
-    let far_y = scale_y_inv * far;
-    [
-        point3(-near_x, near_y, near),
-        point3(near_x, near_y, near),
-        point3(near_x, -near_y, near),
-        point3(-near_x, -near_y, near),
-        point3(-far_x, far_y, far),
-        point3(far_x, far_y, far),
-        point3(far_x, -far_y, far),
-        point3(-far_x, -far_y, far),
-    ]
-}
-
+/// A Camera that isn't easy to move as it just stores the prebuilt view and project matrices
 pub struct StaticCamera {
     pub view: Matrix4<f32>,
     pub proj: Matrix4<f32>,

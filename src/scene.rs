@@ -3,22 +3,20 @@ use crate::shader;
 use crate::render_target;
 use crate::render_pass::*;
 use crate::ssbo;
-use std::rc::Rc;
-use std::cell::RefCell;
 
 /// A Scene manages the scene parameters and
 /// strings together multiple render passes
 pub struct Scene {
     ibl_maps: Option<shader::PbrMaps>,
     lights: ssbo::SSBO<shader::LightData>,
-    dir_light_view: Option<Rc<RefCell<dyn draw_traits::Viewer>>>,
+    main_light_dir: Option<cgmath::Vector3<f32>>,
 }
 
 impl Scene {
     pub fn new() -> Scene {
         Scene {
             ibl_maps: None, lights: ssbo::SSBO::<shader::LightData>::dynamic(None),
-            dir_light_view: None,
+            main_light_dir: None,
         }
     }
 
@@ -30,8 +28,7 @@ impl Scene {
             ibl_maps: self.ibl_maps.as_ref(),
             lights: Some(&self.lights),
             pass_type: pass,
-            light_pos: self.dir_light_view.as_ref().map(
-                |v| v.borrow().cam_pos().into()),
+            light_pos: self.main_light_dir.map(|x| x.into()),
         }
     }
 
@@ -82,7 +79,7 @@ impl Scene {
         self.lights.update(lights)
     }
 
-    pub fn set_dir_light(&mut self, dir_light: Rc<RefCell<dyn draw_traits::Viewer>>) {
-        self.dir_light_view = Some(dir_light);
+    pub fn set_light_dir(&mut self, dir_light: cgmath::Vector3<f32>) {
+        self.main_light_dir = Some(dir_light);
     }
 }

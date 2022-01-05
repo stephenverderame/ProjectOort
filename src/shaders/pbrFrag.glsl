@@ -50,9 +50,7 @@ layout(std140, binding = 2) uniform CascadeUniform {
     mat4 viewproj_mats[5];
 };
 
-uniform sampler2D cascade0;
-uniform sampler2D cascade1;
-uniform sampler2D cascade2;
+uniform sampler2D cascadeDepthMaps[3];
 uniform mat4 view;
 
 const vec3 light_color = vec3(0.5451, 0, 0.5451);
@@ -186,16 +184,7 @@ int getCascadeIndex() {
 }
 
 sampler2D getCascadeTex(int cIdx) {
-    switch (cIdx) {
-        case 0:
-            return cascade0;
-        case 1:
-            return cascade1;
-        case 2:
-            return cascade2;
-        default:
-            return cascade2;
-    }
+    return cascadeDepthMaps[cIdx];
 }
 
 vec3 getProjCoords(int casIdx) {

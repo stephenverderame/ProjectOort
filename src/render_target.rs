@@ -58,6 +58,7 @@ pub enum TextureType<'a> {
     Tex2d(Ownership<'a, texture::Texture2d>),
     Depth2d(Ownership<'a, texture::DepthTexture2d>),
     TexCube(Ownership<'a, texture::Cubemap>),
+    #[allow(dead_code)]
     Bindless(texture::ResidentTexture),
     WithArg(Box<TextureType<'a>>, StageArgs),
 }
@@ -752,9 +753,6 @@ impl<'a, F : backend::Facade> TextureProcessor for ToCacheProcessor<'a, F> {
         cache: &mut PipelineCache<'b>, _: Option<&shader::SceneData>) -> Option<TextureType>
     {
         use std::mem::MaybeUninit;
-        use glium::uniforms::SamplerWrapFunction::*;
-        use glium::uniforms::MinifySamplerFilter;
-        use glium::uniforms::MagnifySamplerFilter;
         if input.is_none() { return None }
         else {
             let input = input.unwrap();
@@ -762,12 +760,6 @@ impl<'a, F : backend::Facade> TextureProcessor for ToCacheProcessor<'a, F> {
             let mut depth_texs = Vec::<&'b glium::texture::DepthTexture2d>::new();
             let mut mats: [MaybeUninit<[[f32; 4]; 4]>; 5] = unsafe { MaybeUninit::uninit().assume_init() };
             let mut fars: [MaybeUninit<f32>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
-            let sb = glium::uniforms::SamplerBehavior {
-                wrap_function: (BorderClamp, BorderClamp, BorderClamp),
-                minify_filter:  MinifySamplerFilter::Nearest,
-                magnify_filter: MagnifySamplerFilter::Nearest,
-                ..Default::default() 
-            };
             for (tex, i) in input.into_iter().zip(0..3) {
                 match tex {
                     TextureType::WithArg(b, StageArgs::CascadeArgs(mat, far)) => {
@@ -784,9 +776,6 @@ impl<'a, F : backend::Facade> TextureProcessor for ToCacheProcessor<'a, F> {
                     _ => panic!("Unimplemented"),
                 }
             }
-            //fars[0].write(30f32);
-            //fars[1].write(80f32);
-            //fars[2].write(400f32);
             fars[3].write(1f32);
             mats[3].write(cgmath::Matrix4::<f32>::from_scale(1f32).into());
             mats[4].write(cgmath::Matrix4::<f32>::from_scale(1f32).into());
