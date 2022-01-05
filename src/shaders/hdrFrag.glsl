@@ -19,15 +19,6 @@ vec3 toneMap(vec3 color) {
     return color;
 }
 
-layout(std140, binding = 2) uniform CascadeUniform {
-    vec4 far_planes;
-    mat4 viewproj_mats[5];
-};
-
-sampler2D cascade0;
-sampler2D cascade1;
-sampler2D cascade2;
-
 float textureLinearize(sampler2D tex, vec2 tex_coords) {
     const float near = 0.1;
     const float far = 200.0;

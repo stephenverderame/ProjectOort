@@ -57,6 +57,7 @@ impl Player {
         model.transform_vector(cgmath::vec3(0., 0., 1.))
     }
 
+    /// Constructs a new perspective camera so that it has the exact same view as the player's camera
     pub fn get_cam(&self) -> camera::PerspectiveCamera {
         camera::PerspectiveCamera {
             fov_deg: 60.,

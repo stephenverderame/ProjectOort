@@ -46,7 +46,7 @@ impl PerspectiveCamera {
         let lookat_inv = lookat.invert().unwrap();
         center = lookat.transform_point(center);
         center.x = center.x.floor();
-        center.y = center.y.floor();
+        center.y = center.y.floor(); // move the center in texel-sized increments
         center.z = center.z.floor();
         center = lookat_inv.transform_point(center);
 

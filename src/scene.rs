@@ -50,6 +50,7 @@ impl Scene {
         frame.read()
     }*/
 
+    /// Executes the specified render pass and passes in Scene Data for this Scene
     pub fn render_pass<'b, F>(&self, pass: &'b mut RenderPass, viewer: &dyn draw_traits::Viewer, 
         shader: &shader::ShaderManager, func: F)
         -> Option<render_target::TextureType<'b>> 

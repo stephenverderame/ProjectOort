@@ -57,26 +57,11 @@ pub fn dir_stem(path: &str) -> String {
     }  
     
 }
-#[allow(dead_code)]
-pub fn load_tex_srgb_or_empty<F : glium::backend::Facade>(path: &str, facade: &F)
-    -> glium::texture::SrgbTexture2d 
-{
-    if path.is_empty() || path.rfind('.').is_none() {
-        glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap()
-    } else {
-        load_texture_srgb(path, facade)
-    }
-}
-#[allow(dead_code)]
-pub fn load_tex_2d_or_empty<F : glium::backend::Facade>(path: &str, facade: &F)
-    -> glium::texture::Texture2d 
-{
-    if path.is_empty() || path.rfind('.').is_none() {
-        glium::texture::Texture2d::empty(facade, 0, 0).unwrap()
-    } else {
-        load_texture_2d(path, facade)
-    }
-}
+/// Loads a cubemap. Expects the cubemap to be stored as 6 textures in the same directory as `file` with the same file extension
+/// Each texture should be named `right, left, top, bottom, front, back`
+/// 
+/// `file` - the path to any one of the cubemap face textures. Example: if `file` is `skybox/right.tga`, then this function
+/// will look for `skybox/right.tga`, `skybox/left.tga`, `skybox/bottom.tga`, `skybox/top.tga`, `skybox/front.tga`, `skybox/back.tga`
 #[allow(dead_code)]
 pub fn load_cubemap<F>(file: &str, facade: &F) 
     -> glium::texture::Cubemap where F : glium::backend::Facade 

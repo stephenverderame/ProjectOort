@@ -17,14 +17,16 @@ struct Vertex {
 }
 glium::implement_vertex!(Vertex, pos, normal, tex_coords, tangent);
 
+/// Assimp Vector3D to f32 array
 fn to_v3(v: Vector3D) -> [f32; 3] {
     [(*v).x, (*v).y, (*v).z]
 }
-
+/// Takes the `x` and `y` coordinates of an assimp `Vector3D`
 fn to_v2(v: Vector3D) -> [f32; 2] {
     [(*v).x, (*v).y]
 }
 
+/// Creates a OpenGL vbo and ebo for the vertices and indices
 fn get_vbo_ebo<F : glium::backend::Facade>(verts: Vec<Vertex>, indices: Vec<u32>, ctx: &F) 
     -> (glium::VertexBuffer<Vertex>, glium::IndexBuffer<u32>) 
 {
@@ -87,7 +89,8 @@ fn get_pbr_textures<F>(dir: &str, mat_name: &str, facade: &F)
         _ => None,
     }
 }
-
+/// Texture information for a mesh
+/// Currently, a material can only have 1 texture of each type
 pub struct Material {
     diffuse_tex: Option<glium::texture::SrgbTexture2d>,
     name: String,
@@ -95,16 +98,21 @@ pub struct Material {
     normal_tex: Option<glium::texture::Texture2d>,
     emission_tex: Option<glium::texture::SrgbTexture2d>,
 }
-
+/// Gets a mutable nullptr
 fn null<T>() -> *mut T {
     0 as *mut T
 }
-
+/// Gets a constant nullptr
 fn null_c<T>() -> *const T {
     0 as *const T
 }
 
 impl Material {
+    /// Finds all textures of the specified type and loads them using the specified function
+    /// 
+    /// `dir` - main directory of model where texture paths are relative to
+    /// 
+    /// `load_func` - function taking the path to the texture as a String and returning the loaded texture
     fn get_textures<T, G : Fn(String) -> T>(mat: &assimp_sys::AiMaterial, tex_type: assimp_sys::AiTextureType, 
         dir: &str, load_func: &G) -> Vec<T>
     {
@@ -123,6 +131,7 @@ impl Material {
         }
         textures
     }
+    /// Gets a material property with the key `property` as a utf8 string
     fn get_property(mat: &assimp_sys::AiMaterial, property: &str) -> Option<String> {
         for i in 0 .. mat.num_properties {
             let prop = unsafe {&**mat.properties.add(i as usize)};
@@ -137,6 +146,9 @@ impl Material {
         }
         None
     }
+    /// Creates a material from an Assimp material
+    /// 
+    /// `dir` - the directory of the model file where textures are relative to
     pub fn new<F : glium::backend::Facade>(mat: &assimp_sys::AiMaterial, dir: &str, ctx: &F) -> Material {
         let load_srgb = |path: String| textures::load_texture_srgb(&path, ctx);
         let load_rgb = |path: String| textures::load_texture_2d(&path, ctx);
@@ -160,6 +172,10 @@ impl Material {
 
     }
 
+    /// For some reason Assimp is having trouble loading mtl data from obj files
+    /// Creates a material from the tobj material loaded from an mtl file
+    /// 
+    /// `dir` - the directory of the model file where textures are relative to
     pub fn from_mtl<F : glium::backend::Facade>(mat: &tobj::Material, dir: &str, ctx: &F) -> Material {
         Material {
             diffuse_tex: if mat.diffuse_texture.is_empty() { None } else {
@@ -177,6 +193,11 @@ impl Material {
         }
     }
 
+    /// Converts the material to shader uniform arguments
+    /// 
+    /// `instancing` - if instanced rendering is being used
+    /// 
+    /// `model` - model matrix if available. If `None`, the identity matrix is used
     pub fn to_uniform_args(&self, instancing: bool, model: Option<[[f32; 4]; 4]>) -> shader::UniformInfo {
         match &self.name[..] {
             "Laser" => shader::UniformInfo::LaserInfo,
@@ -195,6 +216,8 @@ impl Material {
     }
 }
 
+/// A component of a model with its own material, vertices, and indices
+/// Currently, every mesh face must be a triangle
 pub struct Mesh {
     vbo: glium::VertexBuffer<Vertex>,
     ebo: glium::IndexBuffer<u32>,
@@ -225,6 +248,8 @@ impl Mesh {
         Mesh { vbo, ebo, mat_idx: (*mesh).material_index as usize }
     }
 
+    /// Gets the correct shader program, parameters, and uniform from the shader manager based on this mesh's material. The calls
+    /// the supplied draw function with these arguments and the mesh's vbo and ebo
     fn render_helper<F>(&self, scene_data: &shader::SceneData, manager: &shader::ShaderManager, local_data: &shader::PipelineCache,
         model: Option<[[f32; 4]; 4]>, instancing: bool, mats: &Vec<Material>, mut draw_func: F) 
         where F : FnMut(&glium::VertexBuffer<Vertex>, &glium::IndexBuffer<u32>, &glium::Program, &glium::DrawParameters, &shader::UniformType), 
@@ -281,6 +306,21 @@ impl Mesh {
     }
 }
 
+/// A model is geometry loaded from the filesystem
+/// Each model must have a main obj file with a material file at the specified path
+/// relative to the obj file's directory. The name of the material controls which
+/// shader is used for it. Texture files specified in the material file are relative to the obj file's
+/// directory.
+/// 
+/// # Special Materials
+/// 
+/// * **PBR** - Materials that contain "pbr" are PBR materials. PBR textures are loaded from the file
+/// `[material_name]-pbr.yml` which is expected to be in the same directory as the main obj file. This file must define
+/// a `roughness`, `metalness`, and optionally, `ao` parameter. Once again, these textures should be relative to the 
+/// obj file's directory
+/// 
+/// * **Lasers** - Materials with the name "Laser" are lasers. These are objects that are simply colored
+/// with one uniform color and do not use textures
 pub struct Model {
     meshes: Vec<Mesh>,
     materials: Vec<Material>,
@@ -299,10 +339,13 @@ impl Model {
         meshes
     }
 
+    /// Use assimp to load all scene materials
     fn process_mats<F : glium::backend::Facade>(scene: &Scene, dir: &str, ctx: &F) -> Vec<Material> {
         scene.material_iter().map(|x| Material::new(&*x, dir, ctx)).collect()
     }
 
+    /// Assimp is being weird with mtl files. If we load an obj file, use tobj to load
+    /// its corresponding material file
     fn process_obj_mats<F : glium::backend::Facade>(path: &str, ctx: &F) -> Vec<Material> {
         let dir = textures::dir_stem(path);
         let (mats, _) = tobj::load_mtl(path.replace(".obj", ".mtl")).unwrap();
@@ -330,6 +373,7 @@ impl Model {
         Model { meshes, materials }
     }
 
+    /// Render this model with the given scene and pipeline data and model matrix
     pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, model: [[f32; 4]; 4], 
         manager: &shader::ShaderManager) 
     {
@@ -338,6 +382,10 @@ impl Model {
         }
     }
 
+    /// Render multiple instances of this model
+    /// 
+    /// `instance_buffer` - VertexBuffer where each element in it is passed to each rendered copy of this model. So this will render an amount of copies equal to elements
+    /// in this buffer
     pub fn render_instanced<S : glium::Surface, T : Copy>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, manager: &shader::ShaderManager, 
         instance_buffer: glium::vertex::VertexBufferSlice<T>) 
     {

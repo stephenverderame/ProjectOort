@@ -181,7 +181,7 @@ impl<'a> RenderPass<'a> {
                 }
             } else {
                 let index = unode - targets_len;
-                // -1 because index 0 is the render target
+                // - targets_len because the first 0 .. targets_len indexes are render targets
                 let process_input = RenderPass::get_inputs(&registers, &saved_textures, *node);
                 let idx_ptr = self.processes.as_mut_ptr();
                 let sd = sdata.borrow();

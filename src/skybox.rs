@@ -8,12 +8,14 @@ struct Vertex {
 
 glium::implement_vertex!(Vertex, pos);
 
-
+/// The type of texture for the skybox. Either a cubemap or a 2d texture
+/// storing an equirectangular spherical image
 pub enum SkyboxTex {
     Cube(glium::texture::Cubemap),
     Sphere(glium::texture::Texture2d), //equirectangular spherical texture
 }
 
+/// A cube textured by a cubemap or equirectangular texture that is always centered around the camera
 pub struct Skybox {
     vbo: glium::VertexBuffer<Vertex>,
     ebo: glium::IndexBuffer<u16>,

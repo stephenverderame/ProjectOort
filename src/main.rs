@@ -51,7 +51,7 @@ fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::Sh
         |fbo, scene_data, _, cache| {
             sky.render(fbo, scene_data, &cache, &shader_manager)
         });
-        // safe bx we finish using the first borrow here
+        // safe bc we finish using the first borrow here
         let sky_hdr_cbo = gen_sky_scene.render_pass(&mut *gen_sky_ptr, &cam, shader_manager, 
         |fbo, scene_data, _, cache| {
             sky_hdr.render(fbo, scene_data, &cache, shader_manager)

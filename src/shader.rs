@@ -365,6 +365,7 @@ macro_rules! load_shader_srgb {
 
 
 impl ShaderManager {
+    /// Initializes the shader manager and loads all shaders
     pub fn init<F : glium::backend::Facade>(facade: &F) -> ShaderManager {
         let laser_shader = load_shader_source!(facade, 
             "shaders/laserVert.glsl", "shaders/laserFrag.glsl").unwrap();

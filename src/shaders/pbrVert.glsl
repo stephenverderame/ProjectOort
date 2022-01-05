@@ -12,8 +12,8 @@ uniform mat4 viewproj;
 uniform mat4 model;
 
 mat3 calcTbn() {
-    vec3 T = normalize(vec3(model * vec4(tangent, 0.0)));
-    vec3 N = normalize(vec3(model * vec4(normal, 0.0)));
+    vec3 T = normalize(mat3(model) * tangent);
+    vec3 N = normalize(mat3(model) * normal);
     T = normalize(T - dot(T, N) * N);
     vec3 B = cross(N, T);
     // hit with Grahm Schmidt to re-orthogonalize
