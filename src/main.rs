@@ -135,10 +135,9 @@ fn main() {
     let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
     gl::load_with(|s| wnd_ctx.gl_window().get_proc_address(s)); // for things I can't figure out how to do in glium
 
-    let ship_model = model::Model::load("assets/Ships/StarSparrow01.obj", &wnd_ctx);
-    //let asteroid_model = model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx);
+    let ship_model = model::Model::new("assets/Ships/StarSparrow01.obj", &wnd_ctx);
     let user = Rc::new(RefCell::new(player::Player::new(ship_model, render_width as f32 / render_height as f32)));
-    let mut asteroid = entity::EntityFlyweight::new(model::Model::load("assets/asteroid1/Asteroid.obj", &wnd_ctx));
+    let mut asteroid = entity::EntityFlyweight::new(model::Model::new("assets/asteroid1/Asteroid.obj", &wnd_ctx));
     gen_asteroid_field(&mut asteroid, &wnd_ctx);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
@@ -161,7 +160,7 @@ fn main() {
         surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
         surface
     }, |disp| disp.finish().unwrap());
-    let mut depth_render = render_target::DepthRenderTarget::new(render_width, render_height, None, None, &wnd_ctx);
+    let mut depth_render = render_target::DepthRenderTarget::new(render_width, render_height, None, None, shader::RenderPassType::Depth, &wnd_ctx);
     let dir_light = Rc::new(RefCell::new(camera::OrthoCamera::new(400., 400., 1., 300., point3(-120., 120., 0.), Some(point3(0., 0., 0.)), 
         Some(vec3(0., 1., 0.)))));
     main_scene.set_light_dir((*dir_light.borrow()).cam_pos().to_vec());
@@ -170,15 +169,15 @@ fn main() {
     //let uc = user.clone();
     let user_clone = user.clone();
     let mut render_cascade_1 = render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 30., 2048) })), &wnd_ctx);
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 30., 2048) })), shader::RenderPassType::Shadow, &wnd_ctx);
     //let uc = user.clone();
     let user_clone = user.clone();
     let mut render_cascade_2 = render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 30., 80., 2048) })), &wnd_ctx);
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 30., 80., 2048) })), shader::RenderPassType::Shadow, &wnd_ctx);
     //let uc = user.clone();
     let user_clone = user.clone();
     let mut render_cascade_3 = render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 80., 400., 2048) })), &wnd_ctx);
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 80., 400., 2048) })), shader::RenderPassType::Shadow, &wnd_ctx);
     let mut main_pass = render_pass::RenderPass::new(vec![&mut depth_render, &mut msaa, &mut render_cascade_1, &mut render_cascade_2, &mut render_cascade_3], 
         vec![&mut cull_lights, &mut eb, &mut blur, &mut compose, &mut to_cache], 
         render_pass::Pipeline::new(vec![0], vec![(0, (5, 0)), (5, (2, 0)), (5, (3, 0)), (5, (4, 0)), (2, (9, 0)), (3, (9, 1)), (4, (9, 2)), (9, (1, 0)),
@@ -187,8 +186,8 @@ fn main() {
     let mut wnd_size : (u32, u32) = (render_width, render_height);
     let wnd = wnd_ctx.gl_window();
     let mut controller = controls::PlayerControls::new(wnd.window());
-    let mut laser = entity::EntityFlyweight::new(model::Model::load("assets/laser2.obj", &wnd_ctx));
-    let container = entity::Entity::from(model::Model::load("assets/BlackMarble/floor.obj", &wnd_ctx), 
+    let mut laser = entity::EntityFlyweight::new(model::Model::new("assets/laser2.obj", &wnd_ctx));
+    let container = entity::Entity::from(model::Model::new("assets/BlackMarble/floor.obj", &wnd_ctx), 
         node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None));
 
     laser.new_instance(entity::EntityInstanceData {

@@ -55,7 +55,40 @@ impl std::cmp::PartialOrd for ShaderType {
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub enum RenderPassType {
     Visual,
-    Depth
+    /// Render objects with depth information only
+    Depth,
+    /// Render objects with depth information and cull front face to avoid peter panning
+    Shadow
+}
+
+impl ShaderType {
+    fn get_draw_params(&self, pass: RenderPassType) -> glium::DrawParameters<'static> {
+        use ShaderType::*;
+        use RenderPassType::*;
+        use glium::draw_parameters::*;
+        match self {
+            DepthShader | DepthInstancedShader if pass == Shadow =>
+                glium::DrawParameters {
+                    depth: glium::Depth {
+                        test: DepthTest::IfLess,
+                        write: true, ..Default::default()
+                    },
+                    backface_culling: BackfaceCullingMode::CullClockwise, // cull front face
+                    .. Default::default()
+                },
+            Pbr | PbrInstancedShader | DepthShader | DepthInstancedShader | Laser => 
+                glium::DrawParameters {
+                    depth: glium::Depth {
+                        test: DepthTest::IfLess,
+                        write: true,
+                        .. Default::default()
+                    },
+                    backface_culling: glium::BackfaceCullingMode::CullClockwise,
+                    .. Default::default()
+                },
+            _ => glium::DrawParameters::default(),
+        }
+    }
 }
 
 /// Instance lighting data for each laser
@@ -69,7 +102,7 @@ pub struct LightData {
 /// It converts shader inputs to OpenGL uniform parameters and selects the shader
 /// based on those shader inputs
 pub struct ShaderManager {
-    shaders: BTreeMap<ShaderType, (glium::Program, glium::DrawParameters<'static>)>,
+    shaders: BTreeMap<ShaderType, glium::Program>,
     compute_shaders: BTreeMap<ShaderType, glium::program::ComputeShader>,
     empty_srgb: glium::texture::SrgbTexture2d,
     empty_2d: glium::texture::Texture2d,
@@ -216,7 +249,9 @@ impl<'a> UniformInfo<'a> {
             (PBRInfo(PBRData {instancing, ..}), Visual) if !instancing => ShaderType::Pbr,
             (PBRInfo(_), Visual) => ShaderType::PbrInstancedShader,
             (PBRInfo(PBRData {instancing, ..}), Depth) if !instancing => ShaderType::DepthShader,
+            (PBRInfo(PBRData {instancing, ..}), Shadow) if !instancing => ShaderType::DepthShader,
             (PBRInfo(_), Depth) => ShaderType::DepthInstancedShader,
+            (PBRInfo(_), Shadow) => ShaderType::DepthInstancedShader,
             (EquiRectInfo(_), _) => ShaderType::EquiRect,
             (SkyboxInfo(_), _) => ShaderType::Skybox,
             (UiInfo(_), _) => ShaderType::UiShader,
@@ -226,6 +261,7 @@ impl<'a> UniformInfo<'a> {
             (GenLutInfo, _) => ShaderType::GenLutShader,
             (LaserInfo, Visual) => ShaderType::Laser,
             (LaserInfo, Depth) => ShaderType::DepthShader,
+            (LaserInfo, Shadow) => ShaderType::DepthShader,
             (LightCullInfo(_), _) => ShaderType::CullLightsCompute,
         }
     }
@@ -356,28 +392,19 @@ impl ShaderManager {
             "shaders/instancePbrVert.glsl", "shaders/pbrFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
-        let solid_params = glium::DrawParameters::<'static> {
-            depth: glium::Depth {
-                test: glium::draw_parameters::DepthTest::IfLess,
-                write: true,
-                .. Default::default()
-            },
-            backface_culling: glium::draw_parameters::BackfaceCullingMode::CullClockwise,
-            .. Default::default()
-        };
-        let mut shaders = BTreeMap::<ShaderType, (glium::Program, glium::DrawParameters)>::new();
-        shaders.insert(ShaderType::Laser, (laser_shader, solid_params.clone()));
-        shaders.insert(ShaderType::Skybox, (skybox_shader, Default::default()));
-        shaders.insert(ShaderType::Pbr, (pbr_shader, solid_params.clone()));
-        shaders.insert(ShaderType::EquiRect, (equirect_shader, Default::default()));
-        shaders.insert(ShaderType::UiShader, (ui_shader, Default::default()));
-        shaders.insert(ShaderType::BlurShader, (blur_shader, Default::default()));
-        shaders.insert(ShaderType::BloomShader, (bloom_shader, Default::default()));
-        shaders.insert(ShaderType::PrefilterHdrShader, (prefilter_shader, Default::default()));
-        shaders.insert(ShaderType::GenLutShader, (brdf_lut_shader, Default::default()));
-        shaders.insert(ShaderType::DepthShader, (depth_shader, solid_params.clone()));
-        shaders.insert(ShaderType::DepthInstancedShader, (depth_instanced, solid_params.clone()));
-        shaders.insert(ShaderType::PbrInstancedShader, (pbr_instanced, solid_params));
+        let mut shaders = BTreeMap::<ShaderType, glium::Program>::new();
+        shaders.insert(ShaderType::Laser, laser_shader);
+        shaders.insert(ShaderType::Skybox, skybox_shader);
+        shaders.insert(ShaderType::Pbr, pbr_shader);
+        shaders.insert(ShaderType::EquiRect, equirect_shader);
+        shaders.insert(ShaderType::UiShader, ui_shader);
+        shaders.insert(ShaderType::BlurShader, blur_shader);
+        shaders.insert(ShaderType::BloomShader, bloom_shader);
+        shaders.insert(ShaderType::PrefilterHdrShader, prefilter_shader);
+        shaders.insert(ShaderType::GenLutShader, brdf_lut_shader);
+        shaders.insert(ShaderType::DepthShader, depth_shader);
+        shaders.insert(ShaderType::DepthInstancedShader, depth_instanced);
+        shaders.insert(ShaderType::PbrInstancedShader, pbr_instanced);
         let mut compute_shaders = BTreeMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         ShaderManager {
@@ -392,13 +419,14 @@ impl ShaderManager {
     /// Panics if `data` is missing required fields or if `data` does not match a 
     /// shader
     pub fn use_shader<'b>(&'b self, data: &'b UniformInfo, scene_data: Option<&'b SceneData<'b>>, cache: Option<&'b PipelineCache<'b>>) 
-        -> (&'b glium::Program, &'b glium::DrawParameters, UniformType<'b>)
+        -> (&'b glium::Program, glium::DrawParameters, UniformType<'b>)
     {
         use UniformInfo::*;
         use RenderPassType::*;
         let pass_tp = scene_data.map(|sd| sd.pass_type).unwrap_or(Visual);
         let typ = data.corresp_shader_type(pass_tp);
-        let (shader, params) = self.shaders.get(&typ).unwrap();
+        let params = typ.get_draw_params(pass_tp);
+        let shader = self.shaders.get(&typ).unwrap();
         let uniform = match (data, pass_tp) {
             (LaserInfo, Visual) => 
                 UniformType::LaserUniform(glium::uniform! {
@@ -475,7 +503,7 @@ impl ShaderManager {
             (GenLutInfo, _) => UniformType::BrdfLutUniform(glium::uniform! {
                 model: cgmath::Matrix4::from_scale(1f32).into(),
             }),
-            (PBRInfo(PBRData {model, ..}), Depth) => UniformType::DepthUniform(glium::uniform! {
+            (PBRInfo(PBRData {model, ..}), x) if x == Depth || x == Shadow => UniformType::DepthUniform(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
                 model: model.clone(),
             }),

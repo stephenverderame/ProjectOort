@@ -1,78 +1,41 @@
-use tobj::*;
+extern crate assimp;
+extern crate assimp_sys;
+extern crate tobj;
+
+use assimp::*;
+use crate::textures;
+use crate::shader;
 use std::collections::BTreeMap;
 use std::io::BufRead;
 
-use crate::textures;
-use crate::shader;
-
 #[derive(Clone, Copy)]
-pub struct Vertex {
+struct Vertex {
     pos: [f32; 3],
     normal: [f32; 3],
     tex_coords: [f32; 2],
+    tangent: [f32; 3],
+}
+glium::implement_vertex!(Vertex, pos, normal, tex_coords, tangent);
+
+fn to_v3(v: Vector3D) -> [f32; 3] {
+    [(*v).x, (*v).y, (*v).z]
 }
 
-glium::implement_vertex!(Vertex, pos, normal, tex_coords);
+fn to_v2(v: Vector3D) -> [f32; 2] {
+    [(*v).x, (*v).y]
+}
 
-/// A model is geometry loaded from the filesystem
-/// Each model must have a main obj file with a material file at the specified path
-/// relative to the obj file's directory. The name of the material controls which
-/// shader is used for it. Texture files specified in the material file are relative to the obj file's
-/// directory.
-/// 
-/// # Special Materials
-/// 
-/// * **PBR** - Materials that contain "pbr" are PBR materials. PBR textures are loaded from the file
-/// `[material_name]-pbr.yml` which is expected to be in the same directory as the main obj file. This file must define
-/// a `roughness`, `metalness`, and optionally, `ao` parameter. Once again, these textures should be relative to the 
-/// obj file's directory
-pub struct Model {
-    mesh_geom: Vec<MMesh>,
-
+fn get_vbo_ebo<F : glium::backend::Facade>(verts: Vec<Vertex>, indices: Vec<u32>, ctx: &F) 
+    -> (glium::VertexBuffer<Vertex>, glium::IndexBuffer<u32>) 
+{
+    (glium::VertexBuffer::immutable(ctx, &verts).unwrap(),
+    glium::IndexBuffer::immutable(ctx, glium::index::PrimitiveType::TrianglesList, &indices).unwrap())
 }
 
 struct PBRData {
     roughness_tex: glium::texture::Texture2d,
     metalness_tex: glium::texture::Texture2d,
     ao_tex: Option<glium::texture::Texture2d>,
-}
-
-/// Material data for a mesh
-struct MMaterial {
-    diffuse_tex: Option<glium::texture::SrgbTexture2d>,
-    name: String,
-    pbr_data: Option<PBRData>,
-    normal_tex: Option<glium::texture::Texture2d>,
-    emission_tex: Option<glium::texture::SrgbTexture2d>,
-    
-}
-
-/// A Mesh is a part of a model with its own vao and material
-struct MMesh {
-    verts: glium::VertexBuffer<Vertex>,
-    indices: glium::IndexBuffer<u32>,
-    material: Option<MMaterial>,
-
-}
-
-/// Gets the vertices and indices from a TOBJ mesh
-fn get_mesh_data(mesh: &Mesh) -> (Vec<Vertex>, Vec<u32>) {
-    let mut verts = Vec::<Vertex>::new();
-    let indices = mesh.indices.clone();
-    for idx in 0 .. mesh.positions.len() / 3 {
-        let idx = idx as usize;
-        let normal = if mesh.normals.is_empty() { [0f32, 0f32, 0f32] } else 
-        { [mesh.normals[idx * 3], mesh.normals[idx * 3 + 1], mesh.normals[idx * 3 + 2]] };
-        let texcoords = if mesh.texcoords.is_empty() { [0f32, 0f32] } else 
-        { [mesh.texcoords[idx * 2], mesh.texcoords[idx * 2 + 1]] };
-        let vert = Vertex {
-            pos: [mesh.positions[idx * 3], mesh.positions[idx * 3 + 1], mesh.positions[idx * 3 + 2]],
-            normal: normal,
-            tex_coords: texcoords,
-        };
-        verts.push(vert);
-    }
-    (verts, indices)
 }
 
 /// Reads pbr textures from an externam file names `[mat_name]-pbr.yml` that resides in
@@ -125,114 +88,163 @@ fn get_pbr_textures<F>(dir: &str, mat_name: &str, facade: &F)
     }
 }
 
-/// Creates an `MMaterial` from a TOBJ `Material` and loads extra data
-/// from other files, if any exists
-fn get_material_data<F>(dir: &str, mat: &Material, facade: &F)
-    -> MMaterial where F : glium::backend::Facade
-{
-    if mat.name.find("pbr").is_some() {
-        println!("{}", dir);
-        println!("{}", mat.diffuse_texture);
-        println!("{}", mat.normal_texture);
-        println!("{}", mat.dissolve_texture);
-    }
-    MMaterial {
-        diffuse_tex: if mat.diffuse_texture.is_empty() { None } else {
-            Some(textures::load_texture_srgb(&format!("{}{}", dir, mat.diffuse_texture), facade))
-        },
-        pbr_data: get_pbr_textures(dir, &mat.name, facade),
-        normal_tex: if mat.normal_texture.is_empty() { None } else { 
-            Some(textures::load_texture_2d(&format!("{}{}", dir, mat.normal_texture), facade))
-        },
-        emission_tex: if mat.dissolve_texture.is_empty() { None } else {
-            Some(textures::load_texture_srgb(&format!("{}{}", dir, mat.dissolve_texture), facade))
-        },
-        name: mat.name.clone(),
-    }
+pub struct Material {
+    diffuse_tex: Option<glium::texture::SrgbTexture2d>,
+    name: String,
+    pbr_data: Option<PBRData>,
+    normal_tex: Option<glium::texture::Texture2d>,
+    emission_tex: Option<glium::texture::SrgbTexture2d>,
 }
 
-fn get_material_or_none<F>(dir: &str, mesh: &Mesh, mats: &Vec<Material>, facade: &F) 
-    -> Option<MMaterial> where F : glium::backend::Facade
-{
-    match mesh.material_id {
-        Some(id) => Some(get_material_data(dir, &mats[id], facade)),
-        None => None,
-    }
+fn null<T>() -> *mut T {
+    0 as *mut T
 }
 
-/// Converts a material to its relevant UniformType based on what material information is present
-fn mat_to_uniform_data<'a>(material: &'a MMaterial, model: Option<[[f32; 4]; 4]>, instancing: bool) -> shader::UniformInfo<'a>
-{
-    match &material.name[..] {
-        "Laser" => shader::UniformInfo::LaserInfo,
-        x if x.find("pbr").is_some() => shader::UniformInfo::PBRInfo(shader::PBRData {
-            diffuse_tex: material.diffuse_tex.as_ref().unwrap(),
-            model: model.unwrap_or_else(|| cgmath::Matrix4::from_scale(1f32).into()),
-            roughness_map: material.pbr_data.as_ref().map(|data| { &data.roughness_tex }),
-            metallic_map: material.pbr_data.as_ref().map(|data| { &data.metalness_tex }),
-            normal_map: material.normal_tex.as_ref(),
-            emission_map: material.emission_tex.as_ref(),
-            ao_map: material.pbr_data.as_ref().and_then(|data| { data.ao_tex.as_ref() }),
-            instancing,
-        }),
-        x => panic!("Unimplemented texture with name: {}", x),
-    }   
+fn null_c<T>() -> *const T {
+    0 as *const T
 }
 
-impl Model {
-    /// Loads a model from `file`. If any extra data exists for the model, it must reside in the same directory
-    /// as the corresponding `.mtl` file for the mesh
-    pub fn load<F>(file: &str, facade: &F) -> Model where F : glium::backend::Facade {
-        let (models, materials) = load_obj(file, &LoadOptions {
-            triangulate: true,
-            single_index: true,
-            ..Default::default()
-        }).expect(&format!("Could not open model file '{}'", file));
-        let mut meshes = Vec::<MMesh>::new();
-        let mats = materials.unwrap();
-        let dir = textures::dir_stem(file);
-        for model in models {
-            let (verts, indices) = get_mesh_data(&model.mesh);
-            let mat = get_material_or_none(&dir, &model.mesh, &mats, facade);
-            meshes.push(MMesh {
-                verts: glium::VertexBuffer::new(facade, &verts).unwrap(),
-                indices: glium::IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &indices).unwrap(),
-                material: mat,
-            });
-
-        }
-        return Model {
-            mesh_geom: meshes
-        }
-        
-    }
-
-    fn render_helper<F, S>(&self, scene_data: &shader::SceneData, manager: &shader::ShaderManager, local_data: &shader::PipelineCache,
-        model: Option<[[f32; 4]; 4]>, instancing: bool,
-        surface: &mut S, draw_func: F) where F : Fn(&MMesh, &glium::Program, &glium::DrawParameters, &shader::UniformType, &mut S), S : glium::Surface
+impl Material {
+    fn get_textures<T, G : Fn(String) -> T>(mat: &assimp_sys::AiMaterial, tex_type: assimp_sys::AiTextureType, 
+        dir: &str, load_func: &G) -> Vec<T>
     {
-        for mesh in &self.mesh_geom {
-            let data = match &mesh.material {
-                Some(mat) => {
-                    mat_to_uniform_data(mat, model, instancing)
-                },
-                _ => panic!("No material"),
-            };
-            let (shader, params, uniform) = manager.use_shader(&data, Some(scene_data), Some(local_data));
-            draw_func(mesh, shader, params, &uniform, surface);
+        let mut path = assimp_sys::AiString::default();
+        let tex_num = unsafe { assimp_sys::aiGetMaterialTextureCount(mat as *const assimp_sys::AiMaterial, tex_type) };
+        let mut textures = Vec::<T>::new();
+        for i in 0 .. tex_num {
+            unsafe { 
+                assimp_sys::aiGetMaterialTexture(mat as *const assimp_sys::AiMaterial, tex_type, i, &mut path as *mut assimp_sys::AiString,
+                    null_c(), null(), null(), null(), null(), null()); 
+            }
+            let tex = format!("{}{}", dir, String::from_utf8_lossy(&path.data[.. path.length]));
+            println!("Assimp loaded: {}", tex);
+            textures.push(load_func(tex));
+            
+        }
+        textures
+    }
+    fn get_property(mat: &assimp_sys::AiMaterial, property: &str) -> Option<String> {
+        for i in 0 .. mat.num_properties {
+            let prop = unsafe {&**mat.properties.add(i as usize)};
+            if prop.key.data[.. prop.key.length] == *property.as_bytes() {
+                let len = prop.data_length as usize;
+                let mut res = Vec::<u8>::new();
+                res.resize(len + 1, 0);
+                unsafe { std::ptr::copy_nonoverlapping(prop.data as *const u8, res.as_mut_ptr(), len); }
+                return Some(String::from_utf8_lossy(&res).into_owned());
+
+            }
+        }
+        None
+    }
+    pub fn new<F : glium::backend::Facade>(mat: &assimp_sys::AiMaterial, dir: &str, ctx: &F) -> Material {
+        let load_srgb = |path: String| textures::load_texture_srgb(&path, ctx);
+        let load_rgb = |path: String| textures::load_texture_2d(&path, ctx);
+        let mut diffuse = Material::get_textures(mat, assimp_sys::AiTextureType::Diffuse, dir, &load_srgb);
+        let mut emissive = Material::get_textures(mat, assimp_sys::AiTextureType::Emissive, dir, &load_srgb);
+        let mut normal = Material::get_textures(mat, assimp_sys::AiTextureType::Normals, dir, &load_rgb);
+        let mut ao = Material::get_textures(mat, assimp_sys::AiTextureType::Lightmap, dir, &load_rgb);
+        let name = Material::get_property(mat, "?mat.name").expect("No material name!");
+        let pbr = get_pbr_textures(dir, &name, ctx).map(|mut pbr| {
+            if pbr.ao_tex.is_none() && ao.len() > 0 {
+                pbr.ao_tex = Some(ao.swap_remove(0));
+            }
+            pbr
+        });
+        Material {
+            diffuse_tex: Some(diffuse.swap_remove(0)),
+            name, pbr_data: pbr,
+            normal_tex: if normal.len() > 0 { Some(normal.swap_remove(0)) } else { None },
+            emission_tex: if emissive.len() > 0 { Some(emissive.swap_remove(0)) } else { None },
+        }
+
+    }
+
+    pub fn from_mtl<F : glium::backend::Facade>(mat: &tobj::Material, dir: &str, ctx: &F) -> Material {
+        Material {
+            diffuse_tex: if mat.diffuse_texture.is_empty() { None } else {
+                Some(textures::load_texture_srgb(&format!("{}{}", dir, mat.diffuse_texture), ctx))
+            },
+            pbr_data: get_pbr_textures(dir, &mat.name, ctx),
+            normal_tex: if mat.normal_texture.is_empty() { None } else { 
+                Some(textures::load_texture_2d(&format!("{}{}", dir, mat.normal_texture), ctx))
+            },
+            emission_tex: mat.unknown_param.get("map_Ke").map(|x| {
+                println!("Ke: {}", x);
+                textures::load_texture_srgb(&format!("{}{}", dir, x), ctx)
+            }),
+            name: mat.name.clone(),
         }
     }
 
-    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, model: [[f32; 4]; 4], manager: &shader::ShaderManager) {
-        self.render_helper(mats, manager, local_data, Some(model), false, wnd,
-        |mesh, shader, params, uniform, surface| {
+    pub fn to_uniform_args(&self, instancing: bool, model: Option<[[f32; 4]; 4]>) -> shader::UniformInfo {
+        match &self.name[..] {
+            "Laser" => shader::UniformInfo::LaserInfo,
+            x if x.find("pbr").is_some() => shader::UniformInfo::PBRInfo(shader::PBRData {
+                diffuse_tex: self.diffuse_tex.as_ref().unwrap(),
+                model: model.unwrap_or_else(|| cgmath::Matrix4::from_scale(1f32).into()),
+                roughness_map: self.pbr_data.as_ref().map(|data| { &data.roughness_tex }),
+                metallic_map: self.pbr_data.as_ref().map(|data| { &data.metalness_tex }),
+                normal_map: self.normal_tex.as_ref(),
+                emission_map: self.emission_tex.as_ref(),
+                ao_map: self.pbr_data.as_ref().and_then(|data| { data.ao_tex.as_ref() }),
+                instancing,
+            }),
+            x => panic!("Unimplemented texture with name: {}", x),
+        }  
+    }
+}
+
+pub struct Mesh {
+    vbo: glium::VertexBuffer<Vertex>,
+    ebo: glium::IndexBuffer<u32>,
+    mat_idx: usize,
+}
+
+impl Mesh {
+    pub fn new<F : glium::backend::Facade>(mesh: &assimp::Mesh, ctx: &F) -> Mesh {
+        let mut vertices = Vec::<Vertex>::new();
+        let mut indices = Vec::<u32>::new();
+        for (vert, norm, tex_coord, tan, _bitan) in mesh.vertex_iter().zip(mesh.normal_iter()).zip(mesh.texture_coords_iter(0))
+            .zip(mesh.tangent_iter()).zip(mesh.bitangent_iter()).map(|((((v, n), t), ta), bi)| (v, n, t, ta, bi))
+        {
+            vertices.push(Vertex {
+                pos: to_v3(vert),
+                normal: to_v3(norm),
+                tex_coords: to_v2(tex_coord),
+                tangent: to_v3(tan),
+                //bitangent: to_v3(bitan),
+            });
+        }
+        for face in mesh.face_iter() {
+            for idx in 0 .. (*face).num_indices {
+                unsafe { indices.push(*(*face).indices.add(idx as usize)); }
+            }
+        }
+        let (vbo, ebo) = get_vbo_ebo(vertices, indices, ctx);
+        Mesh { vbo, ebo, mat_idx: (*mesh).material_index as usize }
+    }
+
+    fn render_helper<F>(&self, scene_data: &shader::SceneData, manager: &shader::ShaderManager, local_data: &shader::PipelineCache,
+        model: Option<[[f32; 4]; 4]>, instancing: bool, mats: &Vec<Material>, mut draw_func: F) 
+        where F : FnMut(&glium::VertexBuffer<Vertex>, &glium::IndexBuffer<u32>, &glium::Program, &glium::DrawParameters, &shader::UniformType), 
+    {
+        let mat = mats[self.mat_idx.min(mats.len() - 1)].to_uniform_args(instancing, model);
+        let (shader, params, uniform) = manager.use_shader(&mat, Some(scene_data), Some(local_data));
+        draw_func(&self.vbo, &self.ebo, shader, &params, &uniform)
+    }
+
+    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, model: [[f32; 4]; 4], 
+        manager: &shader::ShaderManager, materials: &Vec<Material>) {
+        self.render_helper(mats, manager, local_data, Some(model), false, materials,
+        |vbo, ebo, shader, params, uniform| {
             match uniform {
                shader::UniformType::LaserUniform(uniform) => 
-                    surface.draw(&mesh.verts, &mesh.indices, &shader, uniform, &params),
+                    wnd.draw(vbo, ebo, shader, uniform, params),
                 shader::UniformType::PbrUniform(uniform) => 
-                    surface.draw(&mesh.verts, &mesh.indices, &shader, uniform, &params),
+                    wnd.draw(vbo, ebo, shader, uniform, params),
                 shader::UniformType::DepthUniform(uniform) =>
-                    surface.draw(&mesh.verts, &mesh.indices, &shader, uniform, &params),
+                    wnd.draw(vbo, ebo, shader, uniform, params),
                 shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 
                  | shader::UniformType::UiUniform(_) | shader::UniformType::SepConvUniform(_) 
                  | shader::UniformType::ExtractBrightUniform(_) 
@@ -244,19 +256,20 @@ impl Model {
     }
 
     pub fn render_instanced<S : glium::Surface, T : Copy>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, manager: &shader::ShaderManager, 
-        instance_buffer: glium::vertex::VertexBufferSlice<T>) 
+        instance_buffer: &glium::vertex::VertexBufferSlice<T>, materials: &Vec<Material>) 
     {
-        self.render_helper(mats, manager, local_data, None, true, wnd,
-        |mesh, shader, params, uniform, surface| {
+        self.render_helper(mats, manager, local_data, None, true, materials,
+        |vbo, ebo, shader, params, uniform| {
             match uniform {
                shader::UniformType::LaserUniform(uniform) => 
-                    surface.draw((&mesh.verts, instance_buffer.per_instance().unwrap()), 
-                        &mesh.indices, &shader, uniform, &params),
+                    wnd.draw((vbo, instance_buffer.per_instance().unwrap()), 
+                        ebo, shader, uniform, params),
                 shader::UniformType::PbrUniform(uniform) => 
-                    surface.draw((&mesh.verts, instance_buffer.per_instance().unwrap()), 
-                        &mesh.indices, &shader, uniform, &params),
+                    wnd.draw((vbo, instance_buffer.per_instance().unwrap()), 
+                        ebo, shader, uniform, params),
                 shader::UniformType::DepthUniform(uniform) =>
-                    surface.draw((&mesh.verts, instance_buffer.per_instance().unwrap()), &mesh.indices, &shader, uniform, &params),
+                    wnd.draw((vbo, instance_buffer.per_instance().unwrap()), 
+                        ebo, shader, uniform, params),
                 shader::UniformType::EqRectUniform(_) | shader::UniformType::SkyboxUniform(_) 
                  | shader::UniformType::UiUniform(_) | shader::UniformType::SepConvUniform(_) 
                  | shader::UniformType::ExtractBrightUniform(_) 
@@ -265,5 +278,71 @@ impl Model {
                     panic!("Model get invalid uniform type"),
             }.unwrap()
         });
+    }
+}
+
+pub struct Model {
+    meshes: Vec<Mesh>,
+    materials: Vec<Material>,
+}
+
+impl Model {
+    fn process_node<F : glium::backend::Facade>(node: assimp::Node, scene: &Scene, ctx: &F) -> Vec<Mesh> {
+        let mut meshes = Vec::<Mesh>::new();
+        for i in 0 .. node.num_meshes() {
+            let mesh = scene.mesh(i as usize).unwrap();
+            meshes.push(Mesh::new(&mesh, ctx));
+        }
+        for n in node.child_iter() {
+            meshes.append(&mut Model::process_node(n, scene, ctx));
+        }
+        meshes
+    }
+
+    fn process_mats<F : glium::backend::Facade>(scene: &Scene, dir: &str, ctx: &F) -> Vec<Material> {
+        scene.material_iter().map(|x| Material::new(&*x, dir, ctx)).collect()
+    }
+
+    fn process_obj_mats<F : glium::backend::Facade>(path: &str, ctx: &F) -> Vec<Material> {
+        let dir = textures::dir_stem(path);
+        let (mats, _) = tobj::load_mtl(path.replace(".obj", ".mtl")).unwrap();
+        mats.iter().map(|x| Material::from_mtl(&*x, &dir, ctx)).collect()
+        
+    }
+
+    pub fn new<F : glium::backend::Facade>(path: &str, ctx: &F) -> Model {
+        let mut importer = Importer::new();
+        importer.join_identical_vertices(true);
+        importer.triangulate(true);
+        //importer.flip_uvs(true);
+        importer.optimize_meshes(true);
+        importer.calc_tangent_space(|mut tan_space_args| {
+            tan_space_args.enable = true;
+        });
+        let scene = importer.read_file(path).unwrap();
+        assert_eq!(scene.is_incomplete(), false);
+        let meshes = Model::process_node(scene.root_node(), &scene, ctx);
+        let materials = if path.find(".obj").is_some() {
+            Model::process_obj_mats(path, ctx)
+        } else {
+            Model::process_mats(&scene, &textures::dir_stem(path), ctx)
+        };
+        Model { meshes, materials }
+    }
+
+    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, model: [[f32; 4]; 4], 
+        manager: &shader::ShaderManager) 
+    {
+        for mesh in &self.meshes {
+            mesh.render(wnd, mats, local_data, model, manager, &self.materials);
+        }
+    }
+
+    pub fn render_instanced<S : glium::Surface, T : Copy>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, manager: &shader::ShaderManager, 
+        instance_buffer: glium::vertex::VertexBufferSlice<T>) 
+    {
+        for mesh in &self.meshes {
+            mesh.render_instanced(wnd, mats, local_data, manager, &instance_buffer, &self.materials);
+        }
     }
 }

@@ -2,7 +2,7 @@
 #extension GL_ARB_bindless_texture : require
 in vec2 f_tex_coords;
 in vec3 frag_pos;
-in vec3 f_normal;
+in mat3 tbn;
 
 out vec4 frag_color;
 
@@ -277,18 +277,7 @@ vec3 fresnelSchlickRoughness(vec3 f0, vec3 view_dir, vec3 norm, float roughness)
 
 vec3 getNormal() {
     vec3 tangentNormal = texture(normal_map, f_tex_coords).xyz * 2.0 - 1.0;
-
-    vec3 Q1  = dFdx(frag_pos);
-    vec3 Q2  = dFdy(frag_pos);
-    vec2 st1 = dFdx(f_tex_coords);
-    vec2 st2 = dFdy(f_tex_coords);
-
-    vec3 N   = normalize(f_normal);
-    vec3 T  = normalize(Q1*st2.t - Q2*st1.t);
-    vec3 B  = -normalize(cross(N, T));
-    mat3 TBN = mat3(T, B, N);
-
-    return normalize(TBN * tangentNormal);
+    return normalize(tbn * tangentNormal);
 }
 
 float pointLightAttenutation(vec3 light_pos, vec3 frag_pos) {
@@ -449,5 +438,5 @@ void main() {
     vec3 ambient = (kd * diffuse + specular) * ao * (1.0 - calcShadow(norm) * 0.7);
     vec3 color = ambient + direct_radiance + emission * 4;
 
-    frag_color = vec4(applyFog(color), 1.0);
+    frag_color = vec4(color, 1.0);
 }

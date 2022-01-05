@@ -159,6 +159,7 @@ pub struct DepthRenderTarget<'a, F : backend::Facade> {
     viewer: Option<Rc<RefCell<dyn Viewer>>>,
     getter: Option<Box<dyn Fn(&dyn Viewer) -> Box<dyn Viewer>>>,
     facade: &'a F,
+    pass_type: RenderPassType,
 }
 
 impl<'a, F : backend::Facade> DepthRenderTarget<'a, F> {
@@ -170,10 +171,11 @@ impl<'a, F : backend::Facade> DepthRenderTarget<'a, F> {
     /// is being used in the rest of the pipeline
     pub fn new(width: u32, height: u32, 
         viewer: Option<Rc<RefCell<dyn Viewer>>>, 
-        view_getter: Option<Box<dyn Fn(&dyn Viewer) -> Box<dyn Viewer>>>, facade: &'a F) -> DepthRenderTarget<'a, F> 
+        view_getter: Option<Box<dyn Fn(&dyn Viewer) -> Box<dyn Viewer>>>, 
+        pass_type: RenderPassType, facade: &'a F) -> DepthRenderTarget<'a, F> 
     {
         DepthRenderTarget {
-            width, height, viewer, getter: view_getter, facade
+            width, height, viewer, getter: view_getter, facade, pass_type,
         }
     }
 
@@ -198,8 +200,7 @@ impl<'a, F : backend::Facade> RenderTarget for DepthRenderTarget<'a, F> {
         let maybe_processed_view = self.getter.as_ref().map(|f| f(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer)));
         let viewer = maybe_processed_view.as_ref().map(|x| &**x).unwrap_or(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer));
         let vp : [[f32; 4]; 4] = (viewer.proj_mat() * viewer.view_mat()).into();
-        func(&mut fbo, viewer, 
-            RenderPassType::Depth, cache, &pipeline_inputs);
+        func(&mut fbo, viewer, self.pass_type, cache, &pipeline_inputs);
         //let tex = TextureType::Depth2d(Ref(&*self.rbo));
         let tex = TextureType::Depth2d(Own(*rbo));
         if maybe_processed_view.is_some() {
@@ -470,7 +471,7 @@ impl<'a> SepConvProcessor<'a> {
         let (program, params, uniform) = shaders.use_shader(&data, None, None);
         match uniform {
             shader::UniformType::SepConvUniform(uniform) => {
-                dst.draw(vbo, ebo, program, &uniform, params).unwrap();
+                dst.draw(vbo, ebo, program, &uniform, &params).unwrap();
             },
             _ => panic!("Invalid uniform type returned for RenderTarget"),
         }
@@ -674,7 +675,7 @@ impl<'a, F : backend::Facade> TextureProcessor for GenLutProcessor<'a, F> {
         let (program, params, uniform) = shader.use_shader(&shader::UniformInfo::GenLutInfo, sd, Some(pc));
         match uniform {
             shader::UniformType::BrdfLutUniform(uniform) => 
-                fbo.draw(&self.vbo, &self.ebo, program, &uniform, params).unwrap(),
+                fbo.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
             _ => panic!("Gen lut got unexepected uniform type")
         };
         Some(TextureType::Tex2d(Own(tex)))
