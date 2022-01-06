@@ -12,7 +12,7 @@ use draw_traits::Viewer;
 
 use cgmath::*;
 
-fn far() -> f32 { 1000. }
+const far_plane : f32 = 1000.;
 
 /// The player is the combination of the player's entity and the player's camera
 pub struct Player {
@@ -63,7 +63,7 @@ impl Player {
             fov_deg: 60.,
             aspect: self.aspect,
             near: 0.1,
-            far: far(),
+            far: far_plane,
             cam: self.cam_pos(),
             up: Matrix4::<f64>::from(&self.cam).transform_vector(vec3(0., 1., 0.)).cast::<f32>().unwrap(),
             target: self.root.borrow().pos.cast::<f32>().unwrap(),
@@ -75,7 +75,7 @@ impl Player {
 }
 impl draw_traits::Viewer for Player {
     fn proj_mat(&self) -> cgmath::Matrix4<f32> {
-        cgmath::perspective(cgmath::Deg::<f32>(60f32), self.aspect, 0.1, far())
+        cgmath::perspective(cgmath::Deg::<f32>(60f32), self.aspect, 0.1, far_plane)
     }
 
     fn cam_pos(&self) -> cgmath::Point3<f32> {
@@ -92,7 +92,7 @@ impl draw_traits::Viewer for Player {
     }
 
     fn view_dist(&self) -> (f32, f32) {
-        (0.1, far())
+        (0.1, far_plane)
     }
 }
 
