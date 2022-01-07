@@ -88,22 +88,38 @@ impl<T : Copy> SSBO<T> {
             mode: SSBOMode::Dynamic,
         }
     }
-    /// Creates a SSBO that cannot be easily resized
-    pub fn static_empty(count: u32) -> SSBO<T> {
+    /// Allocates a new SSBO with the specified size an optional data
+    /// This allocation function does not allocate extra members, so the glsl
+    /// buffer should be a variable sized `T` array
+    /// 
+    /// `data` - optional initial data. If specified, data length must be equal to `buffer_size`
+    fn new_static(buffer_size: usize, data: Option<Vec<T>>, mode: SSBOMode) -> SSBO<T> {
         let mut buffer = 0 as gl::types::GLuint;
         unsafe {
             gl::GenBuffers(1, &mut buffer as *mut gl::types::GLuint);
             assert_no_error!();
             gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, buffer);
-            gl::BufferData(gl::SHADER_STORAGE_BUFFER, (count * std::mem::size_of::<T>() as u32) as isize, 
-                0 as *const std::ffi::c_void, gl::STATIC_COPY);
+            let cpy_mode = if mode == SSBOMode::Static { gl::STATIC_COPY } else { gl::DYNAMIC_COPY };
+            gl::BufferData(gl::SHADER_STORAGE_BUFFER, (buffer_size * std::mem::size_of::<T>()) as isize, 
+                data.map(|x| x.as_ptr()).unwrap_or(0 as *const T) as *const std::ffi::c_void, cpy_mode);
             assert_no_error!();
         }
         SSBO {
-            buffer, buffer_count: count,
+            buffer, buffer_count: buffer_size as u32,
             phantom: std::marker::PhantomData,
-            mode: SSBOMode::Static,
+            mode,
         }
+    }
+    /// Creates a SSBO that cannot be easily resized
+    #[inline(always)]
+    pub fn static_empty(count: u32) -> SSBO<T> {
+        SSBO::new_static(count as usize, None, SSBOMode::Static)
+    }
+
+    /// Creates a new SSBO that cannot be resized but whose data can change
+    #[inline(always)]
+    pub fn static_alloc_dyn(buffer_size: usize, data: Option<Vec<T>>) -> SSBO<T> {
+        SSBO::new_static(buffer_size, data, SSBOMode::StaticAllocDynamic)
     }
     /// Resizes the buffer to fit `data_size` elements.
     /// Requires to be operating in dynamic mode.
@@ -112,7 +128,7 @@ impl<T : Copy> SSBO<T> {
     /// Assumes that `data_size` elements cannot fit
     /// 
     /// Resizes the buffer to `2 * data_size` elements
-    unsafe fn resize(&mut self, data_size: usize) {
+    unsafe fn dynamic_resize(&mut self, data_size: usize) {
         self.buffer_count = data_size as u32 * 2;
         self.del_buffer();
         gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
@@ -121,12 +137,10 @@ impl<T : Copy> SSBO<T> {
         assert_no_error!();
     }
 
-    /// Updates the data of the SSBO, resizing if necessary
-    pub fn update(&mut self, data: &Vec<T>) {
-        if self.mode != SSBOMode::Dynamic { panic!("Unimplemented update"); }
+    fn update_dynamic(&mut self, data: &Vec<T>) {
         unsafe {
             if data.len() as u32 >= self.buffer_count {
-                self.resize(data.len());
+                self.dynamic_resize(data.len());
             }
             let size_w_padding = [data.len() as u32, 0u32, 0u32, 0u32];
             gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
@@ -134,6 +148,27 @@ impl<T : Copy> SSBO<T> {
             gl::BufferSubData(gl::SHADER_STORAGE_BUFFER, 16, (std::mem::size_of::<T>() * data.len()) as isize,
                 data.as_ptr() as *const std::ffi::c_void);
             assert_no_error!();
+        }
+    }
+
+    fn update_static_alloc(&mut self, data: &Vec<T>) {
+        if data.len() > self.buffer_count as usize {
+            panic!("Cannot allocate more memory in static alloc mode!");
+        }
+        unsafe {
+            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
+            gl::BufferSubData(gl::SHADER_STORAGE_BUFFER, 0, (std::mem::size_of::<T>() * data.len()) as isize,
+                data.as_ptr() as *const std::ffi::c_void);
+            assert_no_error!();
+        }
+    }
+
+    /// Updates the data of the SSBO, resizing if necessary (for dynamic mode)
+    pub fn update(&mut self, data: &Vec<T>) {
+        match self.mode {
+            SSBOMode::Dynamic => self.update_dynamic(data),
+            SSBOMode::StaticAllocDynamic => self.update_static_alloc(data),
+            SSBOMode::Static => panic!("Cannot mutate data in static mode"),
         }
     }
 

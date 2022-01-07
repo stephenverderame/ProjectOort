@@ -7,7 +7,6 @@ layout (location = 4) in ivec4 bone_ids;
 layout (location = 5) in vec4 bone_weights;
 
 #define MAX_BONES_PER_VERTEX 4
-#define MAX_BONES 100
 
 out mat3 tbn;
 out vec3 frag_pos;
@@ -22,8 +21,8 @@ struct BoneTransformedData {
     vec3 b_tangent;
 };
 
-layout(std140) uniform BoneUniform {
-    mat4 boneMatrices[MAX_BONES];
+layout(std430, binding = 4) readonly buffer BoneBuffer {
+    mat4 boneMatrices[];
 };
 
 mat3 calcTbn(vec3 normal, vec3 tangent) {
@@ -42,7 +41,7 @@ BoneTransformedData getPositionNormalTangent() {
     res.b_normal = vec3(0.0);
     res.b_tangent = vec3(0.0);
     for(int i = 0; i < MAX_BONES_PER_VERTEX; ++i) {
-        if (bones_ids[i] == -1 || bone_ids[i] >= MAX_BONES)
+        if (bone_ids[i] == -1)
             break;
         vec4 local_pos = boneMatrices[bone_ids[i]] * vec4(pos, 1.0);
         vec3 local_norm = mat3(boneMatrices[bone_ids[i]]) * normal;

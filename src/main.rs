@@ -138,6 +138,9 @@ fn main() {
     let ship_model = model::Model::new("assets/Ships/StarSparrow01.obj", &wnd_ctx);
     let user = Rc::new(RefCell::new(player::Player::new(ship_model, render_width as f32 / render_height as f32)));
     let mut asteroid = entity::EntityFlyweight::new(model::Model::new("assets/asteroid1/Asteroid.obj", &wnd_ctx));
+    let asteroid_character = RefCell::new(entity::Entity::new(model::Model::new("assets/test/dancing_vampire.dae", &wnd_ctx)));
+    asteroid_character.borrow_mut().data.transform.scale = vec3(0.07, 0.07, 0.07);
+    (*asteroid_character.borrow_mut()).get_animator().start("", true);
     gen_asteroid_field(&mut asteroid, &wnd_ctx);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
@@ -245,6 +248,7 @@ fn main() {
                     user.borrow().render(fbo, &scene_data, cache, &shader_manager);
                     asteroid.render(fbo, &scene_data, cache, &shader_manager);
                     container.render(fbo, &scene_data, cache, &shader_manager);
+                    asteroid_character.borrow().render(fbo, &scene_data, cache, &shader_manager);
                 });
                 controller.reset_toggles();
                 let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 

@@ -34,6 +34,10 @@ impl Entity {
             geometry: model,
         }
     }
+
+    pub fn get_animator(&mut self) -> &mut model::Animator {
+        self.geometry.get_animator()
+    }
 }
 
 impl draw_traits::Drawable for Entity {

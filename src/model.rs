@@ -12,6 +12,7 @@ use cgmath::*;
 use cgmath::Quaternion;
 use std::cell::RefCell;
 use std::rc::Rc;
+use crate::ssbo;
 
 const MAX_BONES_PER_VERTEX : usize = 4;
 
@@ -25,23 +26,27 @@ struct Vertex {
     bone_ids: [i32; MAX_BONES_PER_VERTEX],
     bone_weights: [f32; MAX_BONES_PER_VERTEX],
 }
-glium::implement_vertex!(Vertex, pos, normal, tex_coords, tangent);
+glium::implement_vertex!(Vertex, pos, normal, tex_coords, tangent, bone_ids, bone_weights);
 
 /// Assimp Vector3D to f32 array
+#[inline(always)]
 fn to_v3(v: Vector3D) -> Vector3<f32> {
     vec3((*v).x, (*v).y, (*v).z)
 }
 /// Takes the `x` and `y` coordinates of an assimp `Vector3D`
+#[inline(always)]
 fn to_v2(v: Vector3D) -> [f32; 2] {
     [(*v).x, (*v).y]
 }
-
+/// Assimp to cgmath Mat4
+#[inline(always)]
 fn to_m4(m: assimp_sys::AiMatrix4x4) -> cgmath::Matrix4<f64> {
     cgmath::Matrix4::new(m.a1, m.b1, m.c1, m.d1, m.a2, m.b2, m.c2, m.d2,
         m.a3, m.b3, m.c3, m.d3, m.a4, m.b4, m.c4, m.d4).cast().unwrap()
 }
 
 /// Creates a OpenGL vbo and ebo for the vertices and indices
+#[inline]
 fn get_vbo_ebo<F : glium::backend::Facade>(verts: Vec<Vertex>, indices: Vec<u32>, ctx: &F) 
     -> (glium::VertexBuffer<Vertex>, glium::IndexBuffer<u32>) 
 {
@@ -53,6 +58,13 @@ struct PBRData {
     roughness_tex: glium::texture::Texture2d,
     metalness_tex: glium::texture::Texture2d,
     ao_tex: Option<glium::texture::Texture2d>,
+}
+
+/// We can specify non-pbr textures in the pbr file in case
+/// assimp doesn't find any. 
+struct ExtraTexData {
+    albedo_tex: Option<glium::texture::SrgbTexture2d>,
+    normal_tex: Option<glium::texture::Texture2d>,
 }
 
 /// Reads pbr textures from an externam file names `[mat_name]-pbr.yml` that resides in
@@ -82,9 +94,10 @@ fn get_pbr_data(dir: &str, mat_name: &str) -> Option<BTreeMap<String, String>> {
 }
 
 /// Loads the pbr textures for the material with name `mat_name` which has a home
-/// directory of `dir`
+/// directory of `dir`. Also returns an extra tex data which are optionally specified textures
+/// that don't have to go in the pbr file.
 fn get_pbr_textures<F>(dir: &str, mat_name: &str, facade: &F) 
-    -> Option<PBRData> where F : glium::backend::Facade 
+    -> (Option<PBRData>, Option<ExtraTexData>) where F : glium::backend::Facade 
 {
     match get_pbr_data(dir, mat_name) {
         Some(tex_maps) => {
@@ -93,15 +106,23 @@ fn get_pbr_textures<F>(dir: &str, mat_name: &str, facade: &F)
             if tex_maps.contains_key("ao") {
                 println!("ao: {}", tex_maps["ao"]);
             }
-            Some(PBRData {
+            (Some(PBRData {
                 roughness_tex: textures::load_texture_2d(&format!("{}{}", dir, tex_maps["roughness"]), facade),
                 metalness_tex: textures::load_texture_2d(&format!("{}{}", dir, tex_maps["metalness"]), facade),
                 ao_tex: if tex_maps.contains_key("ao") {
                     Some(textures::load_texture_2d(&format!("{}{}", dir, tex_maps["ao"]), facade))
                 } else { None },
-            })
+            }),
+            Some(ExtraTexData {
+                albedo_tex: if tex_maps.contains_key("albedo") {
+                    Some(textures::load_texture_srgb(&format!("{}{}", dir, tex_maps["albedo"]), facade))
+                } else { None },
+                normal_tex: if tex_maps.contains_key("normal") {
+                    Some(textures::load_texture_2d(&format!("{}{}", dir, tex_maps["normal"]), facade))
+                } else { None },
+            }))
         },
-        _ => None,
+        _ => (None, None),
     }
 }
 /// Texture information for a mesh
@@ -146,7 +167,8 @@ impl Material {
         }
         textures
     }
-    /// Gets a material property with the key `property` as a utf8 string
+    /// Gets a material property with the key `property` as an ascii string
+    /// Non alphanumeric/punctuation ascii characters are stripped
     fn get_property(mat: &assimp_sys::AiMaterial, property: &str) -> Option<String> {
         for i in 0 .. mat.num_properties {
             let prop = unsafe {&**mat.properties.add(i as usize)};
@@ -155,7 +177,9 @@ impl Material {
                 let mut res = Vec::<u8>::new();
                 res.resize(len + 1, 0);
                 unsafe { std::ptr::copy_nonoverlapping(prop.data as *const u8, res.as_mut_ptr(), len); }
-                return Some(String::from_utf8_lossy(&res).into_owned());
+                let mut name = String::from_utf8_lossy(&res).into_owned();
+                name.retain(|c| c.is_ascii_alphanumeric() || c.is_ascii_punctuation());
+                return Some(name);
 
             }
         }
@@ -170,13 +194,19 @@ impl Material {
         let mut diffuse = Material::get_textures(mat, assimp_sys::AiTextureType::Diffuse, dir, &load_srgb);
         let mut emissive = Material::get_textures(mat, assimp_sys::AiTextureType::Emissive, dir, &load_srgb);
         let mut normal = Material::get_textures(mat, assimp_sys::AiTextureType::Normals, dir, &load_rgb);
+        normal.append(&mut Material::get_textures(mat, assimp_sys::AiTextureType::Height, dir, &load_rgb));
         let mut ao = Material::get_textures(mat, assimp_sys::AiTextureType::Lightmap, dir, &load_rgb);
         let name = Material::get_property(mat, "?mat.name").expect("No material name!");
-        let pbr = get_pbr_textures(dir, &name, ctx).map(|mut pbr| {
+        let (pbr, extras) = get_pbr_textures(dir, &name, ctx);
+        let pbr = pbr.map(|mut pbr| {
             if pbr.ao_tex.is_none() && ao.len() > 0 {
                 pbr.ao_tex = Some(ao.swap_remove(0));
             }
             pbr
+        });
+        extras.map(|ExtraTexData {albedo_tex, normal_tex}| {
+            if albedo_tex.is_some() { diffuse.push(albedo_tex.unwrap()); }
+            if normal_tex.is_some() { normal.push(normal_tex.unwrap()); }
         });
         Material {
             diffuse_tex: Some(diffuse.swap_remove(0)),
@@ -196,7 +226,7 @@ impl Material {
             diffuse_tex: if mat.diffuse_texture.is_empty() { None } else {
                 Some(textures::load_texture_srgb(&format!("{}{}", dir, mat.diffuse_texture), ctx))
             },
-            pbr_data: get_pbr_textures(dir, &mat.name, ctx),
+            pbr_data: get_pbr_textures(dir, &mat.name, ctx).0,
             normal_tex: if mat.normal_texture.is_empty() { None } else { 
                 Some(textures::load_texture_2d(&format!("{}{}", dir, mat.normal_texture), ctx))
             },
@@ -213,10 +243,10 @@ impl Material {
     /// `instancing` - if instanced rendering is being used
     /// 
     /// `model` - model matrix if available. If `None`, the identity matrix is used
-    pub fn to_uniform_args(&self, instancing: bool, model: Option<[[f32; 4]; 4]>) -> shader::UniformInfo {
+    pub fn to_uniform_args<'a>(&'a self, instancing: bool, model: Option<[[f32; 4]; 4]>, bones: Option<&'a ssbo::SSBO<[[f32; 4]; 4]>>) -> shader::UniformInfo {
         match &self.name[..] {
             "Laser" => shader::UniformInfo::LaserInfo,
-            x if x.find("pbr").is_some() => shader::UniformInfo::PBRInfo(shader::PBRData {
+            _ if self.pbr_data.is_some() => shader::UniformInfo::PBRInfo(shader::PBRData {
                 diffuse_tex: self.diffuse_tex.as_ref().unwrap(),
                 model: model.unwrap_or_else(|| cgmath::Matrix4::from_scale(1f32).into()),
                 roughness_map: self.pbr_data.as_ref().map(|data| { &data.roughness_tex }),
@@ -224,12 +254,36 @@ impl Material {
                 normal_map: self.normal_tex.as_ref(),
                 emission_map: self.emission_tex.as_ref(),
                 ao_map: self.pbr_data.as_ref().and_then(|data| { data.ao_tex.as_ref() }),
-                instancing,
+                instancing, bone_mats: bones,
             }),
             x => panic!("Unimplemented texture with name: {}", x),
         }  
     }
 }
+/// Generic interpolation 
+trait Lerp {
+    type Numeric;
+    /// Interpolates between `a` to `b` using `fac`
+    /// 
+    /// Requires `fac` is between `0` and `1` where `0` indicates `a` is returned
+    /// and `1` indicates `b` is
+    fn lerp(a: Self, b: Self, fac: Self::Numeric) -> Self;
+}
+
+impl<T : BaseFloat> Lerp for Vector3<T> {
+    type Numeric = T;
+    fn lerp(a: Self, b: Self, fac: Self::Numeric) -> Self {
+        a * (Self::Numeric::from(1).unwrap() - fac) + b * fac
+    }
+}
+
+impl<T : BaseFloat> Lerp for Quaternion<T> {
+    type Numeric = T;
+    fn lerp(a: Self, b: Self, fac: Self::Numeric) -> Self {
+        a.normalize().slerp(b.normalize(), fac)
+    }
+}
+
 pub struct Bone {
     pub id: i32,
     /// Matrix to transform a vector into bone space
@@ -242,7 +296,7 @@ pub struct BoneAnim {
     positions: Vec<(Vector3<f64>, f64)>,
     rotations: Vec<(Quaternion<f64>, f64)>,
     scales: Vec<(Vector3<f64>, f64)>,
-    id: i32,
+    //id: i32,
     last_pos: RefCell<usize>, //interior mutability
     last_rot: RefCell<usize>,
     last_scale: RefCell<usize>,
@@ -250,7 +304,7 @@ pub struct BoneAnim {
 
 impl BoneAnim {
     /// `id` - the id of the given Bone this represents
-    pub fn new(id: i32, anim: &scene::NodeAnim) -> BoneAnim {
+    pub fn new(anim: &scene::NodeAnim) -> BoneAnim {
         let mut positions = Vec::<(Vector3<f64>, f64)>::new();
         let mut scales = Vec::<(Vector3<f64>, f64)>::new();
         let mut rotations = Vec::<(Quaternion<f64>, f64)>::new();
@@ -267,63 +321,60 @@ impl BoneAnim {
             scales.push((vec3(key.value.x, key.value.y, key.value.z).cast().unwrap(), key.time));
         }
         BoneAnim {
-            positions, rotations, scales, id,
+            positions, rotations, scales, //id,
             last_pos: RefCell::new(0), last_rot: RefCell::new(0), last_scale: RefCell::new(0),
         }
     }
 
     /// Gets the last keyframe, next keyframe, `0 - 1` factor to lerp between the two, and index of last keyframe
-    /// Requires that `anim_time >= vec[last_idx].1`
+    /// Requires that `anim_time >= vec[last_idx].1` and that `vec.len() >= 2`
     /// 
     /// `last_idx` - the last used keyframe in `vec`. Will start searching for the next keyframe in `vec` from
     /// `last_idx`. Panics if there is no next keyframe
     fn get_last_next_lerp<T : Clone>(vec: &Vec<(T, f64)>, anim_time: f64, last_idx: usize) -> (T, T, f64, usize) {
-        for idx in last_idx.max(1) .. vec.len() {
-            if anim_time < vec[idx].1  {
-                let lerp_fac = (anim_time - vec[idx - 1].1) / (vec[idx].1 - vec[idx - 1].1);
-                return (vec[idx - 1].0.clone(), vec[idx].0.clone(), lerp_fac, idx - 1);
+        for idx in last_idx .. vec.len() - 1 {
+            if anim_time < vec[idx + 1].1 {
+                let lerp_fac = (anim_time - vec[idx].1) / (vec[idx + 1].1 - vec[idx].1);
+                return (vec[idx].0.clone(), vec[idx + 1].0.clone(), lerp_fac, idx);
             }
         }
         panic!("Animation out of bounds!")
     }
 
+    /// Interpolates between the previous and next keyframe in `keyframes`, updating `last_idx` so that if
+    /// `anim_ticks < keyframes[last_idx].1`, then `last_idx = 0` as this indicates that the animation looped.
+    /// 
+    /// The animation does not interpolate between the last keyframe and the first if the animation loops
+    fn get_cur<T : Lerp<Numeric = f64> + Clone>(anim_ticks: f64, keyframes: &Vec<(T, f64)>, last_idx: &mut usize) -> T {
+        if keyframes.len() == 1 { return keyframes[0].0.clone(); }
+        if anim_ticks < keyframes[*last_idx].1 || *last_idx == keyframes.len() - 1 {
+            *last_idx = 0;
+        }
+        let (last, next, lerp_fac, new_last) = 
+            BoneAnim::get_last_next_lerp(keyframes, anim_ticks, *last_idx);
+        *last_idx = new_last;
+        Lerp::lerp(last, next, lerp_fac)
+    }
+
     /// Interpolates to get current position for `anim_ticks`. Updates 
     /// `self.last_pos`, looping if necessary
+    #[inline(always)]
     fn get_cur_pos(&self, anim_ticks: f64) -> Vector3<f64> {
-        if self.positions.len() == 1 { return self.positions[0].0; }
-        if anim_ticks < self.positions[*self.last_pos.borrow()].1 {
-            *self.last_pos.borrow_mut() = 0;
-        }
-        let (last, next, lerp_fac, last_idx) 
-            = BoneAnim::get_last_next_lerp(&self.positions, anim_ticks, *self.last_pos.borrow());
-        *self.last_pos.borrow_mut() = last_idx;
-        next * lerp_fac + last * (1f64 - lerp_fac)
+        BoneAnim::get_cur(anim_ticks, &self.positions, &mut *self.last_pos.borrow_mut())
     }
 
     /// Interpolates to get current scale for `anim_ticks`. Updates 
     /// `self.last_scale`, looping if necessary
+    #[inline(always)]
     fn get_cur_scale(&self, anim_ticks: f64) -> Vector3<f64> {
-        if self.scales.len() == 1 { return self.scales[0].0; }
-        if anim_ticks < self.scales[*self.last_scale.borrow()].1 {
-            *self.last_scale.borrow_mut() = 0;
-        }
-        let (last, next, lerp_fac, last_idx) 
-            = BoneAnim::get_last_next_lerp(&self.scales, anim_ticks, *self.last_scale.borrow());
-        *self.last_scale.borrow_mut() = last_idx;
-        next * lerp_fac + last * (1f64 - lerp_fac)
+        BoneAnim::get_cur(anim_ticks, &self.scales, &mut *self.last_scale.borrow_mut())
     }
 
     /// Interpolates to get current rotation for `anim_ticks`. Updates 
     /// `self.last_rot`, looping if necessary
+    #[inline(always)]
     fn get_cur_rot(&self, anim_ticks: f64) -> Quaternion<f64> {
-        if self.rotations.len() == 1 { return self.rotations[0].0; }
-        if anim_ticks < self.rotations[*self.last_rot.borrow()].1 {
-            *self.last_rot.borrow_mut() = 0;
-        }
-        let (last, next, lerp_fac, last_idx) 
-            = BoneAnim::get_last_next_lerp(&self.rotations, anim_ticks, *self.last_rot.borrow());
-        *self.last_rot.borrow_mut() = last_idx;
-        last.normalize().slerp(next.normalize(), lerp_fac)
+        BoneAnim::get_cur(anim_ticks, &self.rotations, &mut *self.last_rot.borrow_mut())
     }
 
     /// Gets the current transformation matrix for the bone at the time
@@ -365,7 +416,7 @@ impl Mesh {
                     let id = unique_bones;
                     bone_map.insert(name, Bone {
                         id,
-                        offset_matrix: to_m4(*bone.offset_matrix()).into(),
+                        offset_matrix: to_m4(*bone.offset_matrix()),
                     });
                     unique_bones += 1;
                     id
@@ -373,7 +424,9 @@ impl Mesh {
                 Some(bone) => bone.id
             };
 
-            for weight in bone.weight_iter().map(|vw| *vw) {
+            // Assimp weight_iter is broken
+            for i in 0 .. bone.num_weights as usize {
+                let weight = unsafe { *bone.weights.add(i) };
                 vertex_bone_data[weight.vertex_id as usize].push((bone_id, weight.weight));
             }
         }
@@ -440,17 +493,17 @@ impl Mesh {
     /// Gets the correct shader program, parameters, and uniform from the shader manager based on this mesh's material. The calls
     /// the supplied draw function with these arguments and the mesh's vbo and ebo
     fn render_helper<F>(&self, scene_data: &shader::SceneData, manager: &shader::ShaderManager, local_data: &shader::PipelineCache,
-        model: Option<[[f32; 4]; 4]>, instancing: bool, mats: &Vec<Material>, mut draw_func: F) 
+        model: Option<[[f32; 4]; 4]>, instancing: bool, mats: &Vec<Material>, bones: Option<&ssbo::SSBO::<[[f32; 4]; 4]>>, mut draw_func: F) 
         where F : FnMut(&glium::VertexBuffer<Vertex>, &glium::IndexBuffer<u32>, &glium::Program, &glium::DrawParameters, &shader::UniformType), 
     {
-        let mat = mats[self.mat_idx.min(mats.len() - 1)].to_uniform_args(instancing, model);
+        let mat = mats[self.mat_idx.min(mats.len() - 1)].to_uniform_args(instancing, model, bones);
         let (shader, params, uniform) = manager.use_shader(&mat, Some(scene_data), Some(local_data));
         draw_func(&self.vbo, &self.ebo, shader, &params, &uniform)
     }
 
     pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, model: [[f32; 4]; 4], 
-        manager: &shader::ShaderManager, materials: &Vec<Material>) {
-        self.render_helper(mats, manager, local_data, Some(model), false, materials,
+        manager: &shader::ShaderManager, materials: &Vec<Material>, bones: Option<&ssbo::SSBO::<[[f32; 4]; 4]>>) {
+        self.render_helper(mats, manager, local_data, Some(model), false, materials, bones,
         |vbo, ebo, shader, params, uniform| {
             match uniform {
                shader::UniformType::LaserUniform(uniform) => 
@@ -472,7 +525,7 @@ impl Mesh {
     pub fn render_instanced<S : glium::Surface, T : Copy>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, manager: &shader::ShaderManager, 
         instance_buffer: &glium::vertex::VertexBufferSlice<T>, materials: &Vec<Material>) 
     {
-        self.render_helper(mats, manager, local_data, None, true, materials,
+        self.render_helper(mats, manager, local_data, None, true, materials, None,
         |vbo, ebo, shader, params, uniform| {
             match uniform {
                shader::UniformType::LaserUniform(uniform) => 
@@ -522,20 +575,23 @@ pub struct Animation {
     bone_map: Rc<HashMap<String, Bone>>,
     name: String,
     anim_bones: HashMap<String, BoneAnim>,
+    root_inverse: Matrix4<f64>,
 }
 
 impl Animation {
     /// Requires there are no missing bones from `bone_map`
     pub fn new(anim: &assimp::Animation, root_node: Rc<AssimpNode>, bone_map: Rc<HashMap<String, Bone>>) -> Animation {
         let mut used_bones = HashMap::<String, BoneAnim>::new();
+        println!("New animation named: `{}`", anim.name.as_ref());
         for i in 0 .. anim.num_channels as usize {
             let node = anim.get_node_anim(i).unwrap();
-            let bone_info = bone_map.get((*node).node_name.as_ref()).unwrap();
+            //let bone_info = bone_map.get((*node).node_name.as_ref()).unwrap();
             used_bones.insert((*node).node_name.as_ref().to_owned(),
-                BoneAnim::new(bone_info.id, &node));
+                BoneAnim::new(&node));
         }
         Animation {
-            ticks_per_sec: anim.ticks_per_second,
+            root_inverse: root_node.transformation.invert().unwrap(),
+            ticks_per_sec: if anim.ticks_per_second == 0. { 25. } else { anim.ticks_per_second },
             duration: anim.duration,
             name: anim.name.as_ref().to_owned(),
             root_node, bone_map, anim_bones: used_bones,
@@ -548,7 +604,7 @@ impl Animation {
     /// animation loops to beginning
     pub fn play(&self, dt: f64) -> Vec<Matrix4<f32>> {
         let ticks = self.ticks_per_sec * dt;
-        let iterations = (ticks / self.duration).round() as i32;
+        let iterations = (ticks / self.duration).floor() as i32;
         let ticks = ticks - iterations as f64 * self.duration;
 
         let mut final_mats = Vec::<Matrix4<f32>>::new();
@@ -570,15 +626,88 @@ impl Animation {
     fn get_bone_transforms(&self, anim_time: f64, ai_node: &AssimpNode, parent_transform: &Matrix4<f64>,
         mut out_bone_matrices: &mut Vec<Matrix4<f32>>) 
     {
-        let bone = self.anim_bones.get(&ai_node.name).unwrap();
-        let bone_transform = bone.get_bone_matrix(anim_time);
-        let bone = self.bone_map.get(&ai_node.name).unwrap();
+        let bone_transform = match self.anim_bones.get(&ai_node.name) {
+            Some(bone) => bone.get_bone_matrix(anim_time),
+            _ => ai_node.transformation,
+        };
         let to_world_space = parent_transform * bone_transform;
-        out_bone_matrices[bone.id as usize] = (to_world_space * bone.offset_matrix).cast().unwrap();
+
+        match self.bone_map.get(&ai_node.name) {
+            Some(bone_info) => {
+                out_bone_matrices[bone_info.id as usize] = (self.root_inverse * to_world_space *
+                    bone_info.offset_matrix).cast().unwrap();
+            },
+            None => ()
+        }
 
         for child in ai_node.children.iter().map(|c| &*c) {
             self.get_bone_transforms(anim_time, child, &to_world_space, &mut out_bone_matrices);
         }
+    }
+
+    /// True if `anim_sec` exceeds the duration of a single play of the animation
+    #[inline(always)]
+    pub fn is_finished(&self, anim_sec: f64) -> bool {
+        anim_sec * self.ticks_per_sec > self.duration
+    }
+}
+
+/// An animator holds all the animations of a single model and handles playing and stopping them.
+/// Only one animation can play at a time
+pub struct Animator {
+    animations: Vec<Animation>,
+    cur_anim: Option<usize>,
+    anim_start: std::time::Instant,
+    play_loop: bool,
+
+}
+
+impl Animator {
+    pub fn new(anims: assimp::scene::AnimationIter, bone_map: Rc<HashMap<String, Bone>>, root_node: Rc<AssimpNode>) -> Animator {
+        let total_anims : Vec<Animation> 
+            = anims.map(|x| Animation::new(&x, root_node.clone(), bone_map.clone())).collect();
+        Animator {
+            cur_anim: None,
+            animations: total_anims,
+            anim_start: std::time::Instant::now(),
+            play_loop: true,
+        }
+
+    }
+
+    /// Plays the current animation, if any, and gets the bone matrices
+    /// If no animations is playing, returns `None`
+    pub fn animate(&self, frame_time: std::time::Instant) -> Option<Vec<[[f32; 4]; 4]>> {
+        match self.cur_anim {
+            Some(cur_anim) => {
+                let anim_sec = frame_time.duration_since(self.anim_start).as_secs_f64();
+                if self.play_loop || !self.animations[cur_anim].is_finished(anim_sec) {
+                    Some(self.animations[cur_anim].play(anim_sec).into_iter().map(|x| x.into()).collect())
+                } else { None }
+            },
+            _ => None,
+        }
+    }
+
+    /// Starts an animation with the name `anim_name`. Panics if no animation with that name is found.
+    /// Will interrupt itself if it is already playing and any other animation currently being played
+    pub fn start(&mut self, anim_name: &str, do_loop: bool) {
+        for (anim, idx) in self.animations.iter().zip(0 .. self.animations.len()) {
+            if anim.name == anim_name {
+                self.play_loop = do_loop;
+                self.cur_anim = Some(idx);
+                self.anim_start = std::time::Instant::now();
+                return;
+            }
+        }
+        panic!("Animation '{}' not found", anim_name);
+    }
+
+    /// Stops any animation playing, resetting model position
+    #[inline]
+    #[allow(dead_code)]
+    pub fn stop(&mut self) {
+        self.cur_anim = None;
     }
 }
 
@@ -590,17 +719,20 @@ impl Animation {
 /// 
 /// # Special Materials
 /// 
-/// * **PBR** - Materials that contain "pbr" are PBR materials. PBR textures are loaded from the file
+/// * **PBR** - Materials that have a corresponding PBR file are PBR materials. PBR textures are loaded from the file
 /// `[material_name]-pbr.yml` which is expected to be in the same directory as the main obj file. This file must define
 /// a `roughness`, `metalness`, and optionally, `ao` parameter. Once again, these textures should be relative to the 
-/// obj file's directory
+/// obj file's directory. This file can also define `albedo`, `normal`, and `emission` which will be added **IN ADDITION**
+/// to whatever diffuse, normal, and emission textures are loaded by assimp/tobj. Use this if texture loading is working
+/// properly
 /// 
 /// * **Lasers** - Materials with the name "Laser" are lasers. These are objects that are simply colored
 /// with one uniform color and do not use textures
 pub struct Model {
     meshes: Vec<Mesh>,
     materials: Vec<Material>,
-    root_node: AssimpNode,
+    animator: Animator,
+    bone_buffer: RefCell<Option<ssbo::SSBO<[[f32; 4]; 4]>>>,
 }
 
 impl Model {
@@ -633,7 +765,7 @@ impl Model {
     }
 
     /// In case an animation somehow contains bones that none of the meshes do
-    fn load_missing_bones(scene: &Scene, bone_map: &mut HashMap<String, Bone>) {
+    fn load_missing_bones(scene: &Scene, mut bone_map: HashMap<String, Bone>) -> HashMap<String, Bone> {
         for anim in scene.animation_iter() {
             let anim = &*anim;
             for i in 0 .. anim.num_channels as usize {
@@ -647,7 +779,31 @@ impl Model {
                     });
                 }
             }
+        }
+        bone_map
+    }
 
+    /// Gets the materials for `scene`
+    /// 
+    /// If `path` is an `.obj` file, or we find an `.mtl` file with the same name as `path` in the same
+    /// directory, loads the textures from there instead
+    /// ## Supported MTL arguments
+    /// * `map_Kd` - diffuse texture
+    /// * `map_bump` or `bump` - normal map
+    /// * `map_Ke` - emission map
+    /// 
+    /// PBR textures are specified in a YAML file with the `-pbr.yml` file ending. They should be named
+    /// the same as their corresponding materials
+    fn process_materials<F : glium::backend::Facade>(path: &str, scene: &Scene, ctx: &F) -> Vec<Material> {
+        let backup_mtl = format!("{}{}.mtl", 
+            textures::dir_stem(path),
+            std::path::Path::new(path).file_stem().map(|x| x.to_str().unwrap()).unwrap());
+        if path.find(".obj").is_some() {
+            Model::process_obj_mats(path, ctx)
+        } else if std::path::Path::new(&backup_mtl).exists() {
+            Model::process_obj_mats(&backup_mtl, ctx)
+        } else {
+            Model::process_mats(&scene, &textures::dir_stem(path), ctx)
         }
     }
 
@@ -662,23 +818,35 @@ impl Model {
         });
         let scene = importer.read_file(path).unwrap();
         assert_eq!(scene.is_incomplete(), false);
+        println!("Loaded model");
         let mut bone_map = HashMap::<String, Bone>::new();
         let root_node = AssimpNode::new(&scene.root_node());
         let meshes = Model::process_node(scene.root_node(), &scene, &mut bone_map, ctx);
-        let materials = if path.find(".obj").is_some() {
-            Model::process_obj_mats(path, ctx)
-        } else {
-            Model::process_mats(&scene, &textures::dir_stem(path), ctx)
-        };
-        Model { meshes, materials, root_node }
+        let materials = Model::process_materials(path, &scene, ctx);
+        bone_map = Model::load_missing_bones(&scene, bone_map);
+        let bone_buffer = if !bone_map.is_empty() {
+            Some(ssbo::SSBO::<[[f32; 4]; 4]>::static_alloc_dyn(bone_map.len(), None))
+        } else { None };
+        let animator = Animator::new(scene.animation_iter(), Rc::new(bone_map), Rc::new(root_node));
+        Model { meshes, materials, animator, 
+            bone_buffer: RefCell::new(bone_buffer) }
     }
 
     /// Render this model with the given scene and pipeline data and model matrix
     pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, model: [[f32; 4]; 4], 
         manager: &shader::ShaderManager) 
     {
+        let bones = self.animator.animate(std::time::Instant::now());
+        match (&bones, self.bone_buffer.borrow_mut().as_mut()) {
+            (Some(mats), Some(buf)) => {
+                buf.update(mats)
+            },
+            _ => (),
+        };
+        let bb = self.bone_buffer.borrow();
         for mesh in &self.meshes {
-            mesh.render(wnd, mats, local_data, model, manager, &self.materials);
+            mesh.render(wnd, mats, local_data, model, manager, &self.materials, 
+                bones.as_ref().and_then(|_| bb.as_ref()));
         }
     }
 
@@ -692,5 +860,9 @@ impl Model {
         for mesh in &self.meshes {
             mesh.render_instanced(wnd, mats, local_data, manager, &instance_buffer, &self.materials);
         }
+    }
+
+    pub fn get_animator(&mut self) -> &mut Animator {
+        &mut self.animator
     }
 }

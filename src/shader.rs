@@ -17,6 +17,8 @@ enum ShaderType {
     DepthShader,
     DepthInstancedShader,
     PbrInstancedShader,
+    PbrAnim,
+    DepthAnim,
 }
 
 /// Converts a shader type to an integer
@@ -36,6 +38,8 @@ fn shader_type_to_int(typ: &ShaderType) -> i32 {
         &ShaderType::DepthShader => 10,
         &ShaderType::DepthInstancedShader => 11,
         &ShaderType::PbrInstancedShader => 12,
+        &ShaderType::PbrAnim => 13,
+        &ShaderType::DepthAnim => 14,
     }
 }
 
@@ -62,21 +66,13 @@ pub enum RenderPassType {
 }
 
 impl ShaderType {
-    fn get_draw_params(&self, pass: RenderPassType) -> glium::DrawParameters<'static> {
+    /// Gets the draw parameters for the shader type and render pass
+    fn get_draw_params(&self, _pass: RenderPassType) -> glium::DrawParameters<'static> {
         use ShaderType::*;
-        use RenderPassType::*;
         use glium::draw_parameters::*;
         match self {
-            DepthShader | DepthInstancedShader if pass == Shadow =>
-                glium::DrawParameters {
-                    depth: glium::Depth {
-                        test: DepthTest::IfLess,
-                        write: true, ..Default::default()
-                    },
-                    backface_culling: BackfaceCullingMode::CullClockwise, // cull front face
-                    .. Default::default()
-                },
-            Pbr | PbrInstancedShader | DepthShader | DepthInstancedShader | Laser => 
+            Pbr | PbrInstancedShader | DepthShader | DepthInstancedShader | Laser 
+            | PbrAnim | DepthAnim => 
                 glium::DrawParameters {
                     depth: glium::Depth {
                         test: DepthTest::IfLess,
@@ -141,6 +137,7 @@ pub struct PBRData<'a> {
     pub emission_map: Option<&'a glium::texture::SrgbTexture2d>,
     pub ao_map: Option<&'a glium::texture::Texture2d>,
     pub instancing: bool,
+    pub bone_mats: Option<&'a ssbo::SSBO<[[f32; 4]; 4]>>,
 }
 /// Shader inputs for Spherical Texture shader
 pub struct EqRectData<'a> {
@@ -245,13 +242,15 @@ impl<'a> UniformInfo<'a> {
     fn corresp_shader_type(&self, pass: RenderPassType) -> ShaderType {
         use UniformInfo::*;
         use RenderPassType::*;
-        match (&self, pass) {
-            (PBRInfo(PBRData {instancing, ..}), Visual) if !instancing => ShaderType::Pbr,
-            (PBRInfo(_), Visual) => ShaderType::PbrInstancedShader,
-            (PBRInfo(PBRData {instancing, ..}), Depth) if !instancing => ShaderType::DepthShader,
-            (PBRInfo(PBRData {instancing, ..}), Shadow) if !instancing => ShaderType::DepthShader,
-            (PBRInfo(_), Depth) => ShaderType::DepthInstancedShader,
-            (PBRInfo(_), Shadow) => ShaderType::DepthInstancedShader,
+        match (self, pass) {
+            (PBRInfo(PBRData {instancing, ..}), Visual) if *instancing => ShaderType::PbrInstancedShader,
+            (PBRInfo(PBRData {bone_mats: Some(_), ..}), Visual) => ShaderType::PbrAnim,
+            (PBRInfo(_), Visual) => ShaderType::Pbr,
+            (PBRInfo(PBRData {instancing, ..}), x) if *instancing && (x == Depth || x == Shadow) => 
+                ShaderType::DepthInstancedShader,
+            (PBRInfo(PBRData {bone_mats: Some(_), ..}), x) if x == Depth || x == Shadow => 
+                ShaderType::DepthAnim,
+            (PBRInfo(_), Depth) | (PBRInfo(_), Shadow) => ShaderType::DepthShader,
             (EquiRectInfo(_), _) => ShaderType::EquiRect,
             (SkyboxInfo(_), _) => ShaderType::Skybox,
             (UiInfo(_), _) => ShaderType::UiShader,
@@ -391,6 +390,10 @@ impl ShaderManager {
             "shaders/instanceDepthVert.glsl", "shaders/depthFrag.glsl").unwrap();
         let pbr_instanced = load_shader_source!(facade,
             "shaders/instancePbrVert.glsl", "shaders/pbrFrag.glsl").unwrap();
+        let pbr_anim = load_shader_source!(facade,
+            "shaders/pbrAnimVert.glsl", "shaders/pbrFrag.glsl").unwrap();
+        let depth_anim = load_shader_source!(facade,
+            "shaders/depthAnimVert.glsl", "shaders/depthFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let mut shaders = BTreeMap::<ShaderType, glium::Program>::new();
@@ -406,6 +409,8 @@ impl ShaderManager {
         shaders.insert(ShaderType::DepthShader, depth_shader);
         shaders.insert(ShaderType::DepthInstancedShader, depth_instanced);
         shaders.insert(ShaderType::PbrInstancedShader, pbr_instanced);
+        shaders.insert(ShaderType::PbrAnim, pbr_anim);
+        shaders.insert(ShaderType::DepthAnim, depth_anim);
         let mut compute_shaders = BTreeMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         ShaderManager {
@@ -447,13 +452,16 @@ impl ShaderManager {
             }),
             (PBRInfo(PBRData { model, 
                 diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map,
-                instancing: _, }), Visual) 
+                instancing: _, bone_mats}), Visual) 
             => {
                 let sd = scene_data.unwrap();
                 sd.lights.unwrap().bind(0);
                 let cache = cache.unwrap();
                 let maps = cache.cascade_maps.as_ref().unwrap();
                 // NOTE: requires the compute shader's SSBO for visible indices is still bound
+                if typ == ShaderType::PbrAnim {
+                    bone_mats.unwrap().bind(4);
+                }
                 UniformType::PbrUniform(UniformsArray { name: "cascadeDepthMaps", 
                 vals: maps.iter().map(|x| sample_nearest_border!(*x)).collect::<Vec<Sampler<'b, glium::texture::DepthTexture2d>>>(), 
                 rest: glium::uniform! {
@@ -504,10 +512,13 @@ impl ShaderManager {
             (GenLutInfo, _) => UniformType::BrdfLutUniform(glium::uniform! {
                 model: cgmath::Matrix4::from_scale(1f32).into(),
             }),
-            (PBRInfo(PBRData {model, ..}), x) if x == Depth || x == Shadow => UniformType::DepthUniform(glium::uniform! {
-                viewproj: scene_data.unwrap().viewer.viewproj,
-                model: model.clone(),
-            }),
+            (PBRInfo(PBRData {model, bone_mats, ..}), x) if x == Depth || x == Shadow => {
+                bone_mats.map(|x| x.bind(4));
+                UniformType::DepthUniform(glium::uniform! {
+                    viewproj: scene_data.unwrap().viewer.viewproj,
+                    model: model.clone(),
+                })
+            },
             (_, pass) => panic!("Invalid shader/shader data combination with shader '{:?}' during pass '{:?}'", typ, pass),
         };
         (shader, params, uniform)
