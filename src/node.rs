@@ -73,12 +73,17 @@ impl Node {
     pub fn set_parent(&mut self, parent: Rc<RefCell<Node>>) {
         self.parent = Some(parent);
     }
+
+    pub fn mat(&self) -> Matrix4<f64> {
+        From::from(self)
+    }
 }
 
 impl From<&'_ Node> for Matrix4<f64> {
     fn from(node: &'_ Node) -> Matrix4<f64> {
-        let mat = Matrix4::from_translation(node.pos.to_vec()) * 
-            Matrix4::<f64>::from(node.orientation) * 
+        let mat = Matrix4::from_translation(node.anchor.to_vec()) *
+            Matrix4::from_translation(node.pos.to_vec()) * 
+            Matrix4::from(node.orientation) * 
             Matrix4::from_nonuniform_scale(node.scale.x, node.scale.y, node.scale.z) * 
             Matrix4::from_translation(node.anchor.to_vec() * -1f64);
         match &node.parent {
@@ -88,6 +93,12 @@ impl From<&'_ Node> for Matrix4<f64> {
             },
             None => mat,
         }
+    }
+}
+
+impl std::default::Default for Node {
+    fn default() -> Node {
+        Node::new(None, None, None, None)
     }
 }
 
@@ -106,5 +117,55 @@ impl From<&'_ Node> for Matrix4<f32> {
 impl Into<Matrix4<f32>> for Node {
     fn into(self) -> Matrix4<f32> {
         Matrix4::<f32>::from(&self)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use cgmath::*;
+    use super::*;
+    use assert_approx_eq::assert_approx_eq;
+
+    #[test]
+    fn anchor_rotation() {
+        let a = Euler::new(Deg(0.), Deg(0.), Deg(90f64));
+        let t = Node::new(None, Some(Quaternion::from(a)), None, Some(point3(8., 10., 10.)));
+        let p = t.mat().transform_point(point3(10., 10., 10.));
+        assert_eq!(p, point3(8f64, 12., 10.));
+        let mut t = Node::default();
+        t.pos = point3(10., 0., 0.);
+        t.orientation = From::from(Euler::new(Deg(0.), Deg(0f64), Deg(-60.)));
+        let  p = t.mat().transform_point(point3(0., 2., 0.));
+        let q = point3(10. + f64::cos(30. * std::f64::consts::PI / 180.0) * 2.0, 1.0, 0.);
+        assert_approx_eq!(p.x, q.x);
+        assert_approx_eq!(p.y, q.y);
+        assert_approx_eq!(p.z, q.z);
+    }
+
+    #[test]
+    fn parent_transform() {
+        let parent = Rc::new(RefCell::new(Node::new(Some(point3(10., 0., 0.)), None, None, None)));
+        let mut child = Node::new(None, None, None, Some(point3(2., 2., 2.)));
+        child.set_parent(parent.clone());
+        let p = child.mat().transform_point(point3(10., 2., 2.));
+        assert_eq!(p, point3(20., 2., 2.));
+        parent.borrow_mut().scale = vec3(2., 1., 1.);
+        let p = child.mat().transform_point(point3(2., 0., 0.));
+        assert_eq!(p, point3(14., 0., 0.));
+        child.pos = point3(0., 3., 0.);
+        let p = child.mat().transform_point(point3(2., 0., 0.));
+        assert_eq!(p, point3(14., 3., 0.));
+    }
+
+    #[test]
+    fn scale_test() {
+        let n = Node::new(None, None, Some(vec3(2., 2., 1.)), None);
+        assert_eq!(n.mat().transform_point(point3(10., 1., 0.)),
+            point3(20., 2., 0.));
+        let p = Rc::new(RefCell::new(n));
+        let mut c = Node::new(Some(point3(3., 0., 3.)), None, None, None);
+        c.set_parent(p.clone());
+        assert_eq!(c.mat().transform_point(point3(1., 0., 1.)),
+            point3(8., 0., 4.));
     }
 }

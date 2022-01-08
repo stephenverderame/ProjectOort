@@ -1,31 +1,9 @@
 use cgmath::*;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
+use super::collision_object::Object;
 extern crate arr_macro;
 
-pub struct Object {
-    center: Point3<f64>,
-    radius: f64,
-    octree_cell: Weak<RefCell<ONode>>,
-}
-
-impl Object {
-    pub fn new(center: Point3<f64>, radius: f64) -> Object {
-        Object {
-            center, radius,
-            octree_cell: Weak::new(),
-        }
-    }
-}
-
-impl std::fmt::Debug for Object {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Object")
-            .field("center", &self.center)
-            .field("radius", &self.radius)
-            .finish()
-    }
-}
 
 type ObjectList = Vec<Rc<RefCell<Object>>>;
 
@@ -99,10 +77,10 @@ impl ONode {
 
     /// Gets octant index or `None` if object is in multiple octants
     fn get_octant_index(center: &Point3<f64>, h_width: f64, obj: &Rc<RefCell<Object>>) -> Option<u8> {
-        let o = obj.borrow().center - center;
+        let o = obj.borrow().center() - center;
         let mut index = 0u8;
         for i in 0 .. 3 {
-            if o[i].abs() < obj.borrow().radius {
+            if o[i].abs() < obj.borrow().radius() {
                 return None
             } else if o[i] > 0. {
                 index |= 1 << i;
@@ -138,8 +116,8 @@ impl ONode {
         for obj in node.borrow().objects.iter() {
             if Rc::ptr_eq(obj, test_obj) { continue; }
             let (o, other) = (obj.borrow(), test_obj.borrow());
-            let dist = (other.center - o.center).dot(other.center - o.center);
-            if dist < (o.radius + other.radius).powi(2) {
+            let dist = (other.center() - o.center()).dot(other.center() - o.center());
+            if dist < (o.radius() + other.radius()).powi(2) {
                 v.push(obj.clone())
             }
         }
@@ -162,8 +140,8 @@ impl ONode {
     /// If `obj` no longer fits in the octree, it remains in the root node
     pub fn update(&mut self, obj: &Rc<RefCell<Object>>) {
         if let Some(parent) = self.parent.upgrade() {
-            let delta = obj.borrow().center - self.center;
-            let radius = obj.borrow().radius;
+            let delta = obj.borrow().center() - self.center;
+            let radius = obj.borrow().radius();
             for i in 0 .. 3 {
                 if delta[i].abs() + radius > self.h_width {
                     self.objects.retain(|e| !Rc::ptr_eq(&e, &obj));
@@ -247,19 +225,11 @@ impl Octree {
 #[cfg(test)]
 mod test {
     use super::*;
-    use rand::{Rng, RngCore};
+    use crate::node;
     
     fn new_obj(center: Point3<f64>, radius: f64) -> Rc<RefCell<Object>> {
-        Rc::new(RefCell::new(Object::new(center, radius)))
-    }
-
-    fn rand_pt_around(center: Point3<f64>, radius: f64, gen: Option<&mut rand::rngs::ThreadRng>) -> Point3<f64> {
-        let mut r = rand::thread_rng();
-        let mut gen = gen.unwrap_or_else(|| &mut r);
-        let distrib = rand::distributions::Uniform::new(-radius, radius);
-        point3(center.x + gen.sample(distrib), 
-            center.y + gen.sample(distrib),
-            center.z + gen.sample(distrib))
+        Rc::new(RefCell::new(Object::from(Rc::new(RefCell::new(node::Node::new(None, None, None, None))), 
+            &[center + vec3(radius, 0., 0.), center - vec3(radius, 0., 0.)])))
     }
 
     #[test]
@@ -388,13 +358,17 @@ mod test {
         for o in &obj {
             ot.insert(o.clone());
         }
-        obj[0].borrow_mut().center = point3(-3., 3., 3.);
+        obj[0].borrow_mut().model.borrow_mut().pos = point3(-6., 3., 3.);
         Octree::update(&obj[0]);
         assert_eq!(obj[0].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root.borrow().children.as_ref().unwrap()[6])), true);
-        obj[14].borrow_mut().radius = 2.;
+        let local_origin = obj[14].borrow().local_center;
+        obj[14].borrow_mut().model.borrow_mut().scale = vec3(0.1, 0.1, 0.1);
+        obj[14].borrow_mut().model.borrow_mut().anchor = local_origin;
         Octree::update(&obj[14]);
         assert_eq!(obj[14].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root.borrow().children.as_ref().unwrap()[6])), true);
-        obj[1].borrow_mut().radius = 10.;
+        let local_origin = obj[14].borrow().local_center;
+        obj[1].borrow_mut().model.borrow_mut().scale = vec3(5., 5., 5.);
+        obj[1].borrow().model.borrow_mut().anchor = local_origin;
         Octree::update(&obj[1]);
         assert_eq!(obj[1].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root)), true);
     }

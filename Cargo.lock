@@ -71,6 +71,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert_approx_eq"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c07dab4369547dbe5114677b33fbbf724971019f3818172d59a97a61c774ffd"
+
+[[package]]
 name = "assimp"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1178,6 +1184,7 @@ name = "rust-graphics"
 version = "0.1.0"
 dependencies = [
  "arr_macro",
+ "assert_approx_eq",
  "assimp",
  "assimp-sys",
  "cgmath",
