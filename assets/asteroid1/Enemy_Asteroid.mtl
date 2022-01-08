@@ -12,6 +12,9 @@ newmtl Enemy
 	Kd 0.5880 0.5880 0.5880
 	Ks 0.0000 0.0000 0.0000
 	Ke 0.0000 0.0000 0.0000
+	map_Kd Textures_Mat_Enemy/Enemy_albedo.jpg
+	bump Textures_Mat_Enemy/Enemy_normal.png
+	map_Ke Textures_Mat_Enemy/Enemy_emissive.jpg
 
 newmtl Asteroid
 	Ns 10.0000
@@ -24,3 +27,5 @@ newmtl Asteroid
 	Kd 0.5882 0.5882 0.5882
 	Ks 0.0000 0.0000 0.0000
 	Ke 0.0000 0.0000 0.0000
+	map_Kd Textures_Asteroid/DefaultMaterial_albedo.jpg
+	bump Textures_Asteroid/DefaultMaterial_normal.png

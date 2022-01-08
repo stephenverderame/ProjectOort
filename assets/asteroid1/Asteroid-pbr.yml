@@ -1,0 +1,3 @@
+roughness: Textures_Asteroid/DefaultMaterial_roughness.jpg
+metalness: Textures_Asteroid/DefaultMaterial_metallic.jpg
+ao: Textures_Asteroid/DefaultMaterial_AO.jpg

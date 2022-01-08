@@ -1,0 +1,3 @@
+roughness: Textures_Mat_Enemy/Enemy_roughness.jpg
+metalness: Textures_Mat_Enemy/Enemy_metallic.jpg
+ao: Textures_Mat_Enemy/Enemy_AO.jpg

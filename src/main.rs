@@ -21,6 +21,7 @@ mod render_target;
 mod render_pass;
 mod controls;
 mod ssbo;
+mod octree;
 extern crate gl;
 
 use draw_traits::{Drawable, Viewer};
