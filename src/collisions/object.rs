@@ -11,7 +11,7 @@ pub struct Object {
     pub local_center: Point3<f64>,
     pub local_radius: f64,
     pub octree_cell: Weak<RefCell<ONode>>,
-    pub local_obb: AOBB
+    pub local_obb: AABB
 }
 
 impl Object {
@@ -26,7 +26,7 @@ impl Object {
     }
 
     pub fn from<T : BaseNum>(transform: Rc<RefCell<node::Node>>, points: &[Point3<T>]) -> Object {
-        let obb = AOBB::from_aabb(transform.clone(), points);
+        let obb = AABB::from(points);
         let radius = obb.extents.x.max(obb.extents.y.max(obb.extents.z));
         Object {
             model: transform,

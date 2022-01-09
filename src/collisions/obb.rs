@@ -1,13 +1,9 @@
 use cgmath::*;
-use crate::node;
-use std::rc::Rc;
-use std::cell::RefCell;
-/// Aligned OBB
+/// AABB
 /// 
 /// An OBB that, in local space, is an AABB.
 /// So the x, y, and z basis vectors are the unit basis vectors
-pub struct AOBB {
-    pub model: Rc<RefCell<node::Node>>,
+pub struct AABB {
     pub center: Point3<f64>,
     pub extents: Vector3<f64>,
 }
@@ -22,8 +18,8 @@ struct OBB {
 }
 
 impl OBB {
-    fn from_local_aligned(obb: &AOBB, transform: Option<Matrix4<f64>>) -> OBB {
-        let model = transform.unwrap_or_else(|| obb.model.borrow().mat());
+    /// Creates an OBB by applying a world transformation matrix to an AABB
+    fn from_local_aligned(obb: &AABB, model: Matrix4<f64>) -> OBB {
         let mut pts = [
             obb.center + vec3(obb.extents.x, obb.extents.y, obb.extents.z),
             obb.center + vec3(obb.extents.x, obb.extents.y, -obb.extents.z),
@@ -96,9 +92,8 @@ impl OBB {
             Some(axis_b) => {
                 let a = axis_a.cross(axis_b);
                 if a.magnitude2() < 5. * f64::EPSILON {
-                    println!("Near parallel");
                     // axes are parallel, and lie in some plane P
-                    // choose a new axis
+                    // choose a new axis perpendicular to that plane
                     let n = axis_a.cross(self.center + axis_a - (other.center + axis_b));
                     if n.magnitude2() < 5. * f64::EPSILON {
                         n.normalize()
@@ -135,11 +130,11 @@ impl OBB {
     }
 }
 
-impl AOBB {
-    /// Computes an OBB from an axis-aligned bounding box in local space
+impl AABB {
+    /// Computes an AABB from points
     /// `points` - local space point cloud
     /// `model` - world space transformation
-    pub fn from_aabb<T : BaseNum>(model: Rc<RefCell<node::Node>>, points: &[Point3<T>]) -> AOBB {
+    pub fn from<T : BaseNum>(points: &[Point3<T>]) -> AABB {
         let mut mins = vec3(f64::MAX, f64::MAX, f64::MAX);
         let mut maxs = vec3(f64::MIN, f64::MIN, f64::MIN);
         for pt in points {
@@ -154,16 +149,34 @@ impl AOBB {
         }
         let center = (mins + maxs) / 2.0;
         let extents = vec3(maxs.x - center.x, maxs.y - center.y, maxs.z - center.z);
-        AOBB {
-            model, center: point3(center.x, center.y, center.z),
+        AABB {
+            center: point3(center.x, center.y, center.z),
             extents
         }
     }
 
+    /// Createa a new AABB that encloses `a` and `b`
+    pub fn combine(a: &AABB, b: &AABB) -> AABB {
+        let center = (a.center.to_vec() + b.center.to_vec()) / 2.0;
+        let dist = b.center + b.extents - (a.center + a.extents);
+        let extents = {
+            let mut extents = vec3(0., 0., 0.);
+            for i in 0 .. 3 {
+                extents[i] = dist[i].abs() / 2.0;
+            }
+            extents
+        };
+        AABB { center: point3(center.x, center.y, center.z), extents }
+    }
+
     /// Returns true if this OBB collides with `other`
-    pub fn collide(&self, other: &AOBB) -> bool {
-        let other = OBB::from_local_aligned(other, 
-            Some(self.model.borrow().mat().invert().unwrap() * other.model.borrow().mat()));
+    /// 
+    /// `self_transform` - the matrix transform this obb to world coordinates
+    /// 
+    /// `other_transform` - the matrix transforming `other` to world coordinates
+    pub fn collide(&self, self_transform: &Matrix4<f64>, other: &AABB, other_transform: &Matrix4<f64>) -> bool {
+        let other = OBB::from_local_aligned(&other, 
+            self_transform.invert().unwrap() * other_transform);
         /* Gist of SAT (separating axis theorem): if a line can be drawn between two obb's, they don't collide
          We check each axis of both obb's, then check the 9 combinations of cross products of these axes
          Checking an axis basically entails projecting the points of each obb onto the line, and checking for overlap on that
@@ -186,80 +199,87 @@ impl AOBB {
         };
         this.collision(&other)
     }
+
+    /// Volume of the OBB
+    #[inline(always)]
+    pub fn vol(&self) -> f64 {
+        self.extents.x * self.extents.y * self.extents.z * 8.0
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::node;
 
     #[test]
     fn basic_collision() {
-        let ident = Rc::new(RefCell::new(node::Node::new(None, None, None, None)));
-        let a = AOBB::from_aabb(ident.clone(), &[point3(1., 1., 1.), point3(-1., -1., -1.)]);
-        let b = AOBB::from_aabb(ident.clone(), &[point3(0.5, 0.5, 0.5), point3(0., 0., 0.)]);
-        assert_eq!(a.collide(&b), true);
-        let c = AOBB::from_aabb(ident.clone(), &[point3(100., 100., 100.), point3(102., 102., 102.)]);
-        assert_eq!(a.collide(&c), false);
-        assert_eq!(b.collide(&c), false);
-        let g = AOBB::from_aabb(ident.clone(), &[point3(8., 0., 0.), point3(-2., 6., 6.)]);
-        let h = AOBB::from_aabb(ident.clone(), &[point3(-2., 0., 0.), point3(4., -6., 6.)]);
-        assert_eq!(g.collide(&h), true);
+        let ident = node::Node::new(None, None, None, None);
+        let a = AABB::from(&[point3(1., 1., 1.), point3(-1., -1., -1.)]);
+        let b = AABB::from(&[point3(0.5, 0.5, 0.5), point3(0., 0., 0.)]);
+        assert_eq!(a.collide(&ident.mat(), &b, &ident.mat()), true);
+        let c = AABB::from(&[point3(100., 100., 100.), point3(102., 102., 102.)]);
+        assert_eq!(a.collide(&ident.mat(), &c, &ident.mat()), false);
+        assert_eq!(b.collide(&ident.mat(), &c, &ident.mat()), false);
+        let g = AABB::from(&[point3(8., 0., 0.), point3(-2., 6., 6.)]);
+        let h = AABB::from(&[point3(-2., 0., 0.), point3(4., -6., 6.)]);
+        assert_eq!(g.collide(&ident.mat(), &h, &ident.mat()), true);
     }
 
     #[test]
     fn rotation_collisions() {
-        let t_a = Rc::new(RefCell::new(node::Node::new(None, None, None, None)));
-        let t_b = Rc::new(RefCell::new(node::Node::default()));
-        let a = AOBB::from_aabb(t_a.clone(), &[point3(5., -2., 2.), point3(3.0, 0., 0.)]);
-        let b = AOBB::from_aabb(t_b.clone(), &[point3(6., -1., 1.), point3(7., 0., 0.,)]);
-        assert_eq!(a.collide(&b), false);
-        t_b.borrow_mut().anchor = point3(6., -1., 1.);
-        t_b.borrow_mut().orientation = From::from(Euler::new(Deg(0.), Deg(-180.), Deg(0f64)));
-        assert_eq!(a.collide(&b), true);
-        t_b.borrow_mut().anchor = point3(6., 0., 0.);
-        t_b.borrow_mut().orientation = From::from(Euler::new(Deg(-180f64), Deg(0.), Deg(0.)));
-        assert_eq!(a.collide(&b), false);
+        let mut t_a = node::Node::new(None, None, None, None);
+        let mut t_b = node::Node::default();
+        let a = AABB::from(&[point3(5., -2., 2.), point3(3.0, 0., 0.)]);
+        let b = AABB::from(&[point3(6., -1., 1.), point3(7., 0., 0.,)]);
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
+        t_b.anchor = point3(6., -1., 1.);
+        t_b.orientation = From::from(Euler::new(Deg(0.), Deg(-180.), Deg(0f64)));
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
+        t_b.anchor = point3(6., 0., 0.);
+        t_b.orientation = From::from(Euler::new(Deg(-180f64), Deg(0.), Deg(0.)));
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
         
     }
 
     #[test]
     fn transformation_collisions() {
-        let t_a = Rc::new(RefCell::new(node::Node::default()));
-        let t_b = Rc::new(RefCell::new(node::Node::default()));
-        let a = AOBB::from_aabb(t_a.clone(), &[point3(4., -1., 0.), point3(6., 1., 2.)]);
-        let b = AOBB::from_aabb(t_b.clone(), &[point3(-1., -1., -1.), point3(1., 1., 1.,)]);
-        t_a.borrow_mut().anchor = point3(4., -1., 0.);
-        assert_eq!(a.collide(&b), false);
-        t_b.borrow_mut().pos = point3(3.5, 0., 0.);
-        assert_eq!(a.collide(&b), true);
-        t_b.borrow_mut().pos = point3(2.5, 0., 0.);
-        t_a.borrow_mut().orientation = From::from(Euler::new(Deg(0.), Deg(0.), Deg(70.)));
-        assert_eq!(a.collide(&b), true);
-        t_a.borrow_mut().orientation = From::from(Euler::new(Deg(0.), Deg(0.), Deg(0.)));
-        t_b.borrow_mut().scale = vec3(1., 1., 2.);
-        assert_eq!(a.collide(&b), false);
-        t_b.borrow_mut().orientation = From::from(Euler::new(Deg(0.), Deg(30.), Deg(0.)));
-        assert_eq!(a.collide(&b), true);
+        let mut t_a = node::Node::default();
+        let mut t_b = node::Node::default();
+        let a = AABB::from(&[point3(4., -1., 0.), point3(6., 1., 2.)]);
+        let b = AABB::from(&[point3(-1., -1., -1.), point3(1., 1., 1.,)]);
+        t_a.anchor = point3(4., -1., 0.);
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
+        t_b.pos = point3(3.5, 0., 0.);
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
+        t_b.pos = point3(2.5, 0., 0.);
+        t_a.orientation = From::from(Euler::new(Deg(0.), Deg(0.), Deg(70.)));
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
+        t_a.orientation = From::from(Euler::new(Deg(0.), Deg(0.), Deg(0.)));
+        t_b.scale = vec3(1., 1., 2.);
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
+        t_b.orientation = From::from(Euler::new(Deg(0.), Deg(30.), Deg(0.)));
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
 
     }
 
     #[test]
     fn edge_edge_collision() {
-        let t_a = Rc::new(RefCell::new(node::Node::default()));
-        let t_b = Rc::new(RefCell::new(node::Node::default()));
-        let a = AOBB::from_aabb(t_a.clone(), &[point3(-1., -1., -1.), point3(1., 1., 1.)]);
-        let b = AOBB::from_aabb(t_b.clone(), &[point3(-1., -1., -1.), point3(1., 1., 1.,)]);
-        t_a.borrow_mut().pos = point3(3., 0., 3.);
-        t_b.borrow_mut().pos = point3(5., 0., 1.);
-        assert_eq!(a.collide(&b), true);
-        t_a.borrow_mut().orientation = From::from(Euler::new(Deg(0f64), Deg(10.), Deg(0f64)));
-        assert_eq!(a.collide(&b), false);
-        t_b.borrow_mut().scale = vec3(1.144, 1.144, 1.144);
-        assert_eq!(a.collide(&b), true);
-        t_b.borrow_mut().anchor = point3(6.1437, -1.1437, 2.1437);
-        t_b.borrow_mut().orientation = From::from(Euler::new(Deg(0f64), Deg(-9.), Deg(0f64)));
-        assert_eq!(a.collide(&b), false);
-        t_b.borrow_mut().anchor = point3(0., 0., 0.);
-        assert_eq!(a.collide(&b), true);
+        let mut t_a = node::Node::default();
+        let mut t_b = node::Node::default();
+        let a = AABB::from(&[point3(-1., -1., -1.), point3(1., 1., 1.)]);
+        let b = AABB::from(&[point3(-1., -1., -1.), point3(1., 1., 1.,)]);
+        t_a.pos = point3(3., 0., 3.);
+        t_b.pos = point3(5., 0., 1.);
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
+        t_a.orientation = From::from(Euler::new(Deg(0f64), Deg(10.), Deg(0f64)));
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
+        t_b.scale = vec3(1.144, 1.144, 1.144);
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
+        t_b.anchor = point3(6.1437, -1.1437, 2.1437);
+        t_b.orientation = From::from(Euler::new(Deg(0f64), Deg(-9.), Deg(0f64)));
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
+        t_b.anchor = point3(0., 0., 0.);
+        assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
     }
 }

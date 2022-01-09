@@ -66,7 +66,7 @@ impl ONode {
         for obj in objects {
             match ONode::get_octant_index(center, h_width, &obj) {
                 Some(idx) => {
-                    println!("{:?} has octant index: {}", obj, idx);
+                    //println!("{:?} has octant index: {}", obj, idx);
                     children[idx as usize].borrow_mut().insert(obj.clone())
                 },
                 None => new_objs.push(obj.clone())
