@@ -1,3 +1,5 @@
 mod octree;
-mod collision_object;
+mod object;
+mod obb;
+mod bvh;
 pub use octree::Octree;

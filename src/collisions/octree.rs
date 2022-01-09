@@ -1,7 +1,7 @@
 use cgmath::*;
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use super::collision_object::Object;
+use super::object::Object;
 extern crate arr_macro;
 
 
