@@ -54,13 +54,29 @@ impl CollisionMesh {
         println!("Triangle checks: {} x {}", our_tris.len(), other_tris.len());
         !our_tris.is_empty()
     }
+
+    pub fn bounding_sphere(&self) -> (Point3<f64>, f64) {
+        let mut c = vec3(0f64, 0., 0.);
+        let mut max_x = f64::MIN;
+        let mut max_y = f64::MIN;
+        let mut max_z = f64::MIN;
+        for mesh in &self.sub_meshes {
+            let aabb = mesh.bounding_box();
+            c += aabb.center.to_vec();
+            max_x = max_x.max(aabb.center.x + aabb.extents.x);
+            max_y = max_y.max(aabb.center.y + aabb.extents.y);
+            max_z = max_z.max(aabb.center.z + aabb.extents.z);
+        }
+        c /= self.sub_meshes.len() as f64;
+        let center = point3(c.x, c.y, c.z);
+        let extents = vec3(max_x - center.x, max_y - center.y, max_z - center.z);
+        (center, extents.x.max(extents.y.max(extents.z)))
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use once_cell::sync::Lazy;
-    use cgmath::*;
 
     #[test]
     fn basic_collisions() {

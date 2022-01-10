@@ -228,8 +228,8 @@ mod test {
     use crate::node;
     
     fn new_obj(center: Point3<f64>, radius: f64) -> Rc<RefCell<Object>> {
-        Rc::new(RefCell::new(Object::from(Rc::new(RefCell::new(node::Node::new(None, None, None, None))), 
-            &[center + vec3(radius, 0., 0.), center - vec3(radius, 0., 0.)])))
+        Rc::new(RefCell::new(Object::new(Rc::new(RefCell::new(node::Node::new(None, None, None, None))), 
+            center, radius)))
     }
 
     #[test]

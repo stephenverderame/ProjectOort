@@ -214,4 +214,8 @@ impl<T : BaseFloat> OBBTree<T> {
     {
         self.root.triangles_to_check(self_transform, &other.root, other_transform)
     }
+
+    pub fn bounding_box(&self) -> AABB {
+        self.root.volume.clone()
+    }
 }

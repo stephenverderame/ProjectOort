@@ -3,12 +3,14 @@ use cgmath::*;
 /// 
 /// An OBB that, in local space, is an AABB.
 /// So the x, y, and z basis vectors are the unit basis vectors
+#[derive(Clone)]
 pub struct AABB {
     pub center: Point3<f64>,
     pub extents: Vector3<f64>,
 }
 
 /// A fully defined OBB with arbitrary basis vectors
+#[derive(Clone)]
 struct OBB {
     center: Point3<f64>,
     extents: Vector3<f64>,

@@ -3,7 +3,7 @@ use cgmath::*;
 use std::rc::{Rc, Weak};
 use super::octree::ONode;
 use std::cell::{RefCell};
-use super::obb::*;
+use super::collision_mesh;
 
 /// Internal use to collisions module
 pub struct Object {
@@ -11,7 +11,7 @@ pub struct Object {
     pub local_center: Point3<f64>,
     pub local_radius: f64,
     pub octree_cell: Weak<RefCell<ONode>>,
-    pub local_obb: AABB
+    pub mesh: Weak<RefCell<collision_mesh::CollisionMesh>>,
 }
 
 impl Object {
@@ -25,15 +25,24 @@ impl Object {
         self.local_radius * max_extents
     }
 
-    pub fn from<T : BaseNum>(transform: Rc<RefCell<node::Node>>, points: &[Point3<T>]) -> Object {
-        let obb = AABB::from(points);
-        let radius = obb.extents.x.max(obb.extents.y.max(obb.extents.z));
+    pub fn new(transform: Rc<RefCell<node::Node>>, center: Point3<f64>, radius: f64) -> Object {
         Object {
             model: transform,
-            local_center: obb.center,
+            local_center: center,
             local_radius: radius,
             octree_cell: Weak::new(),
-            local_obb: obb
+            mesh: Weak::new(),
+        }
+    }
+
+    pub fn with_mesh(transform: Rc<RefCell<node::Node>>, center: Point3<f64>, radius: f64,
+        mesh: &Rc<RefCell<collision_mesh::CollisionMesh>>) -> Object {
+        Object {
+            model: transform,
+            local_center: center,
+            local_radius: radius,
+            octree_cell: Weak::new(),
+            mesh: Rc::downgrade(mesh),
         }
     }
 }

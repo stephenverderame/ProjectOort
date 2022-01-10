@@ -2,12 +2,16 @@ use crate::model;
 use crate::node;
 use crate::draw_traits;
 use crate::shader;
+use std::rc::Rc;
+use std::cell::RefCell;
+use crate::collisions;
 
 /// The transformation data for an entity
 pub struct EntityInstanceData {
-    pub transform: node::Node,
+    pub transform: Rc<RefCell<node::Node>>,
     pub velocity: cgmath::Vector3<f64>,
     pub visible: bool,
+    pub collider: Option<collisions::CollisionObject>,
 }
 
 /// An entity is a renderable geometry with a node in the
@@ -27,9 +31,23 @@ impl Entity {
     pub fn from(model: model::Model, transform: node::Node) -> Entity {
         Entity {
             data: EntityInstanceData {
-                transform,
+                transform: Rc::new(RefCell::new(transform)),
                 velocity: cgmath::vec3(0., 0., 0.),
                 visible: true,
+                collider: None,
+            },
+            geometry: model,
+        }
+    }
+
+    pub fn with_collisions(model: model::Model, transform: node::Node, collision_mesh: &str) -> Entity {
+        let transform = Rc::new(RefCell::new(transform));
+        Entity {
+            data: EntityInstanceData {
+                velocity: cgmath::vec3(0., 0., 0.),
+                visible: true,
+                collider: Some(collisions::CollisionObject::new(transform.clone(), collision_mesh)),
+                transform,
             },
             geometry: model,
         }
@@ -45,7 +63,7 @@ impl draw_traits::Drawable for Entity {
         where S : glium::Surface
     {
         if self.data.visible {
-            let mat : cgmath::Matrix4<f32> = std::convert::From::from(&self.data.transform);
+            let mat : cgmath::Matrix4<f32> = std::convert::From::from(&*self.data.transform.borrow());
             self.geometry.render(frame, mats, local_data, mat.into(), shader)
         }
     }
@@ -89,7 +107,7 @@ impl EntityFlyweight {
     {
         let new_size = instances.len() * 2;
         let data : Vec<InstanceAttribute> = instances.iter().map(|data| {
-            let mat : cgmath::Matrix4<f32> = From::from(&data.transform);
+            let mat : cgmath::Matrix4<f32> = From::from(&*data.transform.borrow());
             InstanceAttribute {
                 instance_model_col0: mat.x.into(),
                 instance_model_col1: mat.y.into(),
@@ -126,8 +144,8 @@ impl EntityFlyweight {
         if let Some(instance_data) = &mut self.instance_data {
             let mut mapping = instance_data.map();
             for (src, dst) in self.instances.iter_mut().zip(mapping.iter_mut()) {
-                src.transform.pos += src.velocity * dt;
-                let mat : cgmath::Matrix4<f32> = From::from(&src.transform);
+                src.transform.borrow_mut().pos += src.velocity * dt;
+                let mat : cgmath::Matrix4<f32> = From::from(&*src.transform.borrow());
                 dst.instance_model_col0 = mat.x.into();
                 dst.instance_model_col1 = mat.y.into();
                 dst.instance_model_col2 = mat.z.into();
@@ -136,8 +154,10 @@ impl EntityFlyweight {
         }
     }
 
-    pub fn positions(&self) -> Vec<&node::Node> {
-        self.instances.iter().map(|x| &x.transform).collect()
+    pub fn iter_positions<F : FnMut(&node::Node)>(&self, mut cb: F) {
+        for instance in &self.instances {
+            cb(&*instance.transform.borrow())
+        }
     }
 }
 

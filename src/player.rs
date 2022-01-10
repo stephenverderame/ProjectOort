@@ -9,6 +9,7 @@ use std::rc::{Rc};
 use std::cell::RefCell;
 use crate::camera;
 use draw_traits::Viewer;
+use crate::collisions;
 
 use cgmath::*;
 
@@ -20,18 +21,20 @@ pub struct Player {
     cam: Node,
     geom: Model,
     pub aspect: f32,
+    pub collision_obj: collisions::CollisionObject,
 }
 
 impl Player {
-    pub fn new(model: Model, view_aspect: f32) -> Player {
+    pub fn new(model: Model, view_aspect: f32, c_str: &str) -> Player {
         let root_node = Rc::new(RefCell::new(Node::new(None, None, None, None)));
         let mut cam = Node::new(Some(point3(0., 15., -25.)), None, None, None);
         cam.set_parent(root_node.clone());
         Player {
-            root: root_node,
             cam: cam,
             geom: model,
             aspect: view_aspect,
+            collision_obj: collisions::CollisionObject::new(root_node.clone(), c_str),
+            root: root_node,
         }
     }
     /// Moves the player based on user input
