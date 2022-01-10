@@ -1,12 +1,36 @@
 use cgmath::*;
 use super::obb::AABB;
-use std::rc::Rc;
-use std::cell::RefCell;
-use crate::node::Node;
 use std::collections::{VecDeque, HashSet};
 use std::hash::{Hash, Hasher};
 use std::pin::Pin;
 use std::marker::PhantomPinned;
+
+/// The criteria for stopping the growth of a BVH tree
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub enum TreeStopCriteria {
+    MaxPrimitivesPerLeaf(usize),
+    #[allow(dead_code)]
+    MaxDepth(u32),
+    AlwaysStop,
+}
+
+impl Default for TreeStopCriteria {
+    fn default() -> TreeStopCriteria {
+        TreeStopCriteria::MaxPrimitivesPerLeaf(32)
+    }
+}
+
+impl TreeStopCriteria {
+    /// Returns `true` if the tree should stop growing
+    fn should_stop(&self, primitive_count: usize, cur_depth: u32) -> bool {
+        use TreeStopCriteria::*;
+        match self {
+            AlwaysStop => true,
+            MaxPrimitivesPerLeaf(x) => primitive_count <= *x,
+            MaxDepth(x) => cur_depth >= *x,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Triangle<T : BaseFloat> {
@@ -60,8 +84,6 @@ impl<T : BaseFloat> Hash for Triangle<T> {
     }
 }
 
-const MAX_PRIMITIVES_PER_LEAF : usize = 32;
-
 fn aobb_from_triangles<T : BaseFloat>(triangles: &[Triangle<T>]) -> AABB {
     let v : Vec<Point3<T>> = triangles.iter().flat_map(|s| s.verts().into_iter()).collect();
     AABB::from(&v)
@@ -94,7 +116,9 @@ impl<T : BaseFloat> BVHNode<T> {
     /// along the `split` axis. `split` of `0` indicates the `x` coordinates are being divided, whereas `split` of `2`
     /// are the `z` coordinates.
     #[inline(always)]
-    fn with_split(triangles: Vec<Triangle<T>>, split: usize, volume: AABB) -> BVHNode<T> {
+    fn with_split(triangles: Vec<Triangle<T>>, split: usize, volume: AABB, 
+        rec_depth: u32, stop: TreeStopCriteria) -> BVHNode<T> 
+    {
         let mut left = Vec::<Triangle<T>>::new();
         let mut right = Vec::<Triangle<T>>::new();
         for tri in triangles {
@@ -113,19 +137,19 @@ impl<T : BaseFloat> BVHNode<T> {
         } else {
             println!("Splitting {} and {}", left.len(), right.len());
             BVHNode {
-                left: Some(Box::new(BVHNode::new(left))),
-                right: Some(Box::new(BVHNode::new(right))),
+                left: Some(Box::new(BVHNode::new(left, rec_depth + 1, stop))),
+                right: Some(Box::new(BVHNode::new(right, rec_depth + 1, stop))),
                 volume, 
                 triangles: None,
             }
         }
     }
 
-    fn new(triangles: Vec<Triangle<T>>) -> BVHNode<T> {
+    fn new(triangles: Vec<Triangle<T>>, recursion_depth: u32, stop: TreeStopCriteria) -> BVHNode<T> {
         let volume = aobb_from_triangles(&triangles);
         let split = largest_extent_index(&volume);
-        if triangles.len() > MAX_PRIMITIVES_PER_LEAF {
-            BVHNode::with_split(triangles, split, volume)
+        if !stop.should_stop(triangles.len(), recursion_depth) {
+            BVHNode::with_split(triangles, split, volume, recursion_depth, stop)
         } else {
             BVHNode {
                 left: None, right: None,
@@ -191,18 +215,18 @@ struct SelfRef<T : BaseFloat> {
 }
 
 pub struct OBBTree<T : BaseFloat> {
-    vertices: Pin<Box<SelfRef<T>>>,
+    _vertices: Pin<Box<SelfRef<T>>>,
     root: BVHNode<T>,
 }
 
 impl<T : BaseFloat> OBBTree<T> {
-    pub fn from(indices: Vec<u32>, vertices: Vec<Point3<T>>) -> OBBTree<T> {
+    pub fn from(indices: Vec<u32>, vertices: Vec<Point3<T>>, stop: TreeStopCriteria) -> OBBTree<T> {
         let vertices = Box::pin(SelfRef { vertices, _m: PhantomPinned });
         let ptr = &vertices.as_ref().vertices as *const Vec<Point3<T>>;
         let triangles = unsafe { Triangle::array_from(indices, &*ptr) };
         OBBTree {
-            vertices,
-            root: BVHNode::new(triangles),
+            _vertices: vertices,
+            root: BVHNode::new(triangles, 0, stop),
         }
     }
 

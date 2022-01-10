@@ -40,18 +40,20 @@ impl Entity {
         }
     }
 
+    /*
     pub fn with_collisions(model: model::Model, transform: node::Node, collision_mesh: &str) -> Entity {
         let transform = Rc::new(RefCell::new(transform));
         Entity {
             data: EntityInstanceData {
                 velocity: cgmath::vec3(0., 0., 0.),
                 visible: true,
-                collider: Some(collisions::CollisionObject::new(transform.clone(), collision_mesh)),
+                collider: Some(collisions::CollisionObject::new(transform.clone(), collision_mesh, 
+                    collisions::TreeStopCriteria::default())),
                 transform,
             },
             geometry: model,
         }
-    }
+    }*/
 
     pub fn get_animator(&mut self) -> &mut model::Animator {
         self.geometry.get_animator()

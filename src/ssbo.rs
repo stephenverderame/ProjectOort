@@ -116,6 +116,12 @@ impl<T : Copy> SSBO<T> {
         SSBO::new_static(count as usize, None, SSBOMode::Static)
     }
 
+    /// Creates a SSBO that cannot be easily resized
+    #[inline(always)]
+    pub fn create_static(data: Vec<T>) -> SSBO<T> {
+        SSBO::new_static(data.len(), Some(data), SSBOMode::Static)
+    }
+
     /// Creates a new SSBO that cannot be resized but whose data can change
     #[inline(always)]
     pub fn static_alloc_dyn(buffer_size: usize, data: Option<Vec<T>>) -> SSBO<T> {
@@ -184,10 +190,69 @@ impl<T : Copy> SSBO<T> {
     fn del_buffer(&self) {
         unsafe { gl::DeleteBuffers(1, &self.buffer as *const gl::types::GLuint); }
     }
+
+    pub fn map_read(&self) -> MappedBuffer<T> {
+        unsafe {
+            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
+            let buf = gl::MapBuffer(gl::SHADER_STORAGE_BUFFER, gl::READ_ONLY) as *const T;
+            assert_no_error!();
+            if buf == 0 as *const T {
+                assert_no_error!();
+                assert!(false);
+            }
+            MappedBuffer {
+                gpu_buf: self.buffer,
+                size: self.buffer_count,
+                buf,
+            }
+        }
+    }
 }
 
 impl<T : Copy> Drop for SSBO<T> {
     fn drop(&mut self) {
         unsafe { gl::DeleteBuffers(1, &self.buffer as *const gl::types::GLuint); }
+    }
+}
+
+pub struct MappedBuffer<T : Copy> {
+    gpu_buf: gl::types::GLuint,
+    buf: *const T,
+    size: u32,
+}
+
+pub struct MappedBufferSlice<'a, 'b, T : Copy> {
+    pub slice: &'a [T],
+    owner: &'b MappedBuffer<T>,
+}
+
+impl<T : Copy> MappedBuffer<T> {
+    pub fn as_slice<'a, 'b>(&'b self) -> MappedBufferSlice<'a, 'b, T> {
+        unsafe {
+            MappedBufferSlice {
+                slice: std::slice::from_raw_parts(self.buf as *const T, self.size as usize),
+                owner: self,
+            }
+        }
+    }
+}
+
+impl<T : Copy> Drop for MappedBuffer<T> {
+    fn drop(&mut self) {
+        unsafe {
+            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.gpu_buf);
+            if gl::UnmapBuffer(gl::SHADER_STORAGE_BUFFER) == gl::FALSE {
+                assert_no_error!();
+                assert!(false);
+            }
+        }
+    }
+}
+
+impl<'a, 'b, T : Copy> std::ops::Deref for MappedBufferSlice<'a, 'b, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        self.slice
     }
 }

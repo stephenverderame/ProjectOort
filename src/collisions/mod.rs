@@ -3,11 +3,14 @@ mod object;
 mod obb;
 mod bvh;
 mod collision_mesh;
+mod highp_col;
 use octree::Octree;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use crate::node;
+pub use bvh::TreeStopCriteria;
+pub use highp_col::*;
 
 static mut LOADED_MESHES: Option<HashMap<String, Rc<RefCell<collision_mesh::CollisionMesh>>>> =
     None;
@@ -43,7 +46,8 @@ pub struct CollisionObject {
 }
 
 impl CollisionObject {
-    pub fn new(transform: Rc<RefCell<node::Node>>, mesh_path: &str) -> CollisionObject {
+    pub fn new(transform: Rc<RefCell<node::Node>>, mesh_path: &str, 
+        bvh_stop: bvh::TreeStopCriteria) -> CollisionObject {
         let mut mmap = get_loaded_meshes();
         if let Some(mesh) = mmap.loaded_meshes.as_ref().unwrap().get(mesh_path) {
             let (center, radius) = mesh.borrow().bounding_sphere();
@@ -53,7 +57,7 @@ impl CollisionObject {
                 bvh: mesh.clone()
             }
         } else {
-            let mesh = Rc::new(RefCell::new(collision_mesh::CollisionMesh::new(mesh_path)));
+            let mesh = Rc::new(RefCell::new(collision_mesh::CollisionMesh::new(mesh_path, bvh_stop)));
             mmap.loaded_meshes.as_mut().unwrap().insert(mesh_path.to_owned(), mesh.clone());
             let (center, radius) = mesh.borrow().bounding_sphere();
             let o = object::Object::with_mesh(transform, center, radius, &mesh);
@@ -67,7 +71,6 @@ impl CollisionObject {
     pub fn from(transform: Rc<RefCell<node::Node>>, prototype: &CollisionObject) -> CollisionObject {
         let obj = Rc::new(RefCell::new(object::Object {
             model: transform,
-            local_center: prototype.obj.borrow().local_center.clone(),
             local_radius: prototype.obj.borrow().local_radius,
             octree_cell: std::rc::Weak::new(),
             mesh: prototype.obj.borrow().mesh.clone(),
@@ -77,9 +80,9 @@ impl CollisionObject {
         }
     }
 
-    pub fn is_collision(&self, other: &CollisionObject) -> bool {
+    pub fn is_collision(&self, other: &CollisionObject, highp_strategy: &dyn HighPCollision) -> bool {
         self.bvh.borrow().collision(&self.obj.borrow().model.borrow().mat(), &other.bvh.borrow(),
-            &other.obj.borrow().model.borrow().mat())
+            &other.obj.borrow().model.borrow().mat(), highp_strategy)
     }
 }
 #[derive(PartialEq, Eq)]

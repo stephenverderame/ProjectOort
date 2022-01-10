@@ -33,7 +33,8 @@ impl Player {
             cam: cam,
             geom: model,
             aspect: view_aspect,
-            collision_obj: collisions::CollisionObject::new(root_node.clone(), c_str),
+            collision_obj: collisions::CollisionObject::new(root_node.clone(), c_str,
+                collisions::TreeStopCriteria::default()),
             root: root_node,
         }
     }

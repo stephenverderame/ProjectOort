@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use crate::ssbo;
 use glium::implement_uniform_block;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 enum ShaderType {
     Laser,
     Pbr,
@@ -19,40 +19,7 @@ enum ShaderType {
     PbrInstancedShader,
     PbrAnim,
     DepthAnim,
-}
-
-/// Converts a shader type to an integer
-/// This is to allow shader types to be keys in maps
-fn shader_type_to_int(typ: &ShaderType) -> i32 {
-    match typ {
-        &ShaderType::Laser => 0,
-        &ShaderType::Skybox => 1,
-        &ShaderType::Pbr => 2,
-        &ShaderType::EquiRect => 3,
-        &ShaderType::UiShader => 4,
-        &ShaderType::BloomShader => 5,
-        &ShaderType::BlurShader => 6,
-        &ShaderType::PrefilterHdrShader => 7,
-        &ShaderType::GenLutShader => 8,
-        &ShaderType::CullLightsCompute => 9,
-        &ShaderType::DepthShader => 10,
-        &ShaderType::DepthInstancedShader => 11,
-        &ShaderType::PbrInstancedShader => 12,
-        &ShaderType::PbrAnim => 13,
-        &ShaderType::DepthAnim => 14,
-    }
-}
-
-impl std::cmp::Ord for ShaderType {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        shader_type_to_int(&self).cmp(&shader_type_to_int(other))
-    }
-}
-
-impl std::cmp::PartialOrd for ShaderType {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
+    TriIntersectionCompute,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -98,8 +65,8 @@ pub struct LightData {
 /// It converts shader inputs to OpenGL uniform parameters and selects the shader
 /// based on those shader inputs
 pub struct ShaderManager {
-    shaders: BTreeMap<ShaderType, glium::Program>,
-    compute_shaders: BTreeMap<ShaderType, glium::program::ComputeShader>,
+    shaders: HashMap<ShaderType, glium::Program>,
+    compute_shaders: HashMap<ShaderType, glium::program::ComputeShader>,
     empty_srgb: glium::texture::SrgbTexture2d,
     empty_2d: glium::texture::Texture2d,
 }
@@ -232,6 +199,7 @@ pub enum UniformInfo<'a> {
     PrefilterHdrEnvInfo(PrefilterHdrEnvData<'a>),
     GenLutInfo,
     LaserInfo,
+    TriangleCollisionsInfo,
     LightCullInfo(LightCullData<'a>),
 
 }
@@ -262,6 +230,7 @@ impl<'a> UniformInfo<'a> {
             (LaserInfo, Depth) => ShaderType::DepthShader,
             (LaserInfo, Shadow) => ShaderType::DepthShader,
             (LightCullInfo(_), _) => ShaderType::CullLightsCompute,
+            (TriangleCollisionsInfo, _) => ShaderType::TriIntersectionCompute,
         }
     }
 }
@@ -396,7 +365,9 @@ impl ShaderManager {
             "shaders/depthAnimVert.glsl", "shaders/depthFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
-        let mut shaders = BTreeMap::<ShaderType, glium::Program>::new();
+        let triangle_test = glium::program::ComputeShader::from_source(facade, 
+            include_str!("shaders/triTriComp.glsl")).unwrap();
+        let mut shaders = HashMap::<ShaderType, glium::Program>::new();
         shaders.insert(ShaderType::Laser, laser_shader);
         shaders.insert(ShaderType::Skybox, skybox_shader);
         shaders.insert(ShaderType::Pbr, pbr_shader);
@@ -411,8 +382,9 @@ impl ShaderManager {
         shaders.insert(ShaderType::PbrInstancedShader, pbr_instanced);
         shaders.insert(ShaderType::PbrAnim, pbr_anim);
         shaders.insert(ShaderType::DepthAnim, depth_anim);
-        let mut compute_shaders = BTreeMap::<ShaderType, glium::program::ComputeShader>::new();
+        let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
+        compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
         ShaderManager {
             shaders: shaders, compute_shaders,
             empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
@@ -540,6 +512,10 @@ impl ShaderManager {
                 scene_data.lights.unwrap().bind(0);
                 compute.execute(uniform, x, y, z);
             },
+            UniformInfo::TriangleCollisionsInfo => {
+                let compute = self.compute_shaders.get(&ShaderType::CullLightsCompute).unwrap();
+                compute.execute(EmptyUniforms, x, y, z);
+            }
             _ => panic!("Unknown compute shader args"),
         }
     }

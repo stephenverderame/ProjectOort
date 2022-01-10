@@ -14,6 +14,7 @@ pub struct ONode {
     children: Option<[Rc<RefCell<ONode>>; 8]>, // ith bit in children index is 1 if ith coordinate is > center
     parent: Weak<RefCell<ONode>>,
     self_ref: Weak<RefCell<ONode>>,
+    self_index: u8,
 }
 
 impl ONode {
@@ -27,6 +28,7 @@ impl ONode {
             children: None,
             parent: Weak::new(),
             self_ref: Weak::new(),
+            self_index: 0,
         }
     }
 
@@ -37,6 +39,7 @@ impl ONode {
             objects: Vec::new(),
             children: None, parent: Weak::new(),
             self_ref: Weak::new(),
+            self_index: 0,
         }
     }
 
@@ -53,6 +56,7 @@ impl ONode {
             child.borrow_mut().h_width = step;
             child.borrow_mut().parent = parent.clone();
             child.borrow_mut().self_ref = Rc::downgrade(&child);
+            child.borrow_mut().self_index = idx as u8;
         };
         res
     }
@@ -80,7 +84,7 @@ impl ONode {
         let o = obj.borrow().center() - center;
         let mut index = 0u8;
         for i in 0 .. 3 {
-            if o[i].abs() < obj.borrow().radius() {
+            if o[i].abs() < obj.borrow().radius() || o[i].abs() + obj.borrow().radius() > h_width {
                 return None
             } else if o[i] > 0. {
                 index |= 1 << i;
@@ -140,13 +144,8 @@ impl ONode {
     /// If `obj` no longer fits in the octree, it remains in the root node
     pub fn update(&mut self, obj: &Rc<RefCell<Object>>) {
         if let Some(parent) = self.parent.upgrade() {
-            let delta = obj.borrow().center() - self.center;
-            let radius = obj.borrow().radius();
-            for i in 0 .. 3 {
-                if delta[i].abs() + radius > self.h_width {
-                    self.objects.retain(|e| !Rc::ptr_eq(&e, &obj));
-                    return parent.borrow_mut().insert(obj.clone());
-                }
+            if ONode::get_octant_index(&parent.borrow().center, parent.borrow().h_width, obj) != Some(self.self_index) {
+                return parent.borrow_mut().insert(obj.clone())
             }
         } 
         if let Some(child_idx) = ONode::get_octant_index(&self.center, self.h_width, &obj) {
@@ -228,8 +227,8 @@ mod test {
     use crate::node;
     
     fn new_obj(center: Point3<f64>, radius: f64) -> Rc<RefCell<Object>> {
-        Rc::new(RefCell::new(Object::new(Rc::new(RefCell::new(node::Node::new(None, None, None, None))), 
-            center, radius)))
+        Rc::new(RefCell::new(Object::new(Rc::new(RefCell::new(node::Node::new(Some(center), None, None, None))), 
+            radius)))
     }
 
     #[test]
@@ -361,15 +360,30 @@ mod test {
         obj[0].borrow_mut().model.borrow_mut().pos = point3(-6., 3., 3.);
         Octree::update(&obj[0]);
         assert_eq!(obj[0].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root.borrow().children.as_ref().unwrap()[6])), true);
-        let local_origin = obj[14].borrow().local_center;
+        //let local_origin = obj[14].borrow().local_center;
         obj[14].borrow_mut().model.borrow_mut().scale = vec3(0.1, 0.1, 0.1);
-        obj[14].borrow_mut().model.borrow_mut().anchor = local_origin;
+        //obj[14].borrow_mut().model.borrow_mut().anchor = local_origin;
         Octree::update(&obj[14]);
         assert_eq!(obj[14].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root.borrow().children.as_ref().unwrap()[6])), true);
-        let local_origin = obj[14].borrow().local_center;
+        //let local_origin = obj[14].borrow().local_center;
         obj[1].borrow_mut().model.borrow_mut().scale = vec3(5., 5., 5.);
-        obj[1].borrow().model.borrow_mut().anchor = local_origin;
+        //obj[1].borrow().model.borrow_mut().anchor = local_origin;
         Octree::update(&obj[1]);
         assert_eq!(obj[1].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root)), true);
+    }
+
+    #[test]
+    fn upgrade_o_index_test() {
+        let trans = Rc::new(RefCell::new(node::Node::new(Some(point3(-3., -3., -3.)), None, None, None)));
+        let obj = Object::new(trans.clone(), 1.);
+        let obj = Rc::new(RefCell::new(obj));
+        assert_eq!(ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj), Some(0));
+        assert_eq!(ONode::get_octant_index(&point3(-5., -5., -5.), 5., &obj), Some(7));
+        trans.borrow_mut().orientation = From::from(Euler::new(Deg(10f64), Deg(0.), Deg(30f64)));
+        trans.borrow_mut().scale = vec3(10., 3., 1.);
+        trans.borrow_mut().pos = point3(-20., -20., -20.);
+        assert_eq!(ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj), None);
+        trans.borrow_mut().scale = vec3(10., 3., 1.);
+        trans.borrow_mut().pos = point3(-20., -20., -20.);
     }
 }

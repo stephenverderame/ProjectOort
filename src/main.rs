@@ -99,14 +99,16 @@ fn handle_shots<F : glium::backend::Facade>(user: &player::Player, controller: &
         transform.scale = cgmath::vec3(0.3, 0.3, 1.);
         let transform = Rc::new(RefCell::new(transform));
         lasers.new_instance(entity::EntityInstanceData {
-            collider: Some(collisions::CollisionObject::new(transform.clone(), "assets/laser2.obj")),
+            collider: Some(collisions::CollisionObject::new(transform.clone(), "assets/laser2.obj", 
+                collisions::TreeStopCriteria::AlwaysStop)),
             transform, 
             visible: true, velocity: user.forward() * 40f64,
         }, facade)
     }
 }
 
-fn gen_asteroid_field<F : glium::backend::Facade>(obj: &mut entity::EntityFlyweight, facade: &F, ct: &mut collisions::CollisionTree) {
+fn gen_asteroid_field<F : glium::backend::Facade>(obj: &mut entity::EntityFlyweight, facade: &F,
+    ct: &mut collisions::CollisionTree) {
     use rand::distributions::*;
     let scale_distrib = rand::distributions::Uniform::from(0.01 .. 0.3);
     let pos_distrib = rand::distributions::Uniform::from(-100.0 .. 100.0);
@@ -119,7 +121,8 @@ fn gen_asteroid_field<F : glium::backend::Facade>(obj: &mut entity::EntityFlywei
         let transform = Rc::new(RefCell::new(
             node::Node::new(Some(point3(pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng))),
             Some(rot), Some(vec3(scale, scale, scale)), None)));
-        let collider = collisions::CollisionObject::new(transform.clone(), "assets/asteroid1/Asteroid.obj");
+        let collider = collisions::CollisionObject::new(transform.clone(), "assets/asteroid1/Asteroid.obj", 
+            collisions::TreeStopCriteria::default());
         ct.insert(&collider, collisions::ObjectType::Static);
         obj.new_instance(entity::EntityInstanceData {
             collider: Some(collider),
@@ -152,14 +155,16 @@ fn main() {
     (*asteroid_character.borrow_mut()).get_animator().start("", true);
     
     let mut collision_tree = collisions::CollisionTree::new(point3(0., 0., 0.), 150.);
-    gen_asteroid_field(&mut asteroid, &wnd_ctx, &mut collision_tree);
-    collision_tree.insert(&(*user.borrow()).collision_obj, collisions::ObjectType::Dynamic);
 
     let shader_manager = shader::ShaderManager::init(&wnd_ctx);
 
     let (sky_cbo, sky_hdr_cbo) = gen_skybox(1024, &shader_manager, &wnd_ctx);
     let main_skybox = Rc::new(RefCell::new(skybox::Skybox::new(skybox::SkyboxTex::Cube(sky_cbo), &wnd_ctx)));
     let (pre_filter, brdf_lut) = gen_prefilter_hdr_env(main_skybox.clone(), 128, &shader_manager, &wnd_ctx);
+    let collision_compute = collisions::TriangleTriangleGPU::new(&shader_manager, &wnd_ctx);
+
+    gen_asteroid_field(&mut asteroid, &wnd_ctx, &mut collision_tree);
+    collision_tree.insert(&(*user.borrow()).collision_obj, collisions::ObjectType::Dynamic);
 
     //let main_skybox = RefCell::new(skybox::Skybox::new(skybox::SkyboxTex::Cube(pre_filter), &wnd_ctx));
     let mut main_scene = scene::Scene::new();
@@ -243,7 +248,7 @@ fn main() {
                 }
                 let user_colliders = collision_tree.get_colliders(&user.borrow().collision_obj);
                 for collider in user_colliders {
-                    if collider.is_collision(&(*user.borrow()).collision_obj) {
+                    if collider.is_collision(&(*user.borrow()).collision_obj, &collision_compute) {
                         *user.borrow_mut().root.borrow_mut() = old_user_pos;
                         break;
                     }

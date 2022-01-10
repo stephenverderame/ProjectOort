@@ -158,6 +158,7 @@ impl AABB {
     }
 
     /// Createa a new AABB that encloses `a` and `b`
+    #[allow(dead_code)]
     pub fn combine(a: &AABB, b: &AABB) -> AABB {
         let center = (a.center.to_vec() + b.center.to_vec()) / 2.0;
         let dist = b.center + b.extents - (a.center + a.extents);
@@ -230,7 +231,7 @@ mod test {
 
     #[test]
     fn rotation_collisions() {
-        let mut t_a = node::Node::new(None, None, None, None);
+        let t_a = node::Node::new(None, None, None, None);
         let mut t_b = node::Node::default();
         let a = AABB::from(&[point3(5., -2., 2.), point3(3.0, 0., 0.)]);
         let b = AABB::from(&[point3(6., -1., 1.), point3(7., 0., 0.,)]);
