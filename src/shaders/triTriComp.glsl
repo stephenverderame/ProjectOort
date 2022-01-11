@@ -65,6 +65,12 @@ float getT(vec3 verts_on_l, vec3 dist_to_plane, uint index) {
     dist_to_plane[0] / (dist_to_plane[0] - dist_to_plane[1]);
 }
 
+float getT2(vec3 v, vec3 a, vec3 b) {
+    mat3 A = mat3(v, a - b, vec3(0., 0., 1.));
+    vec3 y = b * inverse(A);
+    return y.x;
+}
+
 bool lineIntersection(vec2 start_a, vec2 end_a, vec2 start_b, vec2 end_b) {
     vec2 a = end_a - start_a;
     vec2 b = end_b - start_b;
@@ -105,28 +111,39 @@ void main() {
         bool coplanar = false;
         vec3 b_onto_a; // signed distances of vertices of b onto plane of a
         vec3 a_onto_b;
-        if (!planeTest(a, b, a_norm, coplanar, b_onto_a) && !coplanar
-            && !planeTest(b, a, b_norm, coplanar, a_onto_b) && !coplanar) {
+        if (!planeTest(a, b, a_norm, coplanar, b_onto_a)
+            && !planeTest(b, a, b_norm, coplanar, a_onto_b)) {
+            atomicAdd(collisions, 5);
             // a line must pass through both triangles
-            // this line is the cross product of the normals
+            // this line's direction is the cross product of the normals
             vec3 v = cross(a_norm, b_norm);
             // overlap test doesn't change if we project not onto v, but onto
             // the coordinate axis for which v is most closely aligned
             uint idx = absMaxDim(v);
-            vec3 a_pts = vec3(a.v1[idx], a.v2[idx], a.v3[idx]);
+            /*vec3 a_pts = vec3(a.v1[idx], a.v2[idx], a.v3[idx]);
             vec3 b_pts = vec3(b.v1[idx], b.v2[idx], b.v3[idx]);
 
             float a_t1 = getT(a_pts, a_onto_b, 1);
             float a_t2 = getT(a_pts, a_onto_b, 2);
 
             float b_t1 = getT(b_pts, b_onto_a, 1);
+            float b_t2 = getT(b_pts, b_onto_a, 2);*/
+
+            uint x = (normalAxis + 1) % 3;
+            uint y = (normalAxis + 2) % 3;
+            float a_t1 = getT2(v, a.)
+            float a_t2 = getT(a_pts, a_onto_b, 2);
+
+            float b_t1 = getT(b_pts, b_onto_a, 1);
             float b_t2 = getT(b_pts, b_onto_a, 2);
 
-            if (a_t1 <= b_t1 && a_t2 >= b_t1 || a_t1 <= b_t2 && a_t2 >= b_t2) {
+            if (a_t1 <= b_t1 && a_t2 >= b_t1 || a_t1 <= b_t2 && a_t2 >= b_t2 ||
+                b_t1 <= a_t1 && b_t2 >= a_t1 || b_t1 <= a_t2 && b_t2 >= a_t2) {
                 // intervals overlap, so collision detected
                 atomicAdd(collisions, 1);
             }
         } else if (coplanar) {
+            atomicAdd(collisions, 10);
             // project onto axis-aligned plane that is closest to the plane
             // both triangles are on and perform 2d triangle collision detection
             uint normalAxis = absMaxDim(a_norm);
@@ -154,7 +171,7 @@ void main() {
             {
                 atomicAdd(collisions, 1);
             }
-        }  
+        }
     }
 
     barrier();

@@ -55,7 +55,7 @@ impl<T : BaseFloat> Triangle<T> {
         vertices[self.indices[2] as usize]]
     }
 
-    fn array_from(indices: Vec<u32>, vertices: *const Vec<Point3<T>>) -> Vec<Triangle<T>> {
+    pub fn array_from(indices: Vec<u32>, vertices: *const Vec<Point3<T>>) -> Vec<Triangle<T>> {
         use itertools::Itertools;
         assert_eq!(indices.len() % 3, 0);
         let mut res = Vec::new();

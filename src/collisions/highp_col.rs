@@ -16,7 +16,7 @@ use crate::shader;
 use crate::ssbo;
 use cgmath::*;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct ShaderTriangle {
     _a: [f32; 4],
     _b: [f32; 4],
@@ -70,11 +70,12 @@ impl<'a, F : glium::backend::Facade> HighPCollision for TriangleTriangleGPU<'a, 
         
         let work_group_size = 8;
 
-        let work_groups_x = (a_len + a_len % work_group_size) / work_group_size;
-        let work_groups_y = (b_len + b_len % work_group_size) / work_group_size;
+        let work_groups_x = ((a_len + a_len % work_group_size) / work_group_size).max(1);
+        let work_groups_y = ((b_len + b_len % work_group_size) / work_group_size).max(1);
 
         let output : ssbo::SSBO<CompOut> 
             = ssbo::SSBO::static_empty(work_groups_x * work_groups_y);
+            //= ssbo::SSBO::create_static(out);
         
         input_a.bind(5);
         input_b.bind(6);
@@ -83,7 +84,10 @@ impl<'a, F : glium::backend::Facade> HighPCollision for TriangleTriangleGPU<'a, 
             shader::UniformInfo::TriangleCollisionsInfo, None);
 
         for e in output.map_read().as_slice().iter() {
-            if e.v[0] > 0 { return true; }
+            println!("Output got {:?}", e.v);
+            if e.v[0] > 0 { 
+                return true; 
+            }
         }
         false
 

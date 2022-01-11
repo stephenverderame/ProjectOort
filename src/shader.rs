@@ -513,7 +513,7 @@ impl ShaderManager {
                 compute.execute(uniform, x, y, z);
             },
             UniformInfo::TriangleCollisionsInfo => {
-                let compute = self.compute_shaders.get(&ShaderType::CullLightsCompute).unwrap();
+                let compute = self.compute_shaders.get(&ShaderType::TriIntersectionCompute).unwrap();
                 compute.execute(EmptyUniforms, x, y, z);
             }
             _ => panic!("Unknown compute shader args"),

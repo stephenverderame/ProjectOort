@@ -52,8 +52,11 @@ impl CollisionMesh {
             }
         }
         //println!("Triangle checks: {} x {}", our_tris.len(), other_tris.len());
-        highp_strat.collide(&our_tris, &self_transform, 
-            &other_tris, &other_transform)
+        if our_tris.is_empty() || other_tris.is_empty() { false }
+        else {
+            highp_strat.collide(&our_tris, &self_transform, 
+                &other_tris, &other_transform)
+        }
     }
 
     pub fn bounding_sphere(&self) -> (Point3<f64>, f64) {
@@ -79,6 +82,24 @@ impl CollisionMesh {
 mod test {
     use super::*;
     use crate::collisions::highp_col;
+    use crate::shader;
+    use super::super::bvh;
+    use crate::node;
+    
+    fn init() -> (shader::ShaderManager, glium::Display) {
+        use glium::*;
+        use glutin::window::{WindowBuilder};
+        use glutin::ContextBuilder;
+        use glutin::platform::windows::EventLoopExtWindows;
+        let e_loop : glutin::event_loop::EventLoop<()> = glutin::event_loop::EventLoop::new_any_thread();
+        let window_builder = WindowBuilder::new().with_visible(false).with_inner_size(glium::glutin::dpi::PhysicalSize::<u32>{
+            width: 128, height: 128,
+        });
+        let wnd_ctx = ContextBuilder::new();//.build_headless(&e_loop, glutin::dpi::PhysicalSize::from((128, 128)));
+        let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
+        gl::load_with(|s| wnd_ctx.gl_window().get_proc_address(s));
+        (shader::ShaderManager::init(&wnd_ctx), wnd_ctx)
+    }
 
     #[test]
     fn basic_collisions() {
@@ -88,8 +109,19 @@ mod test {
             &plane_mesh, &Matrix4::from_translation(vec3(3., 4., 1.)), &method), false);
         assert_eq!(plane_mesh.collision(&Matrix4::from_scale(1.), 
             &plane_mesh, &Matrix4::from_translation(vec3(3., 3., 1.)), &method), true);
-        /*assert_eq!(plane_mesh.collision(&Matrix4::from_scale(1.), 
-            &plane_mesh, &(Matrix4::from_translation(vec3(10.5, -0.5, 1.7)) * Matrix4::from_angle_y(Deg(-90f64)))
-            ), false);*/
+    }
+
+    #[test]
+    fn triangle_tests() {
+        let (shader, disp) = init();
+        let strat = highp_col::TriangleTriangleGPU::new(&shader, &disp);
+        let vertices = vec![point3(1f32, 0., 0.), point3(0., 1., 0.), point3(-1., 0., 0.)];
+        let triangle = bvh::Triangle::array_from(vec![0, 1, 2], &vertices as *const Vec<Point3<f32>>);
+        let mut t_b = node::Node::default();
+        let mut t_a = node::Node::default();
+        //assert_eq!(strat.collide(&triangle, &Matrix4::from_scale(1.), &triangle, &Matrix4::from_translation(vec3(0., 0., 1.))), false);
+        t_b.orientation = Matrix3::from_angle_y(Deg(70f64)).into();
+        t_b.pos = point3(0., 0., 0.8);
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true);
     }
 }

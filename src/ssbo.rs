@@ -187,6 +187,19 @@ impl<T : Copy> SSBO<T> {
 
     }
 
+    pub fn get_data(&self) -> Vec<T> {
+        let mut v = Vec::<T>::new();
+        v.resize(self.buffer_count as usize, unsafe { std::mem::zeroed() });
+        unsafe {
+            println!("Read size {}", (std::mem::size_of::<T>() * self.buffer_count as usize) as isize);
+            gl::GetNamedBufferSubData(self.buffer, 0,
+                (std::mem::size_of::<T>() * self.buffer_count as usize) as isize, 
+                v.as_mut_ptr() as *mut std::ffi::c_void);
+            assert_no_error!();
+        }
+        v
+    }
+
     fn del_buffer(&self) {
         unsafe { gl::DeleteBuffers(1, &self.buffer as *const gl::types::GLuint); }
     }
