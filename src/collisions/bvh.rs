@@ -38,6 +38,12 @@ pub struct Triangle<T : BaseFloat> {
     vertices: *const Vec<Point3<T>>,
 }
 
+impl<T : BaseFloat> std::fmt::Debug for Triangle<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Triangle {:?}", self.verts())
+    }
+}
+
 impl<T : BaseFloat> Triangle<T> {
     pub fn centroid(&self) -> Point3<f64> {
         let vertices = unsafe { &*self.vertices };
@@ -207,6 +213,19 @@ impl<T : BaseFloat> BVHNode<T> {
             Some((our_tris, other_tris))
         } else { None }
     }
+
+    /// get's all bounding boxes of leaves
+    fn get_leaf_boxes(&self, boxes: &mut Vec<AABB>) {
+        if self.is_leaf() {
+            boxes.push(self.volume.clone())
+        };
+        if let Some(l) = &self.left {
+            l.get_leaf_boxes(boxes);
+        }
+        if let Some(r) = &self.right {
+            r.get_leaf_boxes(boxes);
+        }
+    }
 }
 
 struct SelfRef<T : BaseFloat> {
@@ -242,4 +261,12 @@ impl<T : BaseFloat> OBBTree<T> {
     pub fn bounding_box(&self) -> AABB {
         self.root.volume.clone()
     }
+
+    /// Gets the main bounding box at index 0, followed by all leaf bounding boxes
+    pub fn main_and_leaf_bounding_boxes(&self) -> Vec<AABB> {
+        let mut v = vec![self.root.volume.clone()];
+        self.root.get_leaf_boxes(&mut v);
+        v
+    }
+
 }

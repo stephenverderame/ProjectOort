@@ -54,7 +54,7 @@ impl<'a, F : glium::backend::Facade> HighPCollision for TriangleTriangleGPU<'a, 
                 ShaderTriangle {
                     _a: (mat * vec4(verts[0].x, verts[0].y, verts[0].z, 1.0)).into(),
                     _b: (mat * vec4(verts[1].x, verts[1].y, verts[1].z, 1.0)).into(),
-                    _c: (mat * vec4(verts[1].x, verts[1].y, verts[1].z, 1.0)).into(),
+                    _c: (mat * vec4(verts[2].x, verts[2].y, verts[2].z, 1.0)).into(),
                 }
             }
         };
@@ -73,7 +73,7 @@ impl<'a, F : glium::backend::Facade> HighPCollision for TriangleTriangleGPU<'a, 
         let work_groups_x = ((a_len + a_len % work_group_size) / work_group_size).max(1);
         let work_groups_y = ((b_len + b_len % work_group_size) / work_group_size).max(1);
 
-        let output : ssbo::SSBO<CompOut> 
+        let output : ssbo::SSBO<[f32; 4]> 
             = ssbo::SSBO::static_empty(work_groups_x * work_groups_y);
             //= ssbo::SSBO::create_static(out);
         
@@ -84,8 +84,8 @@ impl<'a, F : glium::backend::Facade> HighPCollision for TriangleTriangleGPU<'a, 
             shader::UniformInfo::TriangleCollisionsInfo, None);
 
         for e in output.map_read().as_slice().iter() {
-            println!("Output got {:?}", e.v);
-            if e.v[0] > 0 { 
+            //println!("Output got {:?}", e);
+            if e[0] > 0. { 
                 return true; 
             }
         }

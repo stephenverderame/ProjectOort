@@ -1,6 +1,6 @@
 use super::bvh::{OBBTree, TreeStopCriteria};
 use super::highp_col::HighPCollision;
-use std::rc::Rc;
+use super::obb;
 use tobj;
 use cgmath::*;
 
@@ -76,6 +76,17 @@ impl CollisionMesh {
         let extents = vec3(max_x - center.x, max_y - center.y, max_z - center.z);
         (center, extents.x.max(extents.y.max(extents.z)))
     }
+
+    pub fn main_and_leaf_boxes(&self) -> (Vec<obb::AABB>, Vec<obb::AABB>) {
+        let mut main_boxes = Vec::new();
+        let mut leaf_boxes = Vec::new();
+        for sb in &self.sub_meshes {
+            let mut v = sb.main_and_leaf_bounding_boxes();
+            main_boxes.push(v.swap_remove(0));
+            leaf_boxes.append(&mut v);
+        }
+        (main_boxes, leaf_boxes)
+    }
 }
 
 #[cfg(test)]
@@ -119,9 +130,30 @@ mod test {
         let triangle = bvh::Triangle::array_from(vec![0, 1, 2], &vertices as *const Vec<Point3<f32>>);
         let mut t_b = node::Node::default();
         let mut t_a = node::Node::default();
-        //assert_eq!(strat.collide(&triangle, &Matrix4::from_scale(1.), &triangle, &Matrix4::from_translation(vec3(0., 0., 1.))), false);
+        assert_eq!(strat.collide(&triangle, &Matrix4::from_scale(1.), &triangle, &Matrix4::from_translation(vec3(0., 0., 1.))), false); //plane test reject
         t_b.orientation = Matrix3::from_angle_y(Deg(70f64)).into();
         t_b.pos = point3(0., 0., 0.8);
-        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true);
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true); //small intersect
+        t_a.pos = point3(1., 0., 0.);
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true); //small intersect off origin
+        t_b.pos = point3(-0.3, 0., 0.5);
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), false); //plane test pass, no intersect
+        t_b.pos = point3(-0.3, 1., 0.5);
+        t_b.orientation = Matrix3::from_angle_y(Deg(120f64)).into();
+        t_a.orientation = From::from(Euler::new(Deg(20f64), Deg(0.), Deg(53.)));
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), false); //plane test pass, no intersect (more transforms)
+        t_a.scale = vec3(1.895f64, 1.895, 1.895);
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true); // intersect via scale
+
+        let vertices2 = vec![point3(-0.292f32, -0.0536, 0.00074), point3(-0.392, 0.273, 0.296), point3(0.747, 0.515, 0.255)];
+        t_a.pos = point3(0., 0f64, 0.);
+        t_a.orientation = Matrix3::from_angle_x(Deg(0.)).into();
+        let triangle2 = bvh::Triangle::array_from(vec![0, 1, 2], &vertices2 as *const Vec<Point3<f32>>);
+        assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), false); // random triangle no intersect
+        t_a.pos = point3(-0.16618f64, 0.97175, 0.65434);
+        assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), true); // random triangle intersect
+        t_a.pos = point3(0.051302f64, 0.537728, 0.083144);
+        t_a.scale = vec3(0.5, 1., 3f64);
+        assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), true); // random triangle intersect via off-center scale
     }
 }

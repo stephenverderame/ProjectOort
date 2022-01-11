@@ -52,16 +52,16 @@ impl Scene {
 
     /// Executes the specified render pass and passes in Scene Data for this Scene
     pub fn render_pass<'b, F>(&self, pass: &'b mut RenderPass, viewer: &dyn draw_traits::Viewer, 
-        shader: &shader::ShaderManager, func: F)
+        shader: &shader::ShaderManager, mut func: F)
         -> Option<render_target::TextureType<'b>> 
-        where F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData, shader::RenderPassType, &shader::PipelineCache)
+        where F : FnMut(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData, shader::RenderPassType, &shader::PipelineCache)
     {
         use std::rc::*;
         use std::cell::*;
         let vd = draw_traits::viewer_data_from(viewer);
         let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
         pass.run_pass(viewer, shader, sd.clone(),
-        &|fbo, viewer, typ, cache, _| {
+        &mut |fbo, viewer, typ, cache, _| {
             {
                 let mut sdm = sd.borrow_mut();
                 sdm.viewer = draw_traits::viewer_data_from(viewer);

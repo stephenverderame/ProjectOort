@@ -145,6 +145,7 @@ impl EntityFlyweight {
     pub fn instance_motion(&mut self, dt: f64) {
         if let Some(instance_data) = &mut self.instance_data {
             let mut mapping = instance_data.map();
+            let mut count = 0usize;
             for (src, dst) in self.instances.iter_mut().zip(mapping.iter_mut()) {
                 src.transform.borrow_mut().pos += src.velocity * dt;
                 let mat : cgmath::Matrix4<f32> = From::from(&*src.transform.borrow());
@@ -152,8 +153,10 @@ impl EntityFlyweight {
                 dst.instance_model_col1 = mat.y.into();
                 dst.instance_model_col2 = mat.z.into();
                 dst.instance_model_col3 = mat.w.into();
+                count += 1;
             }
-        }
+            assert_eq!(count, self.instances.len());
+        } else { assert!(false) }
     }
 
     pub fn iter_positions<F : FnMut(&node::Node)>(&self, mut cb: F) {
@@ -169,7 +172,7 @@ impl draw_traits::Drawable for EntityFlyweight {
     {
         if let Some(instance_data) = &self.instance_data {
             self.geometry.render_instanced(frame, scene_data, local_data, shader, 
-                instance_data.slice(.. self.instances.len()).unwrap());
+                &instance_data.slice(.. self.instances.len()).unwrap());
         }
     }
 }

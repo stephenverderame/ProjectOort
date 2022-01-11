@@ -3,23 +3,6 @@ use std::rc::Rc;
 use cgmath::*;
 use std::cell::RefCell;
 
-/// Rotation matrix or quaternion
-#[allow(dead_code)]
-#[derive(Clone)]
-pub enum Rot {
-    Quat(Quaternion<f32>),
-    Mat(Matrix4<f32>),
-}
-
-/// Converts `rot` to matrix form
-#[allow(dead_code)]
-fn rot_to_mat(rot: &Rot) -> Matrix4<f32> {
-    match rot {
-        Rot::Quat(q) => Matrix4::<f32>::from(q.clone()),
-        Rot::Mat(m) => m.clone(),
-    }
-}
-
 /// A node in a transformation heirarchy with a position, rotation, scale, and anchor point
 /// that can have a parent. The node represents the transformation from the local coordinate space to 
 /// the parent's coordinate space. A node without an explicit parent is implicitly the child of the 
@@ -72,6 +55,10 @@ impl Node {
 
     pub fn set_parent(&mut self, parent: Rc<RefCell<Node>>) {
         self.parent = Some(parent);
+    }
+
+    pub fn remove_parent(&mut self) {
+        self.parent = None;
     }
 
     pub fn mat(&self) -> Matrix4<f64> {
@@ -167,5 +154,13 @@ mod test {
         c.set_parent(p.clone());
         assert_eq!(c.mat().transform_point(point3(1., 0., 1.)),
             point3(8., 0., 4.));
+
+        p.borrow_mut().remove_parent();
+        p.borrow_mut().anchor = point3(0f64, 0., 0.);
+        p.borrow_mut().pos = point3(0.058007f64, 0.452938, 0.037287);
+        p.borrow_mut().orientation = Quaternion::new(0.991916f64, 0.051606, 0.099089, -0.060177);
+        p.borrow_mut().scale = vec3(1.2f64, 0.8, 3.);
+        let o = p.borrow().mat().transform_point(point3(-0.737862f64, 1.01066, 0.478124));
+        cgmath::assert_relative_eq!(o, point3(0.638277f64, 0.26307, 1.37283));
     }
 }

@@ -77,7 +77,7 @@ pub trait RenderTarget {
     /// Returns the texture output of rendering to this render target
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>,
         cache: &mut PipelineCache,
-        func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType,
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType,
         &PipelineCache, &Option<Vec<&TextureType>>)) -> Option<TextureType>;
 }
 
@@ -131,7 +131,7 @@ impl<'a> MsaaRenderTarget<'a> {
 
 impl<'a> RenderTarget for MsaaRenderTarget<'a> {
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
-        func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache,&Option<Vec<&TextureType>>)) 
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache,&Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
         func(&mut self.fbo, viewer, RenderPassType::Visual, cache, &pipeline_inputs);
@@ -192,7 +192,7 @@ impl<'a, F : backend::Facade> DepthRenderTarget<'a, F> {
 
 impl<'a, F : backend::Facade> RenderTarget for DepthRenderTarget<'a, F> {
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
-        func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType> 
     {
         let (mut fbo, rbo) = self.get_fbo_rbo();
@@ -240,7 +240,7 @@ impl CubemapRenderBase {
     /// Repeatedly calls `func` for each face of the cubemap
     /// 
     /// `func` - callable to render a single face of a cubemap. Passed a cube face and camera
-    fn draw(&self, func: &dyn Fn(texture::CubeLayer, &dyn Viewer)) {
+    fn draw(&self, func: &mut dyn FnMut(texture::CubeLayer, &dyn Viewer)) {
         use crate::camera::*;
         use cgmath::*;
         let mut cam = PerspectiveCamera {
@@ -297,10 +297,10 @@ impl<'a, F : backend::Facade> CubemapRenderTarget<'a, F> {
 
 impl<'a, F : backend::Facade> RenderTarget for CubemapRenderTarget<'a, F> {
     fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
-        func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
-        self.cubemap.draw(&|face, cam| {
+        self.cubemap.draw(&mut |face, cam| {
             let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(self.facade, 
                 self.cbo_tex.main_level().image(face), self.depth_buffer.to_depth_attachment()).unwrap();
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
@@ -343,7 +343,7 @@ impl<'a, F : backend::Facade> MipCubemapRenderTarget<'a, F> {
 
 impl<'a, F : backend::Facade> RenderTarget for MipCubemapRenderTarget<'a, F> {
     fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
-        func: &dyn Fn(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
         let cbo_tex = texture::Cubemap::empty_with_format(self.facade, texture::UncompressedFloatFormat::F16F16F16,
@@ -351,7 +351,7 @@ impl<'a, F : backend::Facade> RenderTarget for MipCubemapRenderTarget<'a, F> {
         for mip_level in 0 .. self.mip_levels {
             let mip_pow = 0.5f32.powi(mip_level as i32);
             let mipped_size = ((self.size as f32) * mip_pow) as u32;
-            self.cubemap.draw(&|face, cam| {
+            self.cubemap.draw(&mut |face, cam| {
                 let rbo = framebuffer::DepthRenderBuffer::new(self.facade, texture::DepthFormat::I24, mipped_size, mipped_size).unwrap();
                 let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(self.facade, 
                     cbo_tex.mipmap(mip_level).unwrap().image(face), 

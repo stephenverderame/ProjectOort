@@ -84,6 +84,21 @@ impl CollisionObject {
         self.bvh.borrow().collision(&self.obj.borrow().model.borrow().mat(), &other.bvh.borrow(),
             &other.obj.borrow().model.borrow().mat(), highp_strategy)
     }
+
+    /// Gets transformation matrices transforming a -1 to 1 cube to each bounding box
+    pub fn get_main_and_leaf_cube_transformations(&self) -> (Vec<cgmath::Matrix4<f64>>, Vec<cgmath::Matrix4<f64>>) {
+        use cgmath::*;
+        let (main, leaf) = self.bvh.borrow().main_and_leaf_boxes();
+
+        (main.into_iter().map(|x| {
+            Matrix4::from_translation(x.center.to_vec()) * 
+            Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
+        }).collect(),
+        leaf.into_iter().map(|x| {
+            Matrix4::from_translation(x.center.to_vec()) * 
+            Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
+        }).collect())
+    }
 }
 #[derive(PartialEq, Eq)]
 pub enum ObjectType {

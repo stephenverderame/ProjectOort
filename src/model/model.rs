@@ -157,7 +157,7 @@ impl Model {
     /// `instance_buffer` - VertexBuffer where each element in it is passed to each rendered copy of this model. So this will render an amount of copies equal to elements
     /// in this buffer
     pub fn render_instanced<S : glium::Surface, T : Copy>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, manager: &shader::ShaderManager, 
-        instance_buffer: glium::vertex::VertexBufferSlice<T>) 
+        instance_buffer: &glium::vertex::VertexBufferSlice<T>) 
     {
         for mesh in &self.meshes {
             mesh.render_instanced(wnd, mats, local_data, manager, &instance_buffer, &self.materials);

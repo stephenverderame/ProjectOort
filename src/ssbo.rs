@@ -236,7 +236,7 @@ pub struct MappedBuffer<T : Copy> {
 
 pub struct MappedBufferSlice<'a, 'b, T : Copy> {
     pub slice: &'a [T],
-    owner: &'b MappedBuffer<T>,
+    _owner: &'b MappedBuffer<T>, // reference to owner so we can't outlive it
 }
 
 impl<T : Copy> MappedBuffer<T> {
@@ -244,7 +244,7 @@ impl<T : Copy> MappedBuffer<T> {
         unsafe {
             MappedBufferSlice {
                 slice: std::slice::from_raw_parts(self.buf as *const T, self.size as usize),
-                owner: self,
+                _owner: self,
             }
         }
     }

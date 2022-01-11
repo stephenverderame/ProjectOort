@@ -75,7 +75,7 @@ fn gen_prefilter_hdr_env<F : glium::backend::Facade>(skybox: Rc<RefCell<skybox::
     let mut rt = render_target::MipCubemapRenderTarget::new(size, mip_levels, 10., cgmath::point3(0., 0., 0.), facade);
     let iterations = RefCell::new(0);
     let mut cache = shader::PipelineCache::default();
-    let res = rt.draw(&cam, None, &mut cache, &|fbo, viewer, _, cache, _| {
+    let res = rt.draw(&cam, None, &mut cache, &mut |fbo, viewer, _, cache, _| {
         let its = *iterations.borrow();
         let mip_level = its / 6;
         skybox.borrow_mut().set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
@@ -209,6 +209,7 @@ fn main() {
     let mut laser = entity::EntityFlyweight::new(model::Model::new("assets/laser2.obj", &wnd_ctx));
     let container = entity::Entity::from(model::Model::new("assets/BlackMarble/floor.obj", &wnd_ctx), 
         node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None));
+    let mut debug_cube = skybox::DebugCube::new(node::Node::default(), &wnd_ctx);
 
     laser.new_instance(entity::EntityInstanceData {
         transform: Rc::new(RefCell::new(node::Node::new(
@@ -253,6 +254,18 @@ fn main() {
                         break;
                     }
                 }
+                //let cubes = asteroid.instances[0].collider.as_ref().unwrap().get_all_cube_transformations();
+                /*let user_leaf_cubes = user.borrow().collision_obj.get_main_and_leaf_cube_transformations().1;
+                let asteroid_leaf_cubes = asteroid.instances[0].collider.as_ref().unwrap().get_main_and_leaf_cube_transformations().1;
+                let mut cubes = Vec::new();
+                for ist in &asteroid.instances {
+                    for leaf in &asteroid_leaf_cubes {
+                        cubes.push(ist.transform.borrow().mat() * leaf);
+                    }
+                }
+                for leaf in &user_leaf_cubes {
+                    cubes.push(user.borrow().root.borrow().mat() * leaf);
+                }*/
                 let light_data = {
                     let mut lights = Vec::new();
                     laser.iter_positions(|node| {
@@ -282,6 +295,10 @@ fn main() {
                     asteroid.render(fbo, &scene_data, cache, &shader_manager);
                     container.render(fbo, &scene_data, cache, &shader_manager);
                     asteroid_character.borrow().render(fbo, &scene_data, cache, &shader_manager);
+                    /*for c in &cubes {
+                        debug_cube.transform = c.clone();
+                        debug_cube.render(fbo, &scene_data, cache, &shader_manager);
+                    }*/
                 });
                 controller.reset_toggles();
                 let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 
@@ -289,6 +306,7 @@ fn main() {
                 let orig_rot = laser.instances[0].transform.borrow().orientation;
                 laser.instances[0].transform.borrow_mut().orientation = orig_rot * q;
                 laser.instance_motion(dt);
+                asteroid.instance_motion(dt);
                 collision_tree.update();
             }
             _ => (),

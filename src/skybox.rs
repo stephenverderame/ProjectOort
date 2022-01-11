@@ -1,5 +1,6 @@
 use crate::shader;
 use crate::draw_traits;
+use crate::node;
 
 #[derive(Clone, Copy)]
 struct Vertex {
@@ -7,6 +8,18 @@ struct Vertex {
 }
 
 glium::implement_vertex!(Vertex, pos);
+
+const CUBE_VERTS: [Vertex; 8] = [Vertex { pos: [-1.0, -1.0, 1.0] },
+    Vertex { pos: [1.0, -1.0, 1.0] },
+    Vertex { pos: [1.0, 1.0, 1.0] },
+    Vertex { pos: [-1.0, 1.0, 1.0] },
+    Vertex { pos: [-1.0, -1.0, -1.0] },
+    Vertex { pos: [1.0, -1.0, -1.0] },
+    Vertex { pos: [1.0, 1.0, -1.0] },
+    Vertex { pos: [-1.0, 1.0, -1.0] }];
+
+const CUBE_INDICES: [u16; 36] = [0, 1, 2, 2, 3, 0, 1, 5, 6, 6, 2, 1, 7, 6, 5, 5, 4, 7, 4, 0, 3, 3, 7,
+    4, 4, 5, 1, 1, 0, 4, 3, 2, 6, 6, 7, 3];
 
 /// The type of texture for the skybox. Either a cubemap or a 2d texture
 /// storing an equirectangular spherical image
@@ -25,19 +38,9 @@ pub struct Skybox {
 
 impl Skybox {
     pub fn new<F>(tex: SkyboxTex, facade: &F) -> Skybox where F : glium::backend::Facade {
-        let verts: [Vertex; 8] = [Vertex { pos: [-1.0, -1.0, 1.0] },
-            Vertex { pos: [1.0, -1.0, 1.0] },
-            Vertex { pos: [1.0, 1.0, 1.0] },
-            Vertex { pos: [-1.0, 1.0, 1.0] },
-            Vertex { pos: [-1.0, -1.0, -1.0] },
-            Vertex { pos: [1.0, -1.0, -1.0] },
-            Vertex { pos: [1.0, 1.0, -1.0] },
-            Vertex { pos: [-1.0, 1.0, -1.0] }];
-        let indices: [u16; 36] = [0, 1, 2, 2, 3, 0, 1, 5, 6, 6, 2, 1, 7, 6, 5, 5, 4, 7, 4, 0, 3, 3, 7,
-            4, 4, 5, 1, 1, 0, 4, 3, 2, 6, 6, 7, 3];
         Skybox {
-            vbo: glium::VertexBuffer::new(facade, &verts).unwrap(),
-            ebo: glium::IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &indices).unwrap(),
+            vbo: glium::VertexBuffer::new(facade, &CUBE_VERTS).unwrap(),
+            ebo: glium::IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &CUBE_INDICES).unwrap(),
             tex: tex, mip_progress: None,
         }
     }
@@ -75,6 +78,34 @@ impl draw_traits::Drawable for Skybox {
             shader::UniformType::EqRectUniform(uniform) =>
                 frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
             shader::UniformType::PrefilterHdrEnvUniform(uniform) =>
+                frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
+            _ => panic!("Invalid uniform type returned for skybox"),
+        }
+    }
+}
+
+pub struct DebugCube {
+    vbo: glium::VertexBuffer<Vertex>,
+    ebo: glium::IndexBuffer<u16>,
+    pub transform: cgmath::Matrix4<f64>,
+}
+
+impl DebugCube {
+    pub fn new<F : glium::backend::Facade>(transform: node::Node, facade: &F) -> DebugCube {
+        DebugCube {
+            vbo: glium::VertexBuffer::new(facade, &CUBE_VERTS).unwrap(),
+            ebo: glium::IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &CUBE_INDICES).unwrap(),
+            transform: transform.mat(),
+        }
+    }
+}
+
+impl draw_traits::Drawable for DebugCube {
+    fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) {
+        let args = shader::UniformInfo::CollisionDebugInfo(self.transform.cast::<f32>().unwrap().into());
+        let (program, params, uniform) = shader.use_shader(&args, Some(mats), Some(local_data));
+        match uniform {
+            shader::UniformType::DepthUniform(uniform) =>
                 frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
             _ => panic!("Invalid uniform type returned for skybox"),
         }

@@ -20,6 +20,7 @@ enum ShaderType {
     PbrAnim,
     DepthAnim,
     TriIntersectionCompute,
+    CollisionDebug,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -47,6 +48,17 @@ impl ShaderType {
                         .. Default::default()
                     },
                     backface_culling: glium::BackfaceCullingMode::CullClockwise,
+                    .. Default::default()
+                },
+            CollisionDebug => 
+                glium::DrawParameters {
+                    depth: glium::Depth {
+                        test: DepthTest::IfLess,
+                        write: true,
+                        .. Default::default()
+                    },
+                    polygon_mode: glium::PolygonMode::Line,
+                    line_width: Some(2.),
                     .. Default::default()
                 },
             _ => glium::DrawParameters::default(),
@@ -201,6 +213,7 @@ pub enum UniformInfo<'a> {
     LaserInfo,
     TriangleCollisionsInfo,
     LightCullInfo(LightCullData<'a>),
+    CollisionDebugInfo([[f32; 4]; 4]),
 
 }
 
@@ -231,6 +244,7 @@ impl<'a> UniformInfo<'a> {
             (LaserInfo, Shadow) => ShaderType::DepthShader,
             (LightCullInfo(_), _) => ShaderType::CullLightsCompute,
             (TriangleCollisionsInfo, _) => ShaderType::TriIntersectionCompute,
+            (CollisionDebugInfo(_), _) => ShaderType::CollisionDebug,
         }
     }
 }
@@ -363,6 +377,8 @@ impl ShaderManager {
             "shaders/pbrAnimVert.glsl", "shaders/pbrFrag.glsl").unwrap();
         let depth_anim = load_shader_source!(facade,
             "shaders/depthAnimVert.glsl", "shaders/depthFrag.glsl").unwrap();
+        let debug = load_shader_source!(facade,
+            "shaders/depthVert.glsl", "shaders/constantColor.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -382,6 +398,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::PbrInstancedShader, pbr_instanced);
         shaders.insert(ShaderType::PbrAnim, pbr_anim);
         shaders.insert(ShaderType::DepthAnim, depth_anim);
+        shaders.insert(ShaderType::CollisionDebug, debug);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -491,6 +508,10 @@ impl ShaderManager {
                     model: model.clone(),
                 })
             },
+            (CollisionDebugInfo(model), _) => UniformType::DepthUniform(glium::uniform! {
+                viewproj: scene_data.unwrap().viewer.viewproj,
+                model: model.clone(),
+            }),
             (_, pass) => panic!("Invalid shader/shader data combination with shader '{:?}' during pass '{:?}'", typ, pass),
         };
         (shader, params, uniform)
