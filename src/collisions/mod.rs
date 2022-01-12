@@ -68,6 +68,8 @@ impl CollisionObject {
         }
     }
 
+    /// Creates a new collision object by copying an existing one
+    #[allow(dead_code)]
     pub fn from(transform: Rc<RefCell<node::Node>>, prototype: &CollisionObject) -> CollisionObject {
         let obj = Rc::new(RefCell::new(object::Object {
             model: transform,
@@ -86,6 +88,7 @@ impl CollisionObject {
     }
 
     /// Gets transformation matrices transforming a -1 to 1 cube to each bounding box
+    #[allow(dead_code)]
     pub fn get_main_and_leaf_cube_transformations(&self) -> (Vec<cgmath::Matrix4<f64>>, Vec<cgmath::Matrix4<f64>>) {
         use cgmath::*;
         let (main, leaf) = self.bvh.borrow().main_and_leaf_boxes();
@@ -98,6 +101,26 @@ impl CollisionObject {
             Matrix4::from_translation(x.center.to_vec()) * 
             Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
         }).collect())
+    }
+
+    /// For testing purposes, gets the colliding leaf bounding volumes as transformation matrices to
+    /// a -1 to 1 cube
+    #[allow(dead_code)]
+    pub fn get_colliding_volume_transformations(&self, other: &CollisionObject) 
+        -> Vec<cgmath::Matrix4<f64>>
+    {
+        use cgmath::*;
+        let our_mat = self.obj.borrow().model.borrow().mat();
+        let other_mat = other.obj.borrow().model.borrow().mat();
+        let (our, other) = self.bvh.borrow().get_colliding_volumes(&our_mat,
+            &other.bvh.borrow(), &other_mat);
+        our.into_iter().map(|x| {
+            our_mat * Matrix4::from_translation(x.center.to_vec()) * 
+            Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
+        }).chain(other.into_iter().map(|x| {
+            other_mat * Matrix4::from_translation(x.center.to_vec()) * 
+            Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
+        })).collect()
     }
 }
 #[derive(PartialEq, Eq)]
@@ -136,6 +159,7 @@ impl CollisionTree {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn remove(&mut self, obj: &CollisionObject) {
         self.dynamic_objects.retain(|e| !Rc::ptr_eq(e, &obj.obj));
         self.tree.remove(&obj.obj)

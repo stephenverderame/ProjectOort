@@ -98,8 +98,8 @@ impl OBB {
                     // choose a new axis perpendicular to that plane
                     let n = axis_a.cross(self.center + axis_a - (other.center + axis_b));
                     if n.magnitude2() < 5. * f64::EPSILON {
-                        n.normalize()
-                    } else { return false; }
+                        return false
+                    } else { n.normalize() }
                 } else { a.normalize() }
             }
         };

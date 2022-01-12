@@ -17,6 +17,10 @@ rand = "*"
 assimp = "*"
 assimp-sys = "*"
 arr_macro = "*"
+itertools = "*"
+
+[dev-dependencies]
+assertables = "*"
 assert_approx_eq = "*"
 once_cell = "*"
-itertools = "*"
+serial_test = "*"

@@ -161,7 +161,7 @@ fn main() {
     let (sky_cbo, sky_hdr_cbo) = gen_skybox(1024, &shader_manager, &wnd_ctx);
     let main_skybox = Rc::new(RefCell::new(skybox::Skybox::new(skybox::SkyboxTex::Cube(sky_cbo), &wnd_ctx)));
     let (pre_filter, brdf_lut) = gen_prefilter_hdr_env(main_skybox.clone(), 128, &shader_manager, &wnd_ctx);
-    let collision_compute = collisions::TriangleTriangleGPU::new(&shader_manager, &wnd_ctx);
+    let collision_compute = collisions::TriangleTriangleGPU::new(&shader_manager);
 
     gen_asteroid_field(&mut asteroid, &wnd_ctx, &mut collision_tree);
     collision_tree.insert(&(*user.borrow()).collision_obj, collisions::ObjectType::Dynamic);
@@ -248,13 +248,14 @@ fn main() {
                     handle_shots(&u, &controller, &mut laser, &wnd_ctx);
                 }
                 let user_colliders = collision_tree.get_colliders(&user.borrow().collision_obj);
-                for collider in user_colliders {
+                let mut cubes = Vec::new();
+               for collider in user_colliders {
+                    cubes.append(&mut collider.get_colliding_volume_transformations(&(*user.borrow()).collision_obj));
                     if collider.is_collision(&(*user.borrow()).collision_obj, &collision_compute) {
                         *user.borrow_mut().root.borrow_mut() = old_user_pos;
                         break;
                     }
                 }
-                //let cubes = asteroid.instances[0].collider.as_ref().unwrap().get_all_cube_transformations();
                 /*let user_leaf_cubes = user.borrow().collision_obj.get_main_and_leaf_cube_transformations().1;
                 let asteroid_leaf_cubes = asteroid.instances[0].collider.as_ref().unwrap().get_main_and_leaf_cube_transformations().1;
                 let mut cubes = Vec::new();
@@ -295,10 +296,10 @@ fn main() {
                     asteroid.render(fbo, &scene_data, cache, &shader_manager);
                     container.render(fbo, &scene_data, cache, &shader_manager);
                     asteroid_character.borrow().render(fbo, &scene_data, cache, &shader_manager);
-                    /*for c in &cubes {
+                    for c in &cubes {
                         debug_cube.transform = c.clone();
                         debug_cube.render(fbo, &scene_data, cache, &shader_manager);
-                    }*/
+                    }
                 });
                 controller.reset_toggles();
                 let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 

@@ -115,13 +115,13 @@ impl ONode {
     }
 
     /// Gets all objects that have overlapping bounding spheres as `test_obj` in `node` or children of `node`
+    /// 
+    /// `node` - the containing octree cell of `test_obj`
     fn get_subtree_colliders(node: &Rc<RefCell<ONode>>, test_obj: &Rc<RefCell<Object>>) -> ObjectList {
         let mut v : ObjectList = Vec::new();
         for obj in node.borrow().objects.iter() {
             if Rc::ptr_eq(obj, test_obj) { continue; }
-            let (o, other) = (obj.borrow(), test_obj.borrow());
-            let dist = (other.center() - o.center()).dot(other.center() - o.center());
-            if dist < (o.radius() + other.radius()).powi(2) {
+            if obj.borrow().bounding_sphere_collide(&*test_obj.borrow()) {
                 v.push(obj.clone())
             }
         }
@@ -133,9 +133,28 @@ impl ONode {
         v
     }
 
+    /// Gets all objects that have overlappring bounding spheres as `test` object that is a parent of `test_obj`
+    /// 
+    /// `node` - the containing octree cell of `test_obj`
+    fn get_parent_colliders(node: &Rc<RefCell<ONode>>, test_obj: &Rc<RefCell<Object>>) -> ObjectList {
+        let mut n = node.borrow().parent.clone();
+        let mut v = Vec::new();
+        while let Some(parent) = n.upgrade() {
+            for obj in &parent.borrow().objects {
+                if obj.borrow().bounding_sphere_collide(&*test_obj.borrow()){
+                    v.push(obj.clone())
+                }
+            }
+            n = parent.borrow().parent.clone();
+        }
+        v
+    }
+
     pub fn get_possible_colliders(obj: &Rc<RefCell<Object>>) -> ObjectList {
         if let Some(cell) = obj.borrow().octree_cell.upgrade() {
-            ONode::get_subtree_colliders(&cell, obj)
+            let mut v = ONode::get_subtree_colliders(&cell, obj);
+            v.append(&mut ONode::get_parent_colliders(&cell, obj));
+            v
         } else { Vec::new() }
     }
 
@@ -145,14 +164,18 @@ impl ONode {
     pub fn update(&mut self, obj: &Rc<RefCell<Object>>) {
         if let Some(parent) = self.parent.upgrade() {
             if ONode::get_octant_index(&parent.borrow().center, parent.borrow().h_width, obj) != Some(self.self_index) {
+                self.objects.retain(|o| !Rc::ptr_eq(o, obj));
                 return parent.borrow_mut().insert(obj.clone())
             }
         } 
         if let Some(child_idx) = ONode::get_octant_index(&self.center, self.h_width, &obj) {
-            self.children.as_mut().map(|c| {
-                obj.borrow_mut().octree_cell = Rc::downgrade(&c[child_idx as usize]);
-                c[child_idx as usize].borrow_mut().insert(obj.clone())
-            });
+            match self.children.as_mut() {
+                Some(children) => {
+                    self.objects.retain(|o| !Rc::ptr_eq(o, obj));
+                    children[child_idx as usize].borrow_mut().insert(obj.clone())
+                },
+                _ => (),
+            }
         } 
     }
 }
@@ -163,9 +186,12 @@ pub struct Octree {
 
 impl Octree {
     /// Inserts a node in the tree. If the node doesn't fit,
-    /// it stays at the root node
+    /// ~~it stays at the root node~~ panics
     #[inline(always)]
     pub fn insert(&mut self, obj: Rc<RefCell<Object>>) {
+        if obj.borrow().radius() > self.root.borrow().h_width * 2. {
+            panic!("Cannot fit into tree");
+        }
         self.root.borrow_mut().insert(obj)
     }
 
@@ -225,10 +251,35 @@ impl Octree {
 mod test {
     use super::*;
     use crate::node;
+    use assertables::*;
     
     fn new_obj(center: Point3<f64>, radius: f64) -> Rc<RefCell<Object>> {
         Rc::new(RefCell::new(Object::new(Rc::new(RefCell::new(node::Node::new(Some(center), None, None, None))), 
             radius)))
+    }
+
+    fn random_obj(tree_center: Point3<f64>, tree_width: f64) -> Rc<RefCell<Object>> {
+        use rand::Rng;
+        let mut rnd = rand::thread_rng();
+        let c = point3(tree_center.x + rnd.gen_range(-tree_width .. tree_width),
+            tree_center.y + rnd.gen_range(-tree_width .. tree_width),
+            tree_center.z + rnd.gen_range(-tree_width .. tree_width));
+        new_obj(c, rnd.gen_range(0. .. tree_width))
+    }
+
+    fn random_pt(tree_center: Point3<f64>, tree_width: f64) -> Point3<f64> {
+        use rand::Rng;
+        let mut rnd = rand::thread_rng();
+        point3(tree_center.x + rnd.gen_range(-tree_width .. tree_width),
+            tree_center.y + rnd.gen_range(-tree_width .. tree_width),
+            tree_center.z + rnd.gen_range(-tree_width .. tree_width))
+        
+    }
+
+    fn random_radius(r: f64) -> f64 {
+        use rand::Rng;
+        let mut rnd = rand::thread_rng();
+        rnd.gen_range(0. .. r)
     }
 
     #[test]
@@ -385,5 +436,70 @@ mod test {
         assert_eq!(ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj), None);
         trans.borrow_mut().scale = vec3(10., 3., 1.);
         trans.borrow_mut().pos = point3(-20., -20., -20.);
+    }
+
+    #[test]
+    fn parent_colliders_test() {
+        let mut ot = Octree::new(point3(0., 0., 0.), 25.);
+        let parent_collider = new_obj(point3(0., 0., 0.), 20.);
+        let obj = [
+            new_obj(point3(3., 3., 3.), 2.),
+            new_obj(point3(-3., -3., -3.), 2.),
+            new_obj(point3(-5., 3., 3.), 2.),
+            new_obj(point3(-10., -3., 3.), 2.),
+            new_obj(point3(3., 3., 3.), 2.),
+            new_obj(point3(4., 3., -3.), 2.),
+            new_obj(point3(-5., 3., 3.), 2.),
+            new_obj(point3(0., -3., 3.), 2.),
+            new_obj(point3(3., 3., 3.), 2.),
+            new_obj(point3(-3., -3., -3.), 2.),
+            new_obj(point3(-5., 3., 3.), 2.),
+            new_obj(point3(-10., -3., 3.), 2.),
+            new_obj(point3(3., 3., 3.), 2.),
+            new_obj(point3(4., 3., -3.), 2.),
+            new_obj(point3(-5., 3., 3.), 2.),
+            new_obj(point3(0., -3., 3.), 2.),
+            parent_collider.clone(),
+        ];
+        for o in &obj {
+            ot.insert(o.clone());
+        }
+        assert_eq!(ot.get_colliders(&obj[0]).iter().any(|x| Rc::ptr_eq(x, &parent_collider)), true);
+    }
+
+    #[test]
+    fn randomized_test() {
+        use rand::thread_rng;
+        use rand::seq::SliceRandom;
+        let mut tree = Octree::new(point3(0., 0., 0.), 200.);
+        let mut objs : ObjectList = (0 .. 300).map(|_| {
+            let o = random_obj(point3(0., 0., 0.), 200.);
+            tree.insert(o.clone());
+            o
+        }).collect();
+        for o in &objs {
+            let colliders : Vec<*const Object> 
+                = objs.iter().filter(|e| {
+                !Rc::ptr_eq(o, e) && e.borrow().bounding_sphere_collide(&*o.borrow())
+            }).map(|x| x.as_ptr() as *const Object).collect();
+            let tree_colliders : Vec<*const Object> 
+                = tree.get_colliders(o).iter().map(|x| x.as_ptr() as *const Object).collect();
+            assert_bag_eq!(colliders, tree_colliders);
+        }
+        objs.shuffle(&mut thread_rng());
+        for i in objs.iter().take(100) {
+            i.borrow().model.borrow_mut().pos = random_pt(point3(0., 0., 0.), 200.);
+            i.borrow_mut().local_radius = random_radius(200.);
+            Octree::update(&i);
+        }
+        for o in &objs {
+            let colliders : Vec<*const Object> 
+                = objs.iter().filter(|e| {
+                !Rc::ptr_eq(o, e) && e.borrow().bounding_sphere_collide(&*o.borrow())
+            }).map(|x| x.as_ptr() as *const Object).collect();
+            let tree_colliders : Vec<*const Object> 
+                = tree.get_colliders(o).iter().map(|x| x.as_ptr() as *const Object).collect();
+            assert_bag_eq!(colliders, tree_colliders);
+        }
     }
 }

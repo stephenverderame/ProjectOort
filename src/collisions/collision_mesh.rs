@@ -77,6 +77,8 @@ impl CollisionMesh {
         (center, extents.x.max(extents.y.max(extents.z)))
     }
 
+    /// Gets a tuple of the largest bounding volume in the tree and the leaf bounding volumes
+    #[allow(dead_code)]
     pub fn main_and_leaf_boxes(&self) -> (Vec<obb::AABB>, Vec<obb::AABB>) {
         let mut main_boxes = Vec::new();
         let mut leaf_boxes = Vec::new();
@@ -87,6 +89,22 @@ impl CollisionMesh {
         }
         (main_boxes, leaf_boxes)
     }
+
+    /// Testing method to get colliding bounding boxes
+    #[allow(dead_code)]
+    pub fn get_colliding_volumes(&self, self_transform: &Matrix4<f64>, other: &CollisionMesh,
+        other_transform: &Matrix4<f64>) -> (Vec<obb::AABB>, Vec<obb::AABB>) {
+        let mut our_v = Vec::new();
+        let mut other_v = Vec::new();
+        for sb in &self.sub_meshes {
+            for o_sb in &other.sub_meshes {
+                let (mut our, mut other) = sb.get_colliding_volumes(self_transform, o_sb, other_transform);
+                our_v.append(&mut our);
+                other_v.append(&mut other);
+            }
+        }
+        (our_v, other_v)
+    }
 }
 
 #[cfg(test)]
@@ -96,6 +114,7 @@ mod test {
     use crate::shader;
     use super::super::bvh;
     use crate::node;
+    use serial_test::serial;
     
     fn init() -> (shader::ShaderManager, glium::Display) {
         use glium::*;
@@ -113,6 +132,7 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn basic_collisions() {
         let method = highp_col::HighPNone {};
         let plane_mesh = CollisionMesh::new("assets/Ships/StarSparrow01.obj", TreeStopCriteria::default());
@@ -123,9 +143,10 @@ mod test {
     }
 
     #[test]
+    #[serial]
     fn triangle_tests() {
-        let (shader, disp) = init();
-        let strat = highp_col::TriangleTriangleGPU::new(&shader, &disp);
+        let (shader, _) = init();
+        let strat = highp_col::TriangleTriangleGPU::new(&shader);
         let vertices = vec![point3(1f32, 0., 0.), point3(0., 1., 0.), point3(-1., 0., 0.)];
         let triangle = bvh::Triangle::array_from(vec![0, 1, 2], &vertices as *const Vec<Point3<f32>>);
         let mut t_b = node::Node::default();
@@ -152,8 +173,11 @@ mod test {
         assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), false); // random triangle no intersect
         t_a.pos = point3(-0.16618f64, 0.97175, 0.65434);
         assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), true); // random triangle intersect
-        t_a.pos = point3(0.051302f64, 0.537728, 0.083144);
-        t_a.scale = vec3(0.5, 1., 3f64);
-        assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), true); // random triangle intersect via off-center scale
+        t_a = node::Node::default();
+        t_b = node::Node::default();
+        t_a.pos = point3(1.06508f64, 0.559814, 0.);
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true); //coplanar intersect
+        t_a.pos = point3(3f64, 0., 0.);
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), false); //coplanar no intersect
     }
 }

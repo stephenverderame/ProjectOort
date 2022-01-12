@@ -48,6 +48,7 @@ impl ShaderType {
                         .. Default::default()
                     },
                     backface_culling: glium::BackfaceCullingMode::CullClockwise,
+                    //polygon_mode: glium::PolygonMode::Line,
                     .. Default::default()
                 },
             CollisionDebug => 

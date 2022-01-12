@@ -27,6 +27,8 @@ impl Object {
         self.local_radius * max_extents
     }
 
+    /// Testing helper function to make a new object
+    #[allow(dead_code)]
     pub fn new(transform: Rc<RefCell<node::Node>>, radius: f64) -> Object {
         Object {
             model: transform,
@@ -47,6 +49,12 @@ impl Object {
             octree_cell: Weak::new(),
             mesh: Rc::downgrade(mesh),
         }
+    }
+
+    /// True if this object's bounding sphere overlaps with `other`'s bounding sphere
+    pub fn bounding_sphere_collide(&self, other: &Object) -> bool {
+        let dist2 = (self.center() - other.center()).dot(self.center() - other.center());
+        (self.radius() + other.radius()).powi(2) >= dist2 
     }
 }
 

@@ -187,11 +187,14 @@ impl<T : Copy> SSBO<T> {
 
     }
 
+
+    /// Copies the data from the buffer
+    #[allow(dead_code)]
     pub fn get_data(&self) -> Vec<T> {
         let mut v = Vec::<T>::new();
         v.resize(self.buffer_count as usize, unsafe { std::mem::zeroed() });
         unsafe {
-            println!("Read size {}", (std::mem::size_of::<T>() * self.buffer_count as usize) as isize);
+            //println!("Read size {}", (std::mem::size_of::<T>() * self.buffer_count as usize) as isize);
             gl::GetNamedBufferSubData(self.buffer, 0,
                 (std::mem::size_of::<T>() * self.buffer_count as usize) as isize, 
                 v.as_mut_ptr() as *mut std::ffi::c_void);
