@@ -1,7 +1,7 @@
 #version 430
 
 struct Triangle {
-    vec4 v[3];
+    vec4 v[4];
 };
 
 layout(std430, binding = 5) readonly buffer ATriangles {

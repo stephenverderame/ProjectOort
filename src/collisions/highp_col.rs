@@ -17,10 +17,12 @@ use crate::ssbo;
 use cgmath::*;
 
 #[derive(Clone, Copy, Debug)]
+#[repr(align(64))]
 struct ShaderTriangle {
     _a: [f32; 4],
     _b: [f32; 4],
     _c: [f32; 4],
+    _d: [f32; 4],
 }
 pub struct TriangleTriangleGPU<'a> {
     shader_manager: &'a shader::ShaderManager,
@@ -48,6 +50,7 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
                     _a: (mat * vec4(verts[0].x, verts[0].y, verts[0].z, 1.0).cast().unwrap()).cast().unwrap().into(),
                     _b: (mat * vec4(verts[1].x, verts[1].y, verts[1].z, 1.0).cast().unwrap()).cast().unwrap().into(),
                     _c: (mat * vec4(verts[2].x, verts[2].y, verts[2].z, 1.0).cast().unwrap()).cast().unwrap().into(),
+                    _d: [0., 0., 0., 0.],
                 }
             }
         };
@@ -58,7 +61,7 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
         let a_len = a_triangles.len() as u32;
         let b_len = b_triangles.len() as u32;
 
-        let input_a = ssbo::SSBO::create_static(a_triangles);
+        let input_a = ssbo::SSBO::create_static(a_triangles/*.clone()*/);
         let input_b = ssbo::SSBO::create_static(b_triangles);
 
         let work_groups_x = ((a_len + a_len % TriangleTriangleGPU::WORK_GROUP_SIZE) / 
@@ -68,13 +71,28 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
 
         let output : ssbo::SSBO<[f32; 4]> 
             = ssbo::SSBO::static_empty(work_groups_x * work_groups_y);
-            //= ssbo::SSBO::create_static(out);
         
         input_a.bind(5);
         input_b.bind(6);
         output.bind(7);
         self.shader_manager.execute_compute(work_groups_x, work_groups_y, 1, 
             shader::UniformInfo::TriangleCollisionsInfo, None);
+
+        /*let a_data = input_a.get_data();
+        assert_eq!(a_data.len(), a_triangles.len());
+        let rng = 0 .. 2;
+        for (e, idx) in a_data.iter().zip(rng.clone()) {
+            println!("GPU {:?}\n", e);
+            println!("CPU {:?}\n\n", a_triangles[idx]);
+        }
+        for (e, idx) in a_data.into_iter().zip(rng) {
+            assert_relative_eq!(point3(e._a[0], e._a[1], e._a[2]), 
+                point3(a_triangles[idx]._a[0], a_triangles[idx]._a[1], a_triangles[idx]._a[2]));
+            assert_relative_eq!(point3(e._b[0], e._b[1], e._b[2]), 
+                point3(a_triangles[idx]._b[0], a_triangles[idx]._b[1], a_triangles[idx]._b[2]));
+            assert_relative_eq!(point3(e._c[0], e._c[1], e._c[2]), 
+                point3(a_triangles[idx]._c[0], a_triangles[idx]._c[1], a_triangles[idx]._c[2]));
+        }*/
 
         for e in output.map_read().as_slice().iter() {
             //println!("Output got {:?}", e);
@@ -90,10 +108,8 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
 pub struct TriangleTriangleCPU {}
 
 impl TriangleTriangleCPU {
+    // see triTriComp.glsl (this is a translation of the compute shader)
 
-    /// gets the t value of the intersection point of the parameterized line
-    /// vert[index] to vert[0] and the triangle intersection line
-    /// requires index is 1 or 2
     fn get_t(verts_on_l: &Vector3<f64>, dist_to_plane: &Vector3<f64>, 
         opposite_idx: usize, vert_idx: usize) -> f64 
     {
@@ -101,13 +117,6 @@ impl TriangleTriangleCPU {
         dist_to_plane[vert_idx] / (dist_to_plane[vert_idx] - dist_to_plane[opposite_idx])
     }
 
-    /// gets the overlap interval of a triangle
-    /// `project_on_l` - the values of vertex 0, 1, 2 projected onto the line
-    /// `signed_dists` - the signed distance of vertex 0, 1, 2 to the other triangle's plane
-    /// `vertices` - the index of the vertex on the opposisite side of the other triangle's plane
-    ///  followed by the indices of the vertices on the same side of the plane
-    ///  so signed_dists[vertices.x] should have opposite sign as signed_dists[vertices.y] and
-    ///  signed_dists[vertices.z]
     fn get_interval(project_on_l: &Vector3<f64>, signed_dists: &Vector3<f64>, 
         vert_indices: (usize, usize, usize)) -> (f64, f64) 
     {
@@ -115,15 +124,12 @@ impl TriangleTriangleCPU {
         TriangleTriangleCPU::get_t(project_on_l, signed_dists, vert_indices.0, vert_indices.2))
     }
 
-    /// orders v so that v.x <= v.y
     fn order_interval(interval: (f64, f64)) -> (f64, f64) {
         if interval.0 > interval.1 {
             (interval.1, interval.0)
         } else { interval }
     }
 
-    /// Tests wether the intervals defined by t_a and t_b overlap
-    /// Intervals do not need to be in ascending order (ie. x, does not need to be the min)
     fn interval_overlap(a_t: (f64, f64), b_t: (f64, f64)) -> bool {
         let a_t = TriangleTriangleCPU::order_interval(a_t);
         let b_t = TriangleTriangleCPU::order_interval(b_t);
@@ -146,7 +152,6 @@ impl TriangleTriangleCPU {
         idx
     }
 
-    /// gets index of element with opposite sign followed by indices of elements with same sign
     fn opp_vert(v: &Vector3<f64>) -> (usize, usize, usize) {
         if v[0] * v[1] > 0. {
             (2, 0, 1)
@@ -157,8 +162,6 @@ impl TriangleTriangleCPU {
         }
     }
 
-    /// Gets a tuple of true/false if all points of b are on the same side of plane of a
-    /// and signed distances of all of `b_verts` to plane of A
     fn plane_test(pt_on_a: &Point3<f64>, b_verts: &Vec<Point3<f64>>, norm_a: &Vector3<f64>) -> (bool, Vector3<f64>) {
         let d = dot(-1. * norm_a, pt_on_a.to_vec());
         let signed_dists = vec3(d, d, d) + vec3(norm_a.dot(b_verts[0].to_vec()),
@@ -187,14 +190,13 @@ impl TriangleTriangleCPU {
         let qpr = cross_2d(&(start_b - start_a), &a);
     
         if rs.abs() < f64::EPSILON && qpr.abs() < f64::EPSILON {
-            // colinear, project onto line and test overlap
             let l = a.normalize();
             let t_a = (dot(start_a.to_vec(), l), dot(end_a.to_vec(), l));
             let t_b = (dot(start_b.to_vec(), l), dot(end_b.to_vec(), l));
             return TriangleTriangleCPU::interval_overlap(t_a, t_b)
         }
         else if rs.abs() < f64::EPSILON {
-            return false; // parallel
+            return false; 
         } 
     
         let t = cross_2d(&(start_b - start_a), &b) / rs;
@@ -205,8 +207,6 @@ impl TriangleTriangleCPU {
     }
 
     fn coplanar_test(plane_norm: Vector3<f64>, a_verts: &Vec<Point3<f64>>, b_verts: &Vec<Point3<f64>>) -> bool {
-        // project onto axis-aligned plane that is closest to the plane
-        // both triangles are on and perform 2d triangle collision detection
         let axis = TriangleTriangleCPU::abs_max_dim(&plane_norm);
         let x = (axis + 1) % 3;
         let y = (axis + 2) % 3;
@@ -233,27 +233,19 @@ impl TriangleTriangleCPU {
         let (b_same_side, b_dist_to_a) = TriangleTriangleCPU::plane_test(&a_verts[0], &b_verts, &a_norm);
         let (a_same_side, a_dist_to_b) = TriangleTriangleCPU::plane_test(&b_verts[0], &a_verts, &b_norm);
         if !b_same_side && !a_same_side {
-            // a line must pass through both triangles
-            // this line's direction is the cross product of the normals
             if TriangleTriangleCPU::is_coplanar(&b_dist_to_a) {
                 return TriangleTriangleCPU::coplanar_test(a_norm, a_verts, b_verts)
             }
             let line = a_norm.cross(b_norm).normalize();
-            // overlap test doesn't change if we project not onto v, but onto
-            // the coordinate axis for which v is most closely aligned
             let idx = TriangleTriangleCPU::abs_max_dim(&line);
             let a_onto_line = vec3(a_verts[0][idx], a_verts[1][idx], a_verts[2][idx]);
             let b_onto_line = vec3(b_verts[0][idx], b_verts[1][idx], b_verts[2][idx]);
-            // we find intersections between the two edges connecting the vertex that
-            // is on the other side of the triangle plane as the other two vertices
-            // and v projected onto its world axis
             let a_int = TriangleTriangleCPU::get_interval(&a_onto_line, &a_dist_to_b, 
                 TriangleTriangleCPU::opp_vert(&a_dist_to_b));
             let b_int = TriangleTriangleCPU::get_interval(&b_onto_line, &b_dist_to_a, 
                 TriangleTriangleCPU::opp_vert(&b_dist_to_a));
             TriangleTriangleCPU::interval_overlap(a_int, b_int)
         } else {
-            // all vertices of a triangle on the same side of the other triangle's plane
             false
         }
     }

@@ -185,7 +185,7 @@ mod test {
     #[serial]
     fn collision_tests() {
         let (shader, _) = init();
-        let strat = highp_col::TriangleTriangleCPU {};//highp_col::TriangleTriangleGPU::new(&shader);
+        let strat = /*highp_col::TriangleTriangleCPU {};*/highp_col::TriangleTriangleGPU::new(&shader);
         let ship = CollisionMesh::new("assets/Ships/StarSparrow01.obj", TreeStopCriteria::AlwaysStop);
         let asteroid = CollisionMesh::new("assets/asteroid1/Asteroid.obj", TreeStopCriteria::AlwaysStop);
         let mut t_ship = node::Node::new(Some(point3(-14.2537f64, 32.5402f64, -39.6763)),

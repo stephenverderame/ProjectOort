@@ -195,7 +195,8 @@ impl<T : Copy> SSBO<T> {
         v.resize(self.buffer_count as usize, unsafe { std::mem::zeroed() });
         unsafe {
             //println!("Read size {}", (std::mem::size_of::<T>() * self.buffer_count as usize) as isize);
-            gl::GetNamedBufferSubData(self.buffer, 0,
+            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
+            gl::GetBufferSubData(gl::SHADER_STORAGE_BUFFER, 0,
                 (std::mem::size_of::<T>() * self.buffer_count as usize) as isize, 
                 v.as_mut_ptr() as *mut std::ffi::c_void);
             assert_no_error!();

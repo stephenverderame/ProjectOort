@@ -161,7 +161,7 @@ fn main() {
     let (sky_cbo, sky_hdr_cbo) = gen_skybox(1024, &shader_manager, &wnd_ctx);
     let main_skybox = Rc::new(RefCell::new(skybox::Skybox::new(skybox::SkyboxTex::Cube(sky_cbo), &wnd_ctx)));
     let (pre_filter, brdf_lut) = gen_prefilter_hdr_env(main_skybox.clone(), 128, &shader_manager, &wnd_ctx);
-    let collision_compute = collisions::TriangleTriangleCPU {}; //collisions::TriangleTriangleGPU::new(&shader_manager);
+    let collision_compute = collisions::TriangleTriangleGPU::new(&shader_manager);
 
     gen_asteroid_field(&mut asteroid, &wnd_ctx, &mut collision_tree);
     collision_tree.insert(&(*user.borrow()).collision_obj, collisions::ObjectType::Dynamic);
@@ -209,7 +209,7 @@ fn main() {
     let mut laser = entity::EntityFlyweight::new(model::Model::new("assets/laser2.obj", &wnd_ctx));
     let container = entity::Entity::from(model::Model::new("assets/BlackMarble/floor.obj", &wnd_ctx), 
         node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None));
-    let mut debug_cube = skybox::DebugCube::new(node::Node::default(), &wnd_ctx);
+    //let mut debug_cube = skybox::DebugCube::new(node::Node::default(), &wnd_ctx);
 
     laser.new_instance(entity::EntityInstanceData {
         transform: Rc::new(RefCell::new(node::Node::new(
@@ -248,12 +248,12 @@ fn main() {
                     handle_shots(&u, &controller, &mut laser, &wnd_ctx);
                 }
                 let user_colliders = collision_tree.get_colliders(&user.borrow().collision_obj);
-                let mut cubes = Vec::new();
+                //let mut cubes = Vec::new();
                for collider in user_colliders {
-                    cubes.append(&mut collider.get_colliding_volume_transformations(&(*user.borrow()).collision_obj));
+                    //cubes.append(&mut collider.get_colliding_volume_transformations(&(*user.borrow()).collision_obj));
                     if collider.is_collision(&(*user.borrow()).collision_obj, &collision_compute) {
-                        println!("{:?}", user.borrow().root);
-                        println!("{:?}", *collider.get_transformation().borrow());
+                        //println!("{:?}", user.borrow().root);
+                        //println!("{:?}", *collider.get_transformation().borrow());
                         *user.borrow_mut().root.borrow_mut() = old_user_pos;
                         break;
                     }
@@ -298,10 +298,10 @@ fn main() {
                     asteroid.render(fbo, &scene_data, cache, &shader_manager);
                     container.render(fbo, &scene_data, cache, &shader_manager);
                     asteroid_character.borrow().render(fbo, &scene_data, cache, &shader_manager);
-                    for c in &cubes {
+                    /*for c in &cubes {
                         debug_cube.transform = c.clone();
                         debug_cube.render(fbo, &scene_data, cache, &shader_manager);
-                    }
+                    }*/
                 });
                 controller.reset_toggles();
                 let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 
