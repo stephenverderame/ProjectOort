@@ -122,6 +122,11 @@ impl CollisionObject {
             Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
         })).collect()
     }
+
+    #[allow(dead_code)]
+    pub fn get_transformation(&self) -> Rc<RefCell<node::Node>> {
+        self.obj.borrow().model.clone()
+    }
 }
 #[derive(PartialEq, Eq)]
 pub enum ObjectType {

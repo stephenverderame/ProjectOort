@@ -180,4 +180,37 @@ mod test {
         t_a.pos = point3(3f64, 0., 0.);
         assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), false); //coplanar no intersect
     }
+
+    #[test]
+    #[serial]
+    fn collision_tests() {
+        let (shader, _) = init();
+        let strat = highp_col::TriangleTriangleCPU {};//highp_col::TriangleTriangleGPU::new(&shader);
+        let ship = CollisionMesh::new("assets/Ships/StarSparrow01.obj", TreeStopCriteria::AlwaysStop);
+        let asteroid = CollisionMesh::new("assets/asteroid1/Asteroid.obj", TreeStopCriteria::AlwaysStop);
+        let mut t_ship = node::Node::new(Some(point3(-14.2537f64, 32.5402f64, -39.6763)),
+            Some(Quaternion::new(0.016473, 0.091357, 0.971325, 0.218883)),
+            None, None);
+        let mut t_ast = node::Node::new(Some(point3(-7.56163f64, 50.2958, -20.4725)), 
+            Some(Quaternion::new(0.142821f64, 0.96663, -0.146196, -0.154451)),
+            Some(vec3(0.375723f64, 0.375723, 0.375723)), None);
+
+        assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat), false);
+
+        t_ship = node::Node::new(Some(point3(-3.095402600732103f64, 9.244842371955391, 8.95973740527222)),
+            Some(Quaternion::new(0.8425839759656641f64, -0.4024286753361133, 0.03029610177936822, 0.3566308328371091)),
+            None, None);
+        t_ast = node::Node::new(Some(point3(-22.790083507848195f64, 12.473857310034916, 10.514631403774104)),
+            Some(Quaternion::new(0.9999590317878406f64, 0.007635050334856993, -0.0012676281267735207, -0.004694025057539509)),
+            Some(vec3(0.23743170979346961f64, 0.23743170979346961, 0.23743170979346961)), None);       
+        assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat), false);
+
+
+        t_ship.pos = point3(-25.20556890402142, 34.70378892431485, 33.41363920806364);
+        t_ship.orientation = Quaternion::new(0.20591263538805038, 0.27125974748507087, -0.09978353992557279, -0.9349124991900651);
+        t_ast.pos = point3(-37.86042001868104, 17.471324865149157, 39.919355753951976);
+        t_ast.orientation = Quaternion::new(0.7633320035030866, -0.41610255061356016, -0.27499327009999497, -0.4105625667307782);
+        t_ast.scale = vec3(0.23288870438198583, 0.23288870438198583, 0.23288870438198583);
+        assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat), false);
+    }
 }

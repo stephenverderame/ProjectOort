@@ -125,43 +125,6 @@ bool lineIntersection2D(vec2 start_a, vec2 end_a, vec2 start_b, vec2 end_b) {
     return t >= -eps && t <= 1 + eps && u >= -eps && u <= 1 + eps;
 }
 
-bool pointInTriangle(vec2 point, vec2 a, vec2 b, vec2 c) {
-    vec2 p = point - a;
-    mat2 A = mat2(b - a, c - a);
-
-    vec2 o = p * inverse(A);
-    // o is the barycentric coordinates for point with respect to the triangle
-    return o.x > -eps && o.y > -eps && o.x + o.y < 1 + eps;
-}
-
-bool pointInTriangle3D(Triangle t, vec3 p) {
-    mat3 A = mat3(t.v[0].xyz, t.v[1].xyz, t.v[2].xyz);
-    vec3 y = p * inverse(A);
-
-    return y.x > -eps && y.y > -eps && y.z > -eps &&
-        abs(y.x + y.y + y.z - 1) < eps;
-}
-
-bool lineTriangleTest(Triangle tri, vec3 start, vec3 end) {
-    vec3 r = end - start;
-    vec3 y = tri.v[0].xyz - start;
-    mat3 A = mat3(tri.v[0].xyz - tri.v[1].xyz, tri.v[0].xyz - tri.v[2].xyz, r);
-    mat3 oldA = A;
-    float det_A = determinant(A);
-
-    A[0] = y;
-    float beta = determinant(A) / det_A;
-    A[0] = oldA[0];
-    A[1] = y;
-    float gamma = determinant(A) / det_A;
-    A[1] = oldA[1];
-    A[2] = y;
-    float t = determinant(A) / det_A;
-
-    return beta >= -eps && gamma >= -eps && beta + gamma <= 1 + eps 
-        && t >= -eps && t <= 1 + eps;
-}
-
 /// Gets a vector containing the vertex index of the vertex that is on the opposite
 /// side of the plane as the other two vertices, followed by the other two vertices
 // on the same side of the plane
@@ -230,92 +193,7 @@ void mollerTriangleTest(uvec2 location) {
             || lineIntersection2D(a1, a3, b1, b3)) 
         {
             atomicAdd(collisions, 1);
-        } /*else if (pointInTriangle(a1, b1, b2, b3) || pointInTriangle(a2, b1, b2, b3)
-            || pointInTriangle(a3, b1, b2, b3) || pointInTriangle(b1, a1, a2, a3)
-            || pointInTriangle(b2, a1, a2, a3) || pointInTriangle(b3, a1, a2, a3)) 
-        {
-            atomicAdd(collisions, 5);
-        }*/
-    }
-}
-
-// min and max interval of the triangle projected onto the line
-// requires line is normalized
-vec2 projectOnto(Triangle t, vec3 line) {
-    vec2 o = vec2(dot(t.v[0].xyz, line));
-    for(int i = 1; i < 3; ++i) {
-        float x = dot(t.v[i].xyz, line);
-        o.x = min(x, o.x);
-        o.y = max(x, o.y);
-    }
-    return o;
-}
-
-bool testAxis(Triangle a, Triangle b, vec3 axis) {
-    vec2 int_a = projectOnto(a, axis);
-    vec2 int_b = projectOnto(b, axis);
-    return intervalOverlap(int_a, int_b);
-}
-
-bool testCompoundAxis(Triangle a, Triangle b, vec3 c, vec3 d, vec3 e, vec3 f) {
-    vec3 axis = cross(d - c, f - e);
-    if (length(axis) < eps) {
-        vec3 t = cross(d - c, e - c);
-        axis = cross(d - c, t);
-        if (length(axis) < eps) return false;
-    }
-    axis = normalize(axis);
-    return testAxis(a, b, axis);
-}
-
-void satTest(uvec2 location) {
-    Triangle a = a_triangles[location.x];
-    Triangle b = b_triangles[location.y];
-    vec3 a_norm = normalize(cross(a.v[2].xyz - a.v[0].xyz, a.v[1].xyz - a.v[0].xyz));
-    vec3 b_norm = normalize(cross(b.v[2].xyz - b.v[0].xyz, b.v[1].xyz - b.v[0].xyz));
-
-    if (!testAxis(a, b, a_norm) || !testAxis(a, b, b_norm)) return;
-    if (!testCompoundAxis(a, b, a.v[0].xyz, a.v[1].xyz, b.v[0].xyz, b.v[1].xyz)) 
-        return;
-    if (!testCompoundAxis(a, b, a.v[0].xyz, a.v[1].xyz, b.v[1].xyz, b.v[2].xyz)) 
-        return;
-    if (!testCompoundAxis(a, b, a.v[0].xyz, a.v[1].xyz, b.v[0].xyz, b.v[2].xyz)) 
-        return;
-    if (!testCompoundAxis(a, b, a.v[0].xyz, a.v[2].xyz, b.v[0].xyz, b.v[1].xyz)) 
-        return;
-    if (!testCompoundAxis(a, b, a.v[0].xyz, a.v[2].xyz, b.v[1].xyz, b.v[2].xyz)) 
-        return;
-    if (!testCompoundAxis(a, b, a.v[0].xyz, a.v[2].xyz, b.v[0].xyz, b.v[2].xyz)) 
-        return;
-    if (!testCompoundAxis(a, b, a.v[2].xyz, a.v[1].xyz, b.v[0].xyz, b.v[1].xyz)) 
-        return;
-    if (!testCompoundAxis(a, b, a.v[2].xyz, a.v[1].xyz, b.v[1].xyz, b.v[2].xyz)) 
-        return;
-    if (!testCompoundAxis(a, b, a.v[2].xyz, a.v[1].xyz, b.v[0].xyz, b.v[2].xyz)) 
-        return;
-    atomicAdd(collisions, 1);
-}
-
-void naiveTest(uvec2 location) {
-    Triangle a = a_triangles[location.x];
-    Triangle b = b_triangles[location.y];
-
-    if (lineTriangleTest(a, b.v[0].xyz, b.v[1].xyz) ||
-        lineTriangleTest(a, b.v[0].xyz, b.v[2].xyz) ||
-        lineTriangleTest(a, b.v[1].xyz, b.v[2].xyz) ||
-        lineTriangleTest(b, a.v[0].xyz, a.v[1].xyz) ||
-        lineTriangleTest(b, a.v[0].xyz, a.v[2].xyz) ||
-        lineTriangleTest(b, a.v[1].xyz, a.v[2].xyz)) 
-    {
-        atomicAdd(collisions, 1);
-    } else if (pointInTriangle3D(a, b.v[0].xyz) ||
-        pointInTriangle3D(a, b.v[1].xyz) ||
-        pointInTriangle3D(a, b.v[2].xyz) ||
-        pointInTriangle3D(b, a.v[0].xyz) ||
-        pointInTriangle3D(b, a.v[1].xyz) ||
-        pointInTriangle3D(b, a.v[2].xyz))
-    {
-        atomicAdd(collisions, 1);
+        }
     }
 }
 
@@ -330,8 +208,6 @@ void main() {
 
     if (location.x < a_triangles.length() && location.y < b_triangles.length()) {
         mollerTriangleTest(location);
-        //naiveTest(location);
-        //satTest(location);
     }
 
     barrier();

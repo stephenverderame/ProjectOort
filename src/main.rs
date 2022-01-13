@@ -161,7 +161,7 @@ fn main() {
     let (sky_cbo, sky_hdr_cbo) = gen_skybox(1024, &shader_manager, &wnd_ctx);
     let main_skybox = Rc::new(RefCell::new(skybox::Skybox::new(skybox::SkyboxTex::Cube(sky_cbo), &wnd_ctx)));
     let (pre_filter, brdf_lut) = gen_prefilter_hdr_env(main_skybox.clone(), 128, &shader_manager, &wnd_ctx);
-    let collision_compute = collisions::TriangleTriangleGPU::new(&shader_manager);
+    let collision_compute = collisions::TriangleTriangleCPU {}; //collisions::TriangleTriangleGPU::new(&shader_manager);
 
     gen_asteroid_field(&mut asteroid, &wnd_ctx, &mut collision_tree);
     collision_tree.insert(&(*user.borrow()).collision_obj, collisions::ObjectType::Dynamic);
@@ -252,6 +252,8 @@ fn main() {
                for collider in user_colliders {
                     cubes.append(&mut collider.get_colliding_volume_transformations(&(*user.borrow()).collision_obj));
                     if collider.is_collision(&(*user.borrow()).collision_obj, &collision_compute) {
+                        println!("{:?}", user.borrow().root);
+                        println!("{:?}", *collider.get_transformation().borrow());
                         *user.borrow_mut().root.borrow_mut() = old_user_pos;
                         break;
                     }

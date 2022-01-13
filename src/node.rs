@@ -10,7 +10,7 @@ use std::cell::RefCell;
 /// 
 /// Conversion of a Node into a `Matrix4` returns the transformation matrix from
 /// this node's local space to world space. 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Node {
     pub pos: cgmath::Point3<f64>,
     pub scale: cgmath::Vector3<f64>,
