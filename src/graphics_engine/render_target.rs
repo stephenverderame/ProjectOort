@@ -7,9 +7,9 @@ struct Vertex {
 glium::implement_vertex!(Vertex, pos, tex_coords);
 
 use glium::Surface;
-use crate::shader;
-use crate::draw_traits::*;
-use crate::ssbo;
+use super::shader;
+use super::draw_traits::*;
+use crate::cg_support::ssbo;
 use glium::*;
 use glium::framebuffer::ToDepthAttachment;
 use framebuffer::ToColorAttachment;
@@ -241,7 +241,7 @@ impl CubemapRenderBase {
     /// 
     /// `func` - callable to render a single face of a cubemap. Passed a cube face and camera
     fn draw(&self, func: &mut dyn FnMut(texture::CubeLayer, &dyn Viewer)) {
-        use crate::camera::*;
+        use super::camera::*;
         use cgmath::*;
         let mut cam = PerspectiveCamera {
             cam: self.view_pos,

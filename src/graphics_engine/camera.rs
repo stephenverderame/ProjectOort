@@ -1,4 +1,4 @@
-use crate::draw_traits;
+use super::draw_traits;
 use cgmath::*;
 use draw_traits::Viewer;
 

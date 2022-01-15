@@ -1,7 +1,7 @@
-use crate::model;
-use crate::node;
-use crate::draw_traits;
-use crate::shader;
+use crate::graphics_engine::model;
+use crate::cg_support::node;
+use crate::graphics_engine::drawable;
+use crate::graphics_engine::shader;
 use std::rc::Rc;
 use std::cell::RefCell;
 use crate::collisions;
@@ -60,7 +60,7 @@ impl Entity {
     }
 }
 
-impl draw_traits::Drawable for Entity {
+impl drawable::Drawable for Entity {
     fn render<S>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) 
         where S : glium::Surface
     {
@@ -166,7 +166,7 @@ impl EntityFlyweight {
     }
 }
 
-impl draw_traits::Drawable for EntityFlyweight {
+impl drawable::Drawable for EntityFlyweight {
     fn render<S>(&self, frame: &mut S, scene_data: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager)
         where S : glium::Surface
     {

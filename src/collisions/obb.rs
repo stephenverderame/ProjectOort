@@ -213,7 +213,7 @@ impl AABB {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::node;
+    use crate::cg_support::node;
 
     #[test]
     fn basic_collision() {

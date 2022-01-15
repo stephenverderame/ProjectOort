@@ -1,22 +1,11 @@
 use super::animation::Bone;
 use std::collections::HashMap;
 use super::{to_m4, to_v3, to_v2};
-use crate::{shader, ssbo};
+use super::super::shader;
+use crate::cg_support::ssbo;
 use super::material::*;
+use super::super::drawable::*;
 
-const MAX_BONES_PER_VERTEX : usize = 4;
-
-#[derive(Clone, Copy)]
-struct Vertex {
-    pos: [f32; 3],
-    normal: [f32; 3],
-    tex_coords: [f32; 2],
-    tangent: [f32; 3], 
-    // don't need bitangent since we can compute that as normal x tangent
-    bone_ids: [i32; MAX_BONES_PER_VERTEX],
-    bone_weights: [f32; MAX_BONES_PER_VERTEX],
-}
-glium::implement_vertex!(Vertex, pos, normal, tex_coords, tangent, bone_ids, bone_weights);
 
 /// Creates a OpenGL vbo and ebo for the vertices and indices
 #[inline]
@@ -185,5 +174,12 @@ impl Mesh {
                     panic!("Model get invalid uniform type"),
             }.unwrap()
         });
+    }
+
+    pub fn render_args<'a>(&'a self, model: Option<[[f32; 4]; 4]>, mats: &'a Vec<Material>, bones: Option<&'a ssbo::SSBO::<[[f32; 4]; 4]>>) 
+        -> (shader::UniformInfo<'a>, VertexHolder<'a>, glium::index::IndicesSource<'a>)
+    {
+        let mat = mats[self.mat_idx.min(mats.len() - 1)].to_uniform_args(model.is_none(), model, bones);
+        (mat, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo))
     }
 }

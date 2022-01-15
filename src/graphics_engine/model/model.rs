@@ -1,16 +1,18 @@
 
 
 use assimp::*;
-use crate::textures;
-use crate::shader;
+use super::super::textures;
+use super::super::shader;
 use cgmath::*;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
-use crate::ssbo;
+use crate::cg_support::ssbo;
 use super::mesh::Mesh;
 use super::material::Material;
 use super::animation::{Animator, Bone, AssimpNode};
+use super::super::drawable::*;
+use super::super::instancing;
 
 
 /// A model is geometry loaded from the filesystem
@@ -35,6 +37,7 @@ pub struct Model {
     materials: Vec<Material>,
     animator: Animator,
     bone_buffer: RefCell<Option<ssbo::SSBO<[[f32; 4]; 4]>>>,
+    instances: instancing::InstanceBuffer,
 }
 
 impl Model {
@@ -131,12 +134,12 @@ impl Model {
         } else { None };
         let animator = Animator::new(scene.animation_iter(), Rc::new(bone_map), Rc::new(root_node));
         Model { meshes, materials, animator, 
-            bone_buffer: RefCell::new(bone_buffer) }
+            bone_buffer: RefCell::new(bone_buffer), 
+            instances: instancing::InstanceBuffer::new() }
     }
 
-    /// Render this model with the given scene and pipeline data and model matrix
-    pub fn render<S : glium::Surface>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, model: [[f32; 4]; 4], 
-        manager: &shader::ShaderManager) 
+    /// Render this model once, animating if there is one
+    fn render<'a>(&'a self, model: [[f32; 4]; 4]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
         let bones = self.animator.animate(std::time::Instant::now());
         match (&bones, self.bone_buffer.borrow_mut().as_mut()) {
@@ -146,25 +149,46 @@ impl Model {
             _ => (),
         };
         let bb = self.bone_buffer.borrow();
+        let mut v = Vec::new();
         for mesh in &self.meshes {
-            mesh.render(wnd, mats, local_data, model, manager, &self.materials, 
-                bones.as_ref().and_then(|_| bb.as_ref()));
+            v.push(mesh.render_args(Some(model), &self.materials, 
+                bones.as_ref().and_then(|_| bb.as_ref())));
         }
+        v
     }
 
     /// Render multiple instances of this model
     /// 
     /// `instance_buffer` - VertexBuffer where each element in it is passed to each rendered copy of this model. So this will render an amount of copies equal to elements
     /// in this buffer
-    pub fn render_instanced<S : glium::Surface, T : Copy>(&self, wnd: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, manager: &shader::ShaderManager, 
-        instance_buffer: &glium::vertex::VertexBufferSlice<T>) 
+    fn render_instanced<'a>(&'a self, positions: &[[[f32; 4]; 4]]) 
+        -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
+        let mut v = Vec::new();
+        let ctx = super::super::get_active_ctx();
         for mesh in &self.meshes {
-            mesh.render_instanced(wnd, mats, local_data, manager, &instance_buffer, &self.materials);
+            let (uniform, vertices, indices) = mesh.render_args(None, &self.materials, None);
+            v.push((uniform, vertices.append(From::from(
+                self.instances.get_buffer(positions, &*ctx.ctx).per_instance().unwrap())), indices));
         }
+        v
     }
 
     pub fn get_animator(&mut self) -> &mut Animator {
         &mut self.animator
     }
+}
+
+impl Drawable for Model {
+    fn render_args<'a>(&'a self, positions: &[[[f32; 4]; 4]]) 
+        -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
+    {
+        if positions.len() == 1 {
+            self.render(positions[0])
+        } else {
+            self.render_instanced(positions)
+        }
+    }
+
+    fn should_render(&self, _: shader::RenderPassType) -> bool { true }
 }

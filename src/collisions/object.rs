@@ -1,4 +1,4 @@
-use crate::node;
+use crate::cg_support::node;
 use cgmath::*;
 use std::rc::{Rc, Weak};
 use super::octree::ONode;

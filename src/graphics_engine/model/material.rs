@@ -1,9 +1,9 @@
 
 use std::collections::BTreeMap;
 use std::io::BufRead;
-use crate::textures;
-use crate::shader;
-use crate::ssbo;
+use super::super::textures;
+use super::super::shader;
+use crate::cg_support::ssbo;
 struct PBRData {
     roughness_tex: glium::texture::Texture2d,
     metalness_tex: glium::texture::Texture2d,

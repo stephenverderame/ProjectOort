@@ -7,31 +7,24 @@ use std::time::Instant;
 
 extern crate cgmath;
 extern crate glium;
-mod textures;
-mod shader;
-mod draw_traits;
-mod skybox;
-mod entity;
-mod model;
-mod node;
-mod camera;
-mod player;
-mod scene;
-mod render_target;
-mod render_pass;
-mod controls;
-mod ssbo;
+mod cg_support;
+mod graphics_engine;
 mod collisions;
+mod entity;
+mod player;
+mod controls;
 extern crate gl;
 
-use draw_traits::{Drawable, Viewer};
+use graphics_engine::draw_traits::{Drawable, Viewer};
 use glutin::platform::run_return::*;
 
 use cgmath::*;
-use render_target::*;
+use graphics_engine::render_target::*;
+use graphics_engine::*;
 
 use std::rc::Rc;
 use std::cell::RefCell;
+use cg_support::node;
 
 /// Generates the scene skybox and a cubemap version of the diffuse HDR
 fn gen_skybox<F : glium::backend::Facade>(size: u32, shader_manager: &shader::ShaderManager, facade: &F) 

@@ -1,13 +1,6 @@
-use crate::shader;
-use crate::draw_traits;
-use crate::node;
-
-#[derive(Clone, Copy)]
-struct Vertex {
-    pos: [f32; 3],
-}
-
-glium::implement_vertex!(Vertex, pos);
+use super::shader;
+use super::drawable::*;
+use VertexPos as Vertex;
 
 const CUBE_VERTS: [Vertex; 8] = [Vertex { pos: [-1.0, -1.0, 1.0] },
     Vertex { pos: [1.0, -1.0, 1.0] },
@@ -56,8 +49,8 @@ impl Skybox {
     }
 }
 
-impl draw_traits::Drawable for Skybox {
-    fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) {
+impl Drawable for Skybox {
+    /*fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) {
         let args = match (&self.tex, self.mip_progress) {
             (SkyboxTex::Sphere(map), _) => shader::UniformInfo::EquiRectInfo(shader::EqRectData {
                 env_map: map,
@@ -81,27 +74,46 @@ impl draw_traits::Drawable for Skybox {
                 frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
             _ => panic!("Invalid uniform type returned for skybox"),
         }
+    }*/
+    fn render_args<'a>(&'a self, _: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
+    {
+        let args = match (&self.tex, self.mip_progress) {
+            (SkyboxTex::Sphere(map), _) => shader::UniformInfo::EquiRectInfo(shader::EqRectData {
+                env_map: map,
+            }),
+            (SkyboxTex::Cube(map), None) => shader::UniformInfo::SkyboxInfo(shader::SkyboxData {
+                env_map: map,
+            }),
+            (SkyboxTex::Cube(map), Some(progress)) => shader::UniformInfo::PrefilterHdrEnvInfo(
+                shader::PrefilterHdrEnvData {
+                env_map: map,
+                roughness: progress,
+            }),
+        };
+        vec![(args, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo))]
+    }
+
+    fn should_render(&self, pass: &shader::RenderPassType) -> bool {
+        pass == shader::RenderPassType::Visual
     }
 }
 
 pub struct DebugCube {
     vbo: glium::VertexBuffer<Vertex>,
     ebo: glium::IndexBuffer<u16>,
-    pub transform: cgmath::Matrix4<f64>,
 }
 
 impl DebugCube {
-    pub fn new<F : glium::backend::Facade>(transform: node::Node, facade: &F) -> DebugCube {
+    pub fn new<F : glium::backend::Facade>(facade: &F) -> DebugCube {
         DebugCube {
             vbo: glium::VertexBuffer::new(facade, &CUBE_VERTS).unwrap(),
             ebo: glium::IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &CUBE_INDICES).unwrap(),
-            transform: transform.mat(),
         }
     }
 }
 
-impl draw_traits::Drawable for DebugCube {
-    fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) {
+impl Drawable for DebugCube {
+    /*fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) {
         let args = shader::UniformInfo::CollisionDebugInfo(self.transform.cast::<f32>().unwrap().into());
         let (program, params, uniform) = shader.use_shader(&args, Some(mats), Some(local_data));
         match uniform {
@@ -109,5 +121,16 @@ impl draw_traits::Drawable for DebugCube {
                 frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
             _ => panic!("Invalid uniform type returned for skybox"),
         }
+    }*/
+    fn render_args<'a>(&'a self, models: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
+    {
+        models.into_iter().map(|x| {
+            let args = shader::UniformInfo::CollisionDebugInfo(*x);
+            (args, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo))
+        }).collect()
+    }
+
+    fn should_render(&self, pass: &shader::RenderPassType) -> bool {
+        pass == shader::RenderPassType::Visual
     }
 }

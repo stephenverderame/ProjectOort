@@ -250,7 +250,7 @@ impl Octree {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::node;
+    use crate::cg_support::node;
     use assertables::*;
     
     fn new_obj(center: Point3<f64>, radius: f64) -> Rc<RefCell<Object>> {

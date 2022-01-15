@@ -1,7 +1,7 @@
-use crate::render_target::*;
-use crate::draw_traits::*;
+use super::render_target::*;
+use super::drawable::*;
 use glium::*;
-use crate::shader;
+use super::shader;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use shader::PipelineCache;

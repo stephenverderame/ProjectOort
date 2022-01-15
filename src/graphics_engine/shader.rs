@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::ssbo;
+use crate::cg_support::ssbo;
 use glium::implement_uniform_block;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]

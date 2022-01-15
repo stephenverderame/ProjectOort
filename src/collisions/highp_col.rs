@@ -12,8 +12,8 @@ impl HighPCollision for HighPNone {
         _: &cgmath::Matrix4<f64>, _: &[Triangle<f32>], _: &cgmath::Matrix4<f64>) -> bool { true }
 }
 
-use crate::shader;
-use crate::ssbo;
+use crate::graphics_engine::shader;
+use crate::cg_support::ssbo;
 use cgmath::*;
 
 #[derive(Clone, Copy, Debug)]

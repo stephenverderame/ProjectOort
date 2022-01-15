@@ -111,9 +111,9 @@ impl CollisionMesh {
 mod test {
     use super::*;
     use crate::collisions::highp_col;
-    use crate::shader;
+    use crate::graphics_engine::shader;
     use super::super::bvh;
-    use crate::node;
+    use crate::cg_support::node;
     use serial_test::serial;
     
     fn init() -> (shader::ShaderManager, glium::Display) {

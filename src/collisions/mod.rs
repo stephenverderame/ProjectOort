@@ -8,7 +8,7 @@ use octree::Octree;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use crate::node;
+use crate::cg_support::node;
 pub use bvh::TreeStopCriteria;
 pub use highp_col::*;
 
