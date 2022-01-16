@@ -50,32 +50,7 @@ impl Skybox {
 }
 
 impl Drawable for Skybox {
-    /*fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) {
-        let args = match (&self.tex, self.mip_progress) {
-            (SkyboxTex::Sphere(map), _) => shader::UniformInfo::EquiRectInfo(shader::EqRectData {
-                env_map: map,
-            }),
-            (SkyboxTex::Cube(map), None) => shader::UniformInfo::SkyboxInfo(shader::SkyboxData {
-                env_map: map,
-            }),
-            (SkyboxTex::Cube(map), Some(progress)) => shader::UniformInfo::PrefilterHdrEnvInfo(
-                shader::PrefilterHdrEnvData {
-                env_map: map,
-                roughness: progress,
-            }),
-        };
-        let (program, params, uniform) = shader.use_shader(&args, Some(mats), Some(local_data));
-        match uniform {
-            shader::UniformType::SkyboxUniform(uniform) =>
-                frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
-            shader::UniformType::EqRectUniform(uniform) =>
-                frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
-            shader::UniformType::PrefilterHdrEnvUniform(uniform) =>
-                frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
-            _ => panic!("Invalid uniform type returned for skybox"),
-        }
-    }*/
-    fn render_args<'a>(&'a self, _: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
+    fn render_args<'a>(&'a mut self, _: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
         let args = match (&self.tex, self.mip_progress) {
             (SkyboxTex::Sphere(map), _) => shader::UniformInfo::EquiRectInfo(shader::EqRectData {
@@ -92,18 +67,45 @@ impl Drawable for Skybox {
         };
         vec![(args, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo))]
     }
-
-    fn should_render(&self, pass: &shader::RenderPassType) -> bool {
-        pass == shader::RenderPassType::Visual
-    }
 }
 
+pub fn gen_cubemap_from_sphere<F : glium::backend::Facade>(tex_path: &str, cubemap_size: u32, 
+    shader_manager: &shader::ShaderManager, facade: &F) -> glium::texture::Cubemap 
+{
+    use super::{textures, pipeline, camera, drawable};
+    use pipeline::*;
+    use std::rc::Rc;
+    use std::cell::RefCell;
+    let mut sky = Skybox::new(SkyboxTex::Sphere(
+        textures::load_tex_2d_or_hdr(tex_path, facade)), facade);
+    let cam = camera::OrthoCamera::default();
+    let gen_sky = Box::new(render_target::CubemapRenderTarget::new(cubemap_size, 10., cgmath::point3(0., 0., 0.), facade));
+    let cp = Box::new(texture_processor::CopyTextureProcessor::new(cubemap_size, cubemap_size, None, None));
+    let mut gen_sky_pass = pipeline::RenderPass::new(vec![gen_sky], vec![cp], pipeline::Pipeline::new(vec![0], vec![(0, (1, 0))]));
+    let sd = Rc::new(RefCell::new(shader::SceneData {
+        viewer: viewer_data_from(&cam),
+        pass_type: shader::RenderPassType::Visual,
+        lights: None,
+        light_pos: None,
+        ibl_maps: None,
+    }));
+    let cbo = gen_sky_pass.run_pass(&cam, shader_manager, sd.clone(), 
+    &mut |fbo, _, _, cache, _| {
+        drawable::render_drawable(&mut sky, None, fbo, &*sd.borrow(), &cache, &shader_manager)
+    });
+    if let pipeline::TextureType::TexCube(pipeline::Ownership::Own(x)) = cbo.unwrap() {
+        x
+    } else { panic!("Unexpected final texture") }
+}
+
+/// A cube drawn in wireframe mode as a single color
 pub struct DebugCube {
     vbo: glium::VertexBuffer<Vertex>,
     ebo: glium::IndexBuffer<u16>,
 }
 
 impl DebugCube {
+    #[allow(dead_code)]
     pub fn new<F : glium::backend::Facade>(facade: &F) -> DebugCube {
         DebugCube {
             vbo: glium::VertexBuffer::new(facade, &CUBE_VERTS).unwrap(),
@@ -113,24 +115,14 @@ impl DebugCube {
 }
 
 impl Drawable for DebugCube {
-    /*fn render<S : glium::Surface>(&self, frame: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shader: &shader::ShaderManager) {
-        let args = shader::UniformInfo::CollisionDebugInfo(self.transform.cast::<f32>().unwrap().into());
-        let (program, params, uniform) = shader.use_shader(&args, Some(mats), Some(local_data));
-        match uniform {
-            shader::UniformType::DepthUniform(uniform) =>
-                frame.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap(),
-            _ => panic!("Invalid uniform type returned for skybox"),
-        }
-    }*/
-    fn render_args<'a>(&'a self, models: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
+    fn render_args<'a>(&'a mut self, models: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
-        models.into_iter().map(|x| {
-            let args = shader::UniformInfo::CollisionDebugInfo(*x);
-            (args, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo))
-        }).collect()
-    }
-
-    fn should_render(&self, pass: &shader::RenderPassType) -> bool {
-        pass == shader::RenderPassType::Visual
+        let mut v = Vec::new();
+        for m in models.into_iter() {
+            let args = shader::UniformInfo::CollisionDebugInfo(*m);
+            v.push((args, 
+                VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo)))
+        }
+        v
     }
 }

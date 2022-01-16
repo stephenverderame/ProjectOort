@@ -1,15 +1,15 @@
 use super::shader;
 #[derive(Clone, Copy)]
 pub struct Vertex2D {
-    pos: [f32; 2],
-    tex_coords: [f32; 2],
+    pub pos: [f32; 2],
+    pub tex_coords: [f32; 2],
 }
 
 glium::implement_vertex!(Vertex2D, pos, tex_coords);
 
 #[derive(Clone, Copy)]
 pub struct VertexPos {
-    pos: [f32; 3],
+    pub pos: [f32; 3],
 }
 
 glium::implement_vertex!(VertexPos, pos);
@@ -18,37 +18,37 @@ pub const MAX_BONES_PER_VERTEX : usize = 4;
 
 #[derive(Clone, Copy)]
 pub struct Vertex {
-    pos: [f32; 3],
-    normal: [f32; 3],
-    tex_coords: [f32; 2],
-    tangent: [f32; 3], 
+    pub pos: [f32; 3],
+    pub normal: [f32; 3],
+    pub tex_coords: [f32; 2],
+    pub tangent: [f32; 3], 
     // don't need bitangent since we can compute that as normal x tangent
-    bone_ids: [i32; MAX_BONES_PER_VERTEX],
-    bone_weights: [f32; MAX_BONES_PER_VERTEX],
+    pub bone_ids: [i32; MAX_BONES_PER_VERTEX],
+    pub bone_weights: [f32; MAX_BONES_PER_VERTEX],
 }
 glium::implement_vertex!(Vertex, pos, normal, tex_coords, tangent, bone_ids, bone_weights);
 
 /// Sources of vertex data
 pub enum VertexSourceData<'a> {
     Single(glium::vertex::VerticesSource<'a>),
-    Double([glium::vertex::VerticesSource<'a>; 2]),
+    Multi(Vec<glium::vertex::VerticesSource<'a>>),
 }
 
 impl<'a> VertexSourceData<'a> {
-    pub fn len(&self) -> u8 {
+    pub fn len(&self) -> usize {
         use VertexSourceData::*;
         match self {
             Single(_) => 1,
-            Double(arr) => arr.len() as u8,
+            Multi(arr) => arr.len(),
         }
     }
 
     /// Requires idx < len
-    pub fn index(&self, idx: u8) -> glium::vertex::VerticesSource<'a> {
+    pub fn index(&self, idx: usize) -> glium::vertex::VerticesSource<'a> {
         use VertexSourceData::*;
         match self {
-            Single(a) => *a,
-            Double(arr) => arr[idx as usize],
+            Single(a) => a.clone(),
+            Multi(arr) => arr[idx].clone(),
         }
     }
 
@@ -56,8 +56,27 @@ impl<'a> VertexSourceData<'a> {
     pub fn append(self, data: glium::vertex::VerticesSource<'a>) -> Self {
         use VertexSourceData::*;
         match self {
-            Single(x) => Double([x, data]),
-            _ => panic!("Attempt to append more vertex sources than supported"),
+            Single(x) => Multi(vec![x, data]),
+            Multi(mut arr) => {
+                arr.push(data);
+                Multi(arr)
+            },
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn append_flat(self, data: &mut dyn Iterator<Item = glium::vertex::VerticesSource<'a>>) -> Self {
+        use VertexSourceData::*;
+        let mut data : Vec<glium::vertex::VerticesSource<'a>> = data.collect();
+        match self {
+            Single(x) => {
+                data.insert(0, x);
+                Multi(data)
+            },
+            Multi(mut v) => {
+                v.append(&mut data);
+                Multi(v)
+            },
         }
     }
 }
@@ -65,7 +84,7 @@ impl<'a> VertexSourceData<'a> {
 /// Encapsulates one of multiple vertex data sources
 pub struct VertexHolder<'a> {
     data: VertexSourceData<'a>,
-    iter_count: u8,
+    iter_count: usize,
 }
 
 impl<'a> VertexHolder<'a> {
@@ -82,6 +101,12 @@ impl<'a> VertexHolder<'a> {
             data: self.data.append(data),
             iter_count: self.iter_count,
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn append_flat(mut self, data: &'a mut dyn Iterator<Item = glium::vertex::VerticesSource<'a>>) -> Self {
+        self.data = self.data.append_flat(data);
+        self
     }
 }
 
@@ -110,11 +135,8 @@ impl<'a> glium::vertex::MultiVerticesSource<'a> for VertexHolder<'a> {
 pub trait Drawable {
     /// Draws the drawable to the given surface `frame`, with the provided scene information
     /// and shader manager.
-    fn render_args<'a>(&'a self, positions: &[[[f32; 4]; 4]]) 
+    fn render_args<'a>(&'a mut self, positions: &[[[f32; 4]; 4]]) 
         -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>;
-
-    /// Returns `true` if we should render this object during a pass of type `pass`
-    fn should_render(&self, pass: &shader::RenderPassType) -> bool;
 }
 
 /// Something that encapsulates control of a view of the scene
@@ -155,5 +177,41 @@ pub fn default_scene_data(viewer: &dyn Viewer) -> shader::SceneData {
         lights: None,
         pass_type: shader::RenderPassType::Visual,
         light_pos: None,
+    }
+}
+
+/// Renders a drawable to the surface
+/// 
+/// `matrices` - model matrices to render the drawable at, or `None` to render a single drawable using the identity matrix
+/// for its transformation matrix
+pub fn render_drawable<S : glium::Surface>(drawable: &mut dyn Drawable, matrices: Option<&[[[f32; 4]; 4]]>,
+    surface: &mut S, scene_data: &shader::SceneData, cache: &shader::PipelineCache,
+    shader: &shader::ShaderManager)
+{
+    let v = vec![cgmath::Matrix4::from_scale(1f32).into()];
+    for (args, vbo, ebo) in drawable.render_args(matrices.unwrap_or(&v)).into_iter() {
+        let (shader, params, uniform) = shader.use_shader(&args, Some(scene_data), Some(cache));
+        match uniform {
+            shader::UniformType::LaserUniform(uniform) => 
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::PbrUniform(uniform) => 
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::DepthUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::EqRectUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::SkyboxUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::UiUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::SepConvUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::ExtractBrightUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::PrefilterHdrEnvUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::BrdfLutUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+        }.unwrap()
     }
 }

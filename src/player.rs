@@ -1,14 +1,13 @@
 
 
-use crate::node::*;
+use crate::cg_support::node::*;
 use crate::model::Model;
-use crate::shader;
-use crate::draw_traits;
+use crate::graphics_engine::{drawable, entity, shader};
 use crate::controls;
 use std::rc::{Rc};
 use std::cell::RefCell;
 use crate::camera;
-use draw_traits::Viewer;
+use drawable::Viewer;
 use crate::collisions;
 
 use cgmath::*;
@@ -19,7 +18,7 @@ const FAR_PLANE : f32 = 1000.;
 pub struct Player {
     pub root: Rc<RefCell<Node>>,
     cam: Node,
-    geom: Model,
+    entity: Rc<RefCell<entity::Entity>>,
     pub aspect: f32,
     pub collision_obj: collisions::CollisionObject,
 }
@@ -31,10 +30,14 @@ impl Player {
         cam.set_parent(root_node.clone());
         Player {
             cam: cam,
-            geom: model,
             aspect: view_aspect,
             collision_obj: collisions::CollisionObject::new(root_node.clone(), c_str,
                 collisions::TreeStopCriteria::default()),
+            entity: Rc::new(RefCell::new(entity::Entity {
+                geometry: Box::new(model),
+                locations: vec![root_node.clone()],
+                render_passes: vec![shader::RenderPassType::Visual, shader::RenderPassType::Depth],
+            })),
             root: root_node,
         }
     }
@@ -75,9 +78,15 @@ impl Player {
         }
     }
 
+    pub fn as_entity(&self) -> Rc<RefCell<entity::Entity>>
+    {
+        self.entity.clone()
+    }
+
+
 
 }
-impl draw_traits::Viewer for Player {
+impl drawable::Viewer for Player {
     fn proj_mat(&self) -> cgmath::Matrix4<f32> {
         cgmath::perspective(cgmath::Deg::<f32>(60f32), self.aspect, 0.1, FAR_PLANE)
     }
@@ -97,12 +106,5 @@ impl draw_traits::Viewer for Player {
 
     fn view_dist(&self) -> (f32, f32) {
         (0.1, FAR_PLANE)
-    }
-}
-
-impl draw_traits::Drawable for Player {
-    fn render<S : glium::Surface>(&self, display: &mut S, mats: &shader::SceneData, local_data: &shader::PipelineCache, shaders: &shader::ShaderManager) {
-        let model : Matrix4<f32> = Matrix4::<f32>::from(&*self.root.borrow());
-        self.geom.render(display, mats, local_data, model.into(), shaders)
     }
 }

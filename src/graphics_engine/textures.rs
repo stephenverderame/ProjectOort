@@ -49,6 +49,18 @@ pub fn load_texture_hdr<F : glium::backend::Facade>(path: &str, facade: &F)
     glium::Texture2d::new(facade, load_hdr(path)).unwrap()
 }
 
+/// Loads a hdr texture if the path includes the `.hdr` extension
+/// otherwise loads a 2d texture without mipmapping
+pub fn load_tex_2d_or_hdr<F : glium::backend::Facade>(path: &str, facade: &F)
+    -> glium::texture::Texture2d
+{
+    if path.find(".hdr").is_some() {
+        load_texture_hdr(path, facade)
+    } else {
+        glium::texture::Texture2d::new(facade, load_img(path, true)).unwrap()
+    }
+}
+
 /// Gets the directory from `path`
 pub fn dir_stem(path: &str) -> String {
     match path.rfind('/') {

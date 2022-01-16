@@ -7,14 +7,11 @@ use glium::{Display};
 use std::time::{Instant, Duration};
 use super::scene::Scene;
 use std::rc::Rc;
+use std::cell::{RefCell, RefMut};
 use super::shader;
 
-pub trait OnInputCallback : FnMut(glutin::event::DeviceEvent, &mut SceneManager) {}
-pub trait OnResizeCallback : FnMut(glutin::dpi::PhysicalSize<u32>) {}
-pub trait OnDrawCallback : FnMut(Duration) {}
-
 pub struct SceneManager {
-    scenes: std::collections::HashMap<&'static str, Scene>,
+    scenes: std::collections::HashMap<&'static str, RefCell<Scene>>,
     active_scene: Option<&'static str>,
 }
 
@@ -28,24 +25,66 @@ impl SceneManager {
 
     /// Sets the active scene to `scene`
     /// Requires that `scene` is a name of a scene managed by this manager
-    pub fn change_scene(&mut self, scene: &'static str) {
+    pub fn change_scene(&mut self, scene: &'static str) -> &mut Self {
         self.active_scene = Some(scene);
+        self
     }
 
     /// Adds a new scene to be managed by this manager with the given name
-    pub fn insert_scene(&mut self, name: &'static str, scene: Scene) {
-        self.scenes.insert(name, scene);
+    pub fn insert_scene(&mut self, name: &'static str, scene: Scene) -> &mut Self {
+        self.scenes.insert(name, RefCell::new(scene));
+        self
+    }
+
+    pub fn get_active_scene(&self) -> Option<RefMut<Scene>> {
+        self.active_scene.map(|x| self.scenes[x].borrow_mut())
     }
 }
 
-struct Window {
-    wnd_ctx: Rc<Display>,
-    e_loop: EventLoop<()>,
-    scenes: SceneManager,
-    input_cb: Option<Box<dyn OnInputCallback>>,
-    resize_cb: Option<Box<dyn OnResizeCallback>>,
-    draw_cb: Option<Box<dyn OnDrawCallback>>,
-    pub shaders: shader::ShaderManager,
+pub struct WindowCallbacks<'a> {
+    input_cb: Option<&'a mut dyn 
+        FnMut(glutin::event::DeviceEvent, RefMut<SceneManager>)>,
+    resize_cb: Option<&'a mut dyn 
+        FnMut(glutin::dpi::PhysicalSize<u32>)>,
+    draw_cb: Option<&'a mut dyn FnMut(Duration, RefMut<Scene>)>,
+}
+
+impl<'a> WindowCallbacks<'a> {
+    pub fn new() -> WindowCallbacks<'a> {
+        WindowCallbacks {
+            input_cb: None,
+            resize_cb: None,
+            draw_cb: None,
+        }
+    }
+
+    pub fn with_input_handler(mut self, 
+        on_input: &'a mut dyn FnMut(glutin::event::DeviceEvent, RefMut<SceneManager>)) -> Self 
+    {
+        self.input_cb = Some(on_input);
+        self
+    }
+
+    pub fn with_resize_handler(mut self, 
+        on_resize: &'a mut dyn FnMut(glutin::dpi::PhysicalSize<u32>)) -> Self
+    {
+        self.resize_cb = Some(on_resize);
+        self
+    }
+
+    pub fn with_draw_handler(mut self,
+        on_draw: &'a mut dyn FnMut(Duration, RefMut<Scene>)) -> Self
+    {
+        self.draw_cb = Some(on_draw);
+        self
+    }
+}
+
+pub struct Window {
+    wnd_ctx: Rc<RefCell<Display>>,
+    e_loop: RefCell<EventLoop<()>>,
+    scenes: RefCell<SceneManager>,
+    pub shaders: Rc<shader::ShaderManager>,
 }
 
 impl Window {
@@ -66,55 +105,50 @@ impl Window {
         if let Some(msaa) = builder.msaa {
             wnd_ctx = wnd_ctx.with_multisampling(msaa);
         }
-        let wnd_ctx = Rc::new(Display::new(window_builder, wnd_ctx, &e_loop).unwrap());
-        gl::load_with(|s| wnd_ctx.gl_window().get_proc_address(s)); 
-        super::set_active_ctx(wnd_ctx.clone());
+        let wnd_ctx = Rc::new(RefCell::new(Display::new(window_builder, wnd_ctx, &e_loop).unwrap()));
+        let shaders = Rc::new(shader::ShaderManager::init(&*wnd_ctx.borrow()));
+        gl::load_with(|s| wnd_ctx.borrow().gl_window().get_proc_address(s)); 
+        super::set_active_ctx(wnd_ctx.clone(), shaders.clone());
 
         Window {
-            e_loop,
-            shaders: shader::ShaderManager::init(&*wnd_ctx),
+            e_loop: RefCell::new(e_loop),
+            shaders,
             wnd_ctx,
-            scenes: builder.scenes,
-            input_cb: builder.input_cb,
-            resize_cb: builder.resize_cb,
-            draw_cb: builder.draw_cb,
+            scenes: RefCell::new(SceneManager::new()),
         }
     }
 
-    pub fn main_loop(mut self) {
-        let mut resize = self.resize_cb;
-        let mut draw = self.draw_cb;
-        let mut input = self.input_cb;
-        let mut scenes = self.scenes;
+    pub fn main_loop(&self, mut callbacks: WindowCallbacks) {
         let shaders = self.shaders.clone();
         let mut last_time = Instant::now();
-        self.e_loop.run_return(|ev, _, control| {
+        self.e_loop.borrow_mut().run_return(|ev, _, control| {
             match ev {
                 Event::LoopDestroyed => return,
                 Event::WindowEvent {event, ..} => {
                     match event {
                         WindowEvent::CloseRequested => *control = ControlFlow::Exit,
                         WindowEvent::Resized(new_size) => {
-                            if let Some(resize) = &mut resize {
+                            if let Some(resize) = callbacks.resize_cb.as_mut() {
                                 resize(new_size)
                             }
                         },
                         _ => (),
                     }
                 },
-                Event::DeviceEvent {event, ..} if input.is_some() => 
-                    input.as_mut().unwrap()(event, &mut scenes),
+                Event::DeviceEvent {event, ..} if callbacks.input_cb.is_some() => 
+                    callbacks.input_cb.as_mut().unwrap()(event, self.scenes.borrow_mut()),
                 Event::MainEventsCleared => {
                     let now = Instant::now();
                     let dt = now.duration_since(last_time);
                     last_time = now;
 
-                    if let Some(active_scene) = scenes.active_scene {
-                        scenes.scenes[active_scene].render(&*shaders);
+                    if let Some(mut active_scene) = self.scenes.borrow().get_active_scene() {
+                        (&mut *active_scene).render(&*shaders);
                     }
 
-                    if let Some(cb) = &mut draw {
-                        cb(dt);
+                    if let (Some(cb), Some(scene)) = (&mut callbacks.draw_cb.as_mut(), 
+                        self.scenes.borrow().get_active_scene()) {
+                        cb(dt, scene);
                     }
 
                 },
@@ -123,12 +157,18 @@ impl Window {
         });
     }
 
-    pub fn scene_manager(&mut self) -> &mut SceneManager {
-        &mut self.scenes
+    pub fn scene_manager(&mut self) -> RefMut<SceneManager> {
+        self.scenes.borrow_mut()
     }
 
-    pub fn ctx(&self) -> &glium::Display {
-        &*self.wnd_ctx
+    pub fn ctx(&self) -> std::cell::Ref<glium::Display> {
+        self.wnd_ctx.borrow()
+    }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        super::remove_ctx_if_active(self.wnd_ctx.clone());
     }
 }
 
@@ -137,26 +177,18 @@ pub struct WindowMaker {
     height: u32,
     title: Option<&'static str>,
     visible: bool,
-    scenes: SceneManager,
     msaa: Option<u16>,
     depth_bits: Option<u8>,
-    input_cb: Option<Box<dyn OnInputCallback>>,
-    resize_cb: Option<Box<dyn OnResizeCallback>>,
-    draw_cb: Option<Box<dyn OnDrawCallback>>,
     e_loop: Option<EventLoop<()>>,
 
 }
-
+#[allow(dead_code)]
 impl WindowMaker {
     pub fn new(width: u32, height: u32) -> WindowMaker {
         WindowMaker {
-            width, height, title: None, visible: false,
-            scenes: SceneManager::new(),
+            width, height, title: None, visible: true,
             msaa: None,
             depth_bits: None,
-            input_cb: None,
-            resize_cb: None,
-            draw_cb: None,
             e_loop: None,
         }
     }
@@ -171,16 +203,6 @@ impl WindowMaker {
         self
     }
 
-    pub fn with_scene(mut self, scene_name: &'static str, scene: Scene) -> Self {
-        self.scenes.scenes.insert(scene_name, scene);
-        self
-    }
-
-    pub fn with_active_scene(mut self, scene_name: &'static str, scene: Scene) -> Self {
-        self.scenes.active_scene = Some(scene_name);
-        self.with_scene(scene_name, scene)
-    }
-
     pub fn msaa(mut self, samples: u16) -> Self {
         self.msaa = Some(samples);
         self
@@ -188,21 +210,6 @@ impl WindowMaker {
 
     pub fn depth_buffer(mut self, bits: u8) -> Self {
         self.depth_bits = Some(bits);
-        self
-    }
-
-    pub fn with_input_handler(mut self, cb: Box<dyn OnInputCallback>) -> Self {
-        self.input_cb = Some(cb);
-        self
-    }
-
-    pub fn with_resize_handler(mut self, cb: Box<dyn OnResizeCallback>) -> Self {
-        self.resize_cb = Some(cb);
-        self
-    }
-
-    pub fn with_draw_func(mut self, cb: Box<dyn OnDrawCallback>) -> Self {
-        self.draw_cb = Some(cb);
         self
     }
 

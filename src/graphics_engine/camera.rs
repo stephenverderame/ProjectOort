@@ -1,6 +1,6 @@
-use super::draw_traits;
+use super::drawable;
 use cgmath::*;
-use draw_traits::Viewer;
+use drawable::Viewer;
 
 #[derive(Clone)]
 pub struct PerspectiveCamera {
@@ -116,6 +116,7 @@ pub struct OrthoCamera {
 }
 
 impl OrthoCamera {
+    #[allow(dead_code)]
     pub fn new(width: f32, height: f32, near: f32, far: f32, pos: cgmath::Point3<f32>, 
         target: Option<cgmath::Point3<f32>>, up: Option<cgmath::Vector3<f32>>) -> OrthoCamera
     {

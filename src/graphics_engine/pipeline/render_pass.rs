@@ -1,98 +1,25 @@
-use super::render_target::*;
-use super::drawable::*;
+use super::super::drawable::*;
 use glium::*;
 use super::shader;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use shader::PipelineCache;
-
-/// A pipeline is a connected DAG with start nodes. Pipeline stores the indices of
-/// transformations in a RenderPass
-pub struct Pipeline {
-    pub starts: Vec<u16>,
-    pub adj_list: HashMap<u16, Vec<(u16, usize)>>,
-}
-
-impl Pipeline {
-    /// Creates a new pipleline from a **connected DAG**.
-    /// 
-    /// **Requires**: pipeline node indexes are consecutive. That is to say that if there is an edge `(0, 10)`,
-    /// there must be a node `10` and must have nodes `0 - 9`.
-    /// ## Arguments
-    /// `starts` - a vector of the start node id's
-    /// 
-    /// `edges` - a set of edges `(u, (v, idx))` that indicates a directed edge from `u` to `v`. Where
-    /// `u` and `v` are indexes of nodes. `idx` is the index of `v`s input list that the output from `u` will
-    /// be sent to. Requires that all consecutive inputs are used. 
-    pub fn new(starts: Vec<u16>, edges: Vec<(u16, (u16, usize))>) -> Pipeline {
-        Pipeline {
-            starts,
-            adj_list: Pipeline::to_adj_list(edges),
-        }
-    }
-
-    /// Creates an adjacency list for the graph defined by the edge set `edges`
-    fn to_adj_list(edges: Vec<(u16, (u16, usize))>) -> HashMap<u16, Vec<(u16, usize)>> {
-        let mut adj_list = HashMap::<u16, Vec<(u16, usize)>>::new();
-        for (u, v) in edges {
-            match adj_list.get_mut(&u) {
-                Some(lst) => lst.push(v),
-                None => {
-                    adj_list.insert(u, vec![v]);
-                },
-            }
-        }
-        adj_list
-    }
-    /// Topologically sorts the graph starting from `node`
-    /// # Arguments
-    /// `node` - starting node
-    /// 
-    /// `order` - the reverse topological order. Results are stored here
-    /// 
-    /// `discovered` - the set of all nodes that have been discovered
-    fn topo_sort(&self, node: u16, order: &mut Vec<u16>, discovered: &mut HashSet<u16>) {
-        match self.adj_list.get(&node) {
-            Some(neighbors) => {
-                for (ns, _) in neighbors {
-                    if discovered.get(ns).is_none() {
-                        discovered.insert(*ns);
-                        self.topo_sort(*ns, order, discovered);
-                    }
-                }
-            },
-            _ => ()
-        };
-        order.push(node);
-    }
-
-    /// Gets the topological order of the pipeline
-    fn topo_order(&self) -> Vec<u16> {
-        let mut order = Vec::<u16>::new();
-        let mut discovered = HashSet::<u16>::new();
-        for start in &self.starts {
-            self.topo_sort(*start, &mut order, &mut discovered);
-        }     
-        order.iter().rev().map(|x| *x).collect()
-
-    }
-}
+use super::*;
 
 /// A RenderPass is a render target followed by a series of texture transformations.
 /// A renderpass is rendered to and produces a texture result
-pub struct RenderPass<'a> {
-    targets: Vec<&'a mut dyn RenderTarget>,
-    processes: Vec<&'a mut dyn TextureProcessor>,
+pub struct RenderPass {
+    targets: Vec<Box<dyn RenderTarget>>,
+    processes: Vec<Box<dyn TextureProcessor>>,
     topo_order: Vec<u16>,
     pipeline: Pipeline,
 }
 
-impl<'a> RenderPass<'a> {
+impl RenderPass {
     /// Creates a new RenderPass
     /// 
     /// The first `[0, targets.len())` ids refer to render targets. Then the next `[targets.len(), processes.len())` ids refer
     /// to processes. Therefore, the pipeline must contain nodes from `0` to `targets.len() + processes.len()` with the upper bound being exclusive
-    pub fn new(targets: Vec<&'a mut dyn RenderTarget>, processes: Vec<&'a mut dyn TextureProcessor>, pipeline: Pipeline) -> RenderPass<'a> {
+    pub fn new(targets: Vec<Box<dyn RenderTarget>>, processes: Vec<Box<dyn TextureProcessor>>, pipeline: Pipeline) -> RenderPass {
         RenderPass { targets, processes, topo_order: pipeline.topo_order(), pipeline }
     }
 

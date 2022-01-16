@@ -24,13 +24,11 @@ enum ShaderType {
 }
 
 /// The type of objects that should be rendered to a render target
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub enum RenderPassType {
     Visual,
     /// Render objects with depth information only
     Depth,
-    /// Render objects with depth information and cull front face to avoid peter panning
-    Shadow
 }
 
 impl ShaderType {
@@ -215,7 +213,27 @@ pub enum UniformInfo<'a> {
     TriangleCollisionsInfo,
     LightCullInfo(LightCullData<'a>),
     CollisionDebugInfo([[f32; 4]; 4]),
+}
 
+impl<'a> std::fmt::Debug for UniformInfo<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use UniformInfo::*;
+        let name = match self {
+            PBRInfo(_) => "PBR",
+            EquiRectInfo(_) => "EQ Rect",
+            SkyboxInfo(_) => "Skybox",
+            UiInfo(_) => "UI",
+            SepConvInfo(_) => "Sep Conv",
+            ExtractBrightInfo(_) => "Extract Bright",
+            PrefilterHdrEnvInfo(_) => "Prefilter HDR",
+            GenLutInfo => "Gen BRDF Lut",
+            LaserInfo => "Laser",
+            TriangleCollisionsInfo => "Compute triangle",
+            LightCullInfo(_) => "Compute light cull",
+            CollisionDebugInfo(_) => "Collision debug",
+        };
+        f.write_str(name)
+    }
 }
 
 impl<'a> UniformInfo<'a> {
@@ -228,11 +246,11 @@ impl<'a> UniformInfo<'a> {
             (PBRInfo(PBRData {instancing, ..}), Visual) if *instancing => ShaderType::PbrInstancedShader,
             (PBRInfo(PBRData {bone_mats: Some(_), ..}), Visual) => ShaderType::PbrAnim,
             (PBRInfo(_), Visual) => ShaderType::Pbr,
-            (PBRInfo(PBRData {instancing, ..}), x) if *instancing && (x == Depth || x == Shadow) => 
+            (PBRInfo(PBRData {instancing, ..}), Depth) if *instancing => 
                 ShaderType::DepthInstancedShader,
-            (PBRInfo(PBRData {bone_mats: Some(_), ..}), x) if x == Depth || x == Shadow => 
+            (PBRInfo(PBRData {bone_mats: Some(_), ..}), Depth) => 
                 ShaderType::DepthAnim,
-            (PBRInfo(_), Depth) | (PBRInfo(_), Shadow) => ShaderType::DepthShader,
+            (PBRInfo(_), Depth) => ShaderType::DepthShader,
             (EquiRectInfo(_), _) => ShaderType::EquiRect,
             (SkyboxInfo(_), _) => ShaderType::Skybox,
             (UiInfo(_), _) => ShaderType::UiShader,
@@ -242,7 +260,6 @@ impl<'a> UniformInfo<'a> {
             (GenLutInfo, _) => ShaderType::GenLutShader,
             (LaserInfo, Visual) => ShaderType::Laser,
             (LaserInfo, Depth) => ShaderType::DepthShader,
-            (LaserInfo, Shadow) => ShaderType::DepthShader,
             (LightCullInfo(_), _) => ShaderType::CullLightsCompute,
             (TriangleCollisionsInfo, _) => ShaderType::TriIntersectionCompute,
             (CollisionDebugInfo(_), _) => ShaderType::CollisionDebug,
@@ -502,7 +519,7 @@ impl ShaderManager {
             (GenLutInfo, _) => UniformType::BrdfLutUniform(glium::uniform! {
                 model: cgmath::Matrix4::from_scale(1f32).into(),
             }),
-            (PBRInfo(PBRData {model, bone_mats, ..}), x) if x == Depth || x == Shadow => {
+            (PBRInfo(PBRData {model, bone_mats, ..}), Depth) => {
                 bone_mats.map(|x| x.bind(4));
                 UniformType::DepthUniform(glium::uniform! {
                     viewproj: scene_data.unwrap().viewer.viewproj,
@@ -513,7 +530,8 @@ impl ShaderManager {
                 viewproj: scene_data.unwrap().viewer.viewproj,
                 model: model.clone(),
             }),
-            (_, pass) => panic!("Invalid shader/shader data combination with shader '{:?}' during pass '{:?}'", typ, pass),
+            (data, pass) => 
+                panic!("Invalid shader/shader data combination with shader (Args: `{:?}` '{:?}') during pass '{:?}'", data, typ, pass),
         };
         (shader, params, uniform)
     }

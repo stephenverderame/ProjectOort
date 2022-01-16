@@ -1,40 +1,102 @@
 pub mod model;
 pub mod camera;
-pub mod render_pass;
-pub mod render_target;
+pub mod pipeline;
 pub mod scene;
 pub mod shader;
-pub mod skybox;
-pub mod textures;
+pub mod cubes;
+mod textures;
 pub mod drawable;
 pub mod window;
 pub mod entity;
 mod instancing;
 use std::rc::Rc;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::mem::MaybeUninit;
 
 std::thread_local! {
-    static ACTIVE_CTX: Cell<Option<Rc<glium::Display>>> = Cell::new(None);
+    static ACTIVE_CTX: Cell<Option<Rc<RefCell<glium::Display>>>> = Cell::new(None);
+    static ACTIVE_MANAGER: Cell<Option<Rc<shader::ShaderManager>>> = Cell::new(None);
 }
 
-fn set_active_ctx(ctx: Rc<glium::Display>) {
-    ACTIVE_CTX.with(|v| v.set(Some(ctx)))
+/// Sets the thread local active window context and shader
+fn set_active_ctx(ctx: Rc<RefCell<glium::Display>>, shader: Rc<shader::ShaderManager>) {
+    ACTIVE_CTX.with(|v| v.set(Some(ctx)));
+    ACTIVE_MANAGER.with(|v| v.set(Some(shader)))
 }
 
-struct ActiveCtx {
-    ctx: Rc<glium::Display>,
-    shader: shader::ShaderManager,
+/// If `ctx` is the active context, removes it and the active shader manager
+/// to allow them to be destroyed
+fn remove_ctx_if_active(ctx: Rc<RefCell<glium::Display>>) {
+    ACTIVE_CTX.with(|v| {
+        let active_ctx = v.take().expect("Active ctx in use");
+        if Rc::ptr_eq(&active_ctx, &ctx) {
+            ACTIVE_MANAGER.with(|m| m.set(None));
+        } else {
+            v.set(Some(active_ctx))
+        }
+    });
+}
+
+pub struct ActiveCtx {
+    pub ctx: Rc<RefCell<glium::Display>>,
+    pub shader: Rc<shader::ShaderManager>,
+}
+
+impl ActiveCtx {
+    pub fn as_surface(self) -> MutCtx {
+        use std::ptr::addr_of_mut;
+        let mut ctx : MaybeUninit<MutCtx> = MaybeUninit::uninit();
+        let ptr = ctx.as_mut_ptr();
+
+        unsafe { 
+            addr_of_mut!((*ptr).ctx).write(self); 
+            addr_of_mut!((*ptr).display).write((*ptr).ctx.ctx.borrow());
+            addr_of_mut!((*ptr).frame).write((*ptr).display.draw());
+            ctx.assume_init()
+        }
+
+    }
 }
 
 impl Drop for ActiveCtx {
     fn drop(&mut self) {
-        ACTIVE_CTX.with(|v| v.set(Some(self.ctx.clone())))
+        ACTIVE_CTX.with(|v| v.set(Some(self.ctx.clone())));
+        ACTIVE_MANAGER.with(|v| v.set(Some(self.shader.clone())));
     }
 }
 
-fn get_active_ctx() -> ActiveCtx {
+pub fn get_active_ctx() -> ActiveCtx {
     ActiveCtx {
         ctx: ACTIVE_CTX.with(|v| 
-            v.take().expect("Active context not set or already in use"))
+            v.take().expect("Active context not set or already in use")),
+        shader: ACTIVE_MANAGER.with(|v|
+            v.take().expect("Active manager not set or already in use")),
+    }
+}
+
+pub struct MutCtx {
+    ctx: ActiveCtx,
+    display: std::cell::Ref<'static, glium::Display>,
+    frame: glium::Frame,
+}
+
+impl MutCtx {
+    pub fn finish(self) {
+        self.frame.finish().unwrap()
+    }
+}
+
+impl std::ops::Deref for MutCtx {
+    type Target = glium::Frame;
+
+    fn deref(&self) -> &Self::Target {
+        &self.frame
+    }
+}
+
+impl std::ops::DerefMut for MutCtx {
+
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.frame
     }
 }

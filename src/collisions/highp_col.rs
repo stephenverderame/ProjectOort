@@ -25,15 +25,23 @@ struct ShaderTriangle {
     _d: [f32; 4],
 }
 pub struct TriangleTriangleGPU<'a> {
-    shader_manager: &'a shader::ShaderManager,
+    shader_manager: Option<&'a shader::ShaderManager>,
 }
 
 impl<'a> TriangleTriangleGPU<'a> {
     const WORK_GROUP_SIZE : u32 = 8;
 
+    #[allow(dead_code)]
     pub fn new(shader_manager: &'a shader::ShaderManager) -> TriangleTriangleGPU<'a> {
         TriangleTriangleGPU {
-            shader_manager,
+            shader_manager: Some(shader_manager),
+        }
+    }
+
+    pub fn from_active_ctx() -> TriangleTriangleGPU<'static>
+    {
+        TriangleTriangleGPU {
+            shader_manager: None,
         }
     }
 }
@@ -61,8 +69,8 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
         let a_len = a_triangles.len() as u32;
         let b_len = b_triangles.len() as u32;
 
-        let input_a = ssbo::SSBO::create_static(a_triangles/*.clone()*/);
-        let input_b = ssbo::SSBO::create_static(b_triangles);
+        let input_a = ssbo::SSBO::create_static(&a_triangles/*.clone()*/);
+        let input_b = ssbo::SSBO::create_static(&b_triangles);
 
         let work_groups_x = ((a_len + a_len % TriangleTriangleGPU::WORK_GROUP_SIZE) / 
             TriangleTriangleGPU::WORK_GROUP_SIZE).max(1);
@@ -75,8 +83,14 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
         input_a.bind(5);
         input_b.bind(6);
         output.bind(7);
-        self.shader_manager.execute_compute(work_groups_x, work_groups_y, 1, 
-            shader::UniformInfo::TriangleCollisionsInfo, None);
+        if self.shader_manager.is_none() {
+            let ctx = crate::graphics_engine::get_active_ctx();
+            ctx.shader.execute_compute(work_groups_x, work_groups_y, 1, 
+                shader::UniformInfo::TriangleCollisionsInfo, None);
+        } else {
+            self.shader_manager.as_ref().unwrap().execute_compute(work_groups_x, work_groups_y, 1, 
+                shader::UniformInfo::TriangleCollisionsInfo, None);
+        }
 
         /*let a_data = input_a.get_data();
         assert_eq!(a_data.len(), a_triangles.len());

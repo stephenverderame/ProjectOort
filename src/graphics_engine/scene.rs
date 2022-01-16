@@ -1,9 +1,7 @@
 use super::drawable::*;
-use super::shader;
-use super::render_target;
-use super::render_pass::*;
+use super::{shader, pipeline, entity, cubes};
 use crate::cg_support::ssbo;
-use super::entity::Entity;
+use super::entity::AbstractEntity;
 use std::rc::Rc;
 use std::cell::{RefCell, Cell};
 
@@ -13,18 +11,18 @@ pub struct Scene {
     ibl_maps: Option<shader::PbrMaps>,
     lights: ssbo::SSBO<shader::LightData>,
     main_light_dir: Option<cgmath::Vector3<f32>>,
-    entities: Vec<Entity>,
-    pass: Cell<RenderPass>,
+    entities: Vec<Rc<RefCell<dyn AbstractEntity>>>,
+    pass: Cell<Option<pipeline::RenderPass>>,
     viewer: Rc<RefCell<dyn Viewer>>,
 }
 
 impl Scene {
-    pub fn new(pass: RenderPass, viewer: Rc<RefCell<dyn Viewer>>) -> Scene {
+    pub fn new(pass: pipeline::RenderPass, viewer: Rc<RefCell<dyn Viewer>>) -> Scene {
         Scene {
             ibl_maps: None, lights: ssbo::SSBO::<shader::LightData>::dynamic(None),
             main_light_dir: None,
             entities: Vec::new(),
-            pass,
+            pass: Cell::new(Some(pass)),
             viewer,
         }
     }
@@ -41,103 +39,14 @@ impl Scene {
         }
     }
 
-    fn surface_render<'a, S : glium::Surface, U : glium::uniforms::Uniforms>(vbo: VertexHolder<'a>, ebo: glium::index::IndicesSource<'a>,
-        shader: &glium::Program, uniform: U, params: glium::DrawParameters, surface: &mut S) -> Result<(), glium::DrawError>
-    {
-        /*match vbo {
-            VboType::Vertices2d(vbo) => 
-                surface.draw(vbo, ebo, shader, &uniform, &params),
-            VboType::Vertices3d(vbo) =>
-                surface.draw(vbo, ebo, shader, &uniform, &params),
-            VboType::VerticesPos(vbo) =>
-                surface.draw(vbo, ebo, shader, &uniform, &params),
-        }*/
-        surface.draw(vbo, ebo, shader, &uniform, &params)
-    }
-
-    fn render_drawable<S : glium::Surface>(surface: &mut S, entity: &Entity, scene_data: &shader::SceneData, 
-        local_data: &shader::PipelineCache, shader: &shader::ShaderManager) 
-    {
-        let matrices : Vec<[[f32; 4]; 4]> 
-            = entity.locations.iter().map(|x| x.borrow().as_transform().cast().unwrap().into()).collect();
-        for (args, vbo, ebo) in entity.render_args(&matrices).into_iter() {
-            let (shader, params, uniform) = shader.use_shader(&args, Some(scene_data), Some(local_data));
-            match uniform {
-                shader::UniformType::LaserUniform(uniform) => 
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-                shader::UniformType::PbrUniform(uniform) => 
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-                shader::UniformType::DepthUniform(uniform) =>
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-                shader::UniformType::EqRectUniform(uniform) =>
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-                shader::UniformType::SkyboxUniform(uniform) =>
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-                shader::UniformType::UiUniform(uniform) =>
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-                shader::UniformType::SepConvUniform(uniform) =>
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-                shader::UniformType::ExtractBrightUniform(uniform) =>
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-                shader::UniformType::PrefilterHdrEnvUniform(uniform) =>
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-                shader::UniformType::BrdfLutUniform(uniform) =>
-                    Scene::surface_render(vbo, ebo, shader, uniform, params, surface),
-            }.unwrap()
-        }
-        
-    }
-
-    /*pub fn render<S : glium::Surface, F : Fn(&mut S, &shader::SceneData)>
-    (&self, frame: &mut S, viewer: &dyn draw_traits::Viewer, aspect: f32, func: F)
-    {
-        let mats = self.get_scene_data(viewer, aspect);
-        func(frame, &mats);
-    }
-
-    pub fn render_target<'a, F : Fn(&mut glium::framebuffer::SimpleFrameBuffer, &shader::SceneData)>
-    (&self, frame: &'a mut dyn render_target::RenderTarget, viewer: &dyn draw_traits::Viewer, aspect: f32, func: F)
-    -> render_target::TextureType<'a>
-    {
-        frame.draw(viewer, &|fbo, viewer| {
-            let mats = self.get_scene_data(viewer, aspect);
-            func(fbo, &mats);
-        });
-        frame.read()
-    }*/
-
-    /// Executes the specified render pass and passes in Scene Data for this Scene
- /*   pub fn render_pass<'b, F>(&self, pass: &'b mut RenderPass, viewer: &dyn Viewer, 
-        shader: &shader::ShaderManager) -> Option<render_target::TextureType<'b>> 
-    {
-        use std::rc::*;
-        use std::cell::*;
-        let vd = viewer_data_from(viewer);
-        let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
-        pass.run_pass(viewer, shader, sd.clone(),
-        &mut |fbo, viewer, typ, cache, _| {
-            {
-                let mut sdm = sd.borrow_mut();
-                sdm.viewer = viewer_data_from(viewer);
-                sdm.pass_type = typ;
-            }
-            let sd = sd.borrow();
-            for entity in &self.entities {
-                if entity.should_render(typ) {
-                    Scene::render_drawable(fbo, entity, &*sd, cache, shader);
-                }
-            }
-        })
-    }*/
-
     /// Renders the scene
     /// Returns either a texture result of the render or `None` if the result was rendered onto
     /// the screen
-    pub fn render(&self, shader: &shader::ShaderManager) -> Option<render_target::TextureType>
+    pub fn render(&self, shader: &shader::ShaderManager)
     {
         let vd = viewer_data_from(&*self.viewer.borrow());
         let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
-        let mut pass = self.pass.take();
+        let mut pass = self.pass.take().unwrap();
         pass.run_pass(&*self.viewer.borrow(), shader, sd.clone(),
         &mut |fbo, viewer, typ, cache, _| {
             {
@@ -147,11 +56,13 @@ impl Scene {
             }
             let sd = sd.borrow();
             for entity in &self.entities {
-                if entity.should_render(typ) {
-                    Scene::render_drawable(fbo, entity, &*sd, cache, shader);
+                if entity.borrow().should_render(typ) {
+                    let mut entity = entity.borrow_mut();
+                    entity::render_entity(&mut *entity, fbo, &*sd, cache, shader);
                 }
             }
-        })
+        });
+        self.pass.set(Some(pass));
     }
 
     pub fn set_ibl_maps(&mut self, maps: shader::PbrMaps) {
@@ -164,5 +75,48 @@ impl Scene {
 
     pub fn set_light_dir(&mut self, dir_light: cgmath::Vector3<f32>) {
         self.main_light_dir = Some(dir_light);
+    }
+
+    pub fn set_entities(&mut self, entities: Vec<Rc<RefCell<dyn AbstractEntity>>>) {
+        self.entities = entities;
+    }
+
+    #[allow(dead_code)]
+    pub fn add_entity(&mut self, entity: Rc<RefCell<dyn AbstractEntity>>) {
+        self.entities.push(entity);
+    }
+}
+
+pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, shader_manager: &shader::ShaderManager, facade: &F) -> shader::PbrMaps 
+{
+    use super::{camera, drawable, textures};
+    use pipeline::*;
+    let cbo = cubes::gen_cubemap_from_sphere(hdr_path, 1024, shader_manager, facade);
+    let cam = camera::PerspectiveCamera::default(1.);
+    let mip_levels = 5;
+    let mut rt = render_target::MipCubemapRenderTarget::new(128, mip_levels, 10., cgmath::point3(0., 0., 0.));
+    let iterations = Cell::new(0);
+    let mut cache = shader::PipelineCache::default();
+    let mut skybox = cubes::Skybox::new(cubes::SkyboxTex::Sphere(
+        textures::load_texture_hdr(hdr_path, facade)), facade);
+    let res = rt.draw(&cam, None, &mut cache, &mut |fbo, viewer, _, cache, _| {
+        let its = iterations.get();
+        let mip_level = its / 6;
+        skybox.set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
+        let sd = drawable::default_scene_data(viewer);
+        drawable::render_drawable(&mut skybox, None, fbo, &sd, &cache, shader_manager);
+        iterations.set(its + 1);
+    });
+    skybox.set_mip_progress(None);
+    let mut tp = texture_processor::GenLutProcessor::new(512, 512, facade);
+    let brdf = tp.process(None, shader_manager, &mut cache, None);
+    match (res, brdf) {
+        (Some(TextureType::TexCube(Ownership::Own(spec))), Some(TextureType::Tex2d(Ownership::Own(brdf)))) =>
+            shader::PbrMaps {
+                diffuse_ibl: cbo,
+                spec_ibl: spec,
+                brdf_lut: brdf,
+            },
+        _ => panic!("Unexpected return from generating ibl textures"),
     }
 }

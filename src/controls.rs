@@ -7,19 +7,18 @@ pub enum Movement {
 
 /// PlayerControls converts device inputs to higher level
 /// game controls
-pub struct PlayerControls<'a> {
+pub struct PlayerControls {
     pub movement: Movement,
     pub pitch: f64,
     pub roll: f64,
     pub fire: bool,
-    window: &'a glutin::window::Window,
     mouse_capture: bool,
 }
 
-impl<'a> PlayerControls<'a> {
-    pub fn new(window: &'a glutin::window::Window) -> PlayerControls {
+impl PlayerControls {
+    pub fn new() -> PlayerControls {
         PlayerControls {
-            movement: Movement::Stopped, window, 
+            movement: Movement::Stopped,
             mouse_capture: false,
             pitch: 0., roll: 0., fire: false,
         }
@@ -33,6 +32,7 @@ impl<'a> PlayerControls<'a> {
     }
 
     pub fn on_input(&mut self, ev: DeviceEvent) {
+        let ctx = crate::graphics_engine::get_active_ctx();
         match ev {
             #[allow(deprecated)]
             DeviceEvent::Key(KeyboardInput {scancode: _, state, virtual_keycode: Some(vk), modifiers: _}) => {
@@ -42,7 +42,7 @@ impl<'a> PlayerControls<'a> {
                     (VirtualKeyCode::S, ElementState::Pressed) => self.movement = Movement::Backwards,
                     (VirtualKeyCode::S, ElementState::Released) => self.movement = Movement::Stopped,
                     (VirtualKeyCode::Escape, ElementState::Pressed) => 
-                        self.mouse_capture = PlayerControls::change_mouse_mode(self.mouse_capture, self.window),
+                        self.mouse_capture = PlayerControls::change_mouse_mode(self.mouse_capture, &*ctx.ctx.borrow().gl_window().window()),
                     _ => (),
                 }
             },

@@ -5,7 +5,6 @@ use super::super::textures;
 use super::super::shader;
 use cgmath::*;
 use std::collections::HashMap;
-use std::cell::RefCell;
 use std::rc::Rc;
 use crate::cg_support::ssbo;
 use super::mesh::Mesh;
@@ -36,7 +35,7 @@ pub struct Model {
     meshes: Vec<Mesh>,
     materials: Vec<Material>,
     animator: Animator,
-    bone_buffer: RefCell<Option<ssbo::SSBO<[[f32; 4]; 4]>>>,
+    bone_buffer: Option<ssbo::SSBO<[[f32; 4]; 4]>>,
     instances: instancing::InstanceBuffer,
 }
 
@@ -134,25 +133,24 @@ impl Model {
         } else { None };
         let animator = Animator::new(scene.animation_iter(), Rc::new(bone_map), Rc::new(root_node));
         Model { meshes, materials, animator, 
-            bone_buffer: RefCell::new(bone_buffer), 
+            bone_buffer, 
             instances: instancing::InstanceBuffer::new() }
     }
 
     /// Render this model once, animating if there is one
-    fn render<'a>(&'a self, model: [[f32; 4]; 4]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
+    fn render<'a>(&'a mut self, model: [[f32; 4]; 4]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
         let bones = self.animator.animate(std::time::Instant::now());
-        match (&bones, self.bone_buffer.borrow_mut().as_mut()) {
+        match (&bones, self.bone_buffer.as_mut()) {
             (Some(mats), Some(buf)) => {
                 buf.update(mats)
             },
             _ => (),
         };
-        let bb = self.bone_buffer.borrow();
         let mut v = Vec::new();
+        let bones = self.bone_buffer.as_ref();
         for mesh in &self.meshes {
-            v.push(mesh.render_args(Some(model), &self.materials, 
-                bones.as_ref().and_then(|_| bb.as_ref())));
+            v.push(mesh.render_args(Some(model), &self.materials, bones.clone()));
         }
         v
     }
@@ -161,15 +159,20 @@ impl Model {
     /// 
     /// `instance_buffer` - VertexBuffer where each element in it is passed to each rendered copy of this model. So this will render an amount of copies equal to elements
     /// in this buffer
-    fn render_instanced<'a>(&'a self, positions: &[[[f32; 4]; 4]]) 
+    fn render_instanced<'a>(&'a mut self, positions: &[[[f32; 4]; 4]]) 
         -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
         let mut v = Vec::new();
-        let ctx = super::super::get_active_ctx();
+        {
+            let ctx = super::super::get_active_ctx();
+            let ctx = ctx.ctx.borrow();
+            self.instances.update_buffer(positions, &*ctx);
+        }
+        let data : glium::vertex::VerticesSource<'a> 
+            = From::from(self.instances.get_stored_buffer().per_instance().unwrap());
         for mesh in &self.meshes {
             let (uniform, vertices, indices) = mesh.render_args(None, &self.materials, None);
-            v.push((uniform, vertices.append(From::from(
-                self.instances.get_buffer(positions, &*ctx.ctx).per_instance().unwrap())), indices));
+            v.push((uniform, vertices.append(data.clone()), indices));
         }
         v
     }
@@ -180,7 +183,7 @@ impl Model {
 }
 
 impl Drawable for Model {
-    fn render_args<'a>(&'a self, positions: &[[[f32; 4]; 4]]) 
+    fn render_args<'a>(&'a mut self, positions: &[[[f32; 4]; 4]]) 
         -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
         if positions.len() == 1 {
@@ -189,6 +192,4 @@ impl Drawable for Model {
             self.render_instanced(positions)
         }
     }
-
-    fn should_render(&self, _: shader::RenderPassType) -> bool { true }
 }
