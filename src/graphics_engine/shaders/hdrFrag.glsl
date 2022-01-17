@@ -33,6 +33,6 @@ void main() {
     //color = vec3(textureLinearize(cascade1, f_tex_coords));
     //color = vec3(texture(cascade2, f_tex_coords).r);
     //color = vec3(far_planes[2], 0, 0);
-    frag_color = vec4(vec3(textureLinearize(diffuse, f_tex_coords)), 1.0);
+    frag_color = vec4(color, 1.0);
     // tone mapping done automatically by sRGB framebuffer
 }

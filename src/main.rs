@@ -84,7 +84,7 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     pipeline::RenderPass::new(vec![depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3], 
         vec![cull_lights, eb, blur, compose, to_cache], 
         pipeline::Pipeline::new(vec![0], vec![(0, (5, 0)), (5, (2, 0)), (5, (3, 0)), (5, (4, 0)), (2, (9, 0)), (3, (9, 1)), (4, (9, 2)), (9, (1, 0)),
-            (1, (6, 0)), (6, (7, 0)), (7, (8, 1)), (0, (8, 0))]))
+            (1, (6, 0)), (6, (7, 0)), (7, (8, 1)), (1, (8, 0))]))
 }
 
 
@@ -126,7 +126,7 @@ fn main() {
 
     let mut laser = object::GameObjects::new(model::Model::new("assets/laser2.obj", &*wnd.ctx()));
     let container = object::GameObject::from(model::Model::new("assets/BlackMarble/floor.obj", &*wnd.ctx()), 
-        node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None));
+        node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None)).with_depth();
     
     main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.as_entity(), container.as_entity(), asteroid.as_entity(),
         asteroid_character.borrow().as_entity()]);
