@@ -193,6 +193,7 @@ impl<S : Surface, D : std::ops::DerefMut<Target = S>,
                 let mut surface_holder = (self.get_surface)();
                 {
                     let surface = &mut *surface_holder;
+                    surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
                     surface.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap();
                 }
                 (self.clean_surface)(surface_holder);

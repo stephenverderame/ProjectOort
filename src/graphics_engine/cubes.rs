@@ -38,6 +38,23 @@ impl Skybox {
         }
     }
 
+    /// Creates a skybox from a equirectangular texture
+    #[allow(dead_code)]
+    pub fn from_sphere<F : glium::backend::Facade>(path: &str, facade: &F) -> Skybox {
+        use super::textures;
+        let t = SkyboxTex::Sphere(textures::load_texture_2d(path, facade));
+        Self::new(t, facade)
+    }
+
+    /// Creates a skybox from a cubemap which is generated from an equirectangular texture specified by
+    /// `path`
+    pub fn cvt_from_sphere<F : glium::backend::Facade>(path: &str, cubemap_size: u32, 
+        shader_manager: &shader::ShaderManager, facade: &F) -> Skybox 
+    {
+        let t = SkyboxTex::Cube(gen_cubemap_from_sphere(path, cubemap_size, shader_manager, facade));
+        Self::new(t, facade)
+    }
+
     /// Sets the progress value of the mipmap progress
     /// If this function is used, skybox will render to a filtered skybox shader
     /// which takes this parameter as an argument to control different outputs based on the
@@ -78,7 +95,7 @@ pub fn gen_cubemap_from_sphere<F : glium::backend::Facade>(tex_path: &str, cubem
     use std::cell::RefCell;
     let mut sky = Skybox::new(SkyboxTex::Sphere(
         textures::load_tex_2d_or_hdr(tex_path, facade)), facade);
-    let cam = camera::OrthoCamera::default();
+    let cam = camera::PerspectiveCamera::default(1.);
     let gen_sky = Box::new(render_target::CubemapRenderTarget::new(cubemap_size, 10., cgmath::point3(0., 0., 0.), facade));
     let cp = Box::new(texture_processor::CopyTextureProcessor::new(cubemap_size, cubemap_size, None, None));
     let mut gen_sky_pass = pipeline::RenderPass::new(vec![gen_sky], vec![cp], pipeline::Pipeline::new(vec![0], vec![(0, (1, 0))]));
@@ -90,7 +107,10 @@ pub fn gen_cubemap_from_sphere<F : glium::backend::Facade>(tex_path: &str, cubem
         ibl_maps: None,
     }));
     let cbo = gen_sky_pass.run_pass(&cam, shader_manager, sd.clone(), 
-    &mut |fbo, _, _, cache, _| {
+    &mut |fbo, viewer, _, cache, _| {
+        {
+            sd.borrow_mut().viewer = viewer_data_from(viewer);
+        }
         drawable::render_drawable(&mut sky, None, fbo, &*sd.borrow(), &cache, &shader_manager)
     });
     if let pipeline::TextureType::TexCube(pipeline::Ownership::Own(x)) = cbo.unwrap() {

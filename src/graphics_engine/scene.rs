@@ -44,11 +44,13 @@ impl Scene {
     /// the screen
     pub fn render(&self, shader: &shader::ShaderManager)
     {
+        use glium::Surface;
         let vd = viewer_data_from(&*self.viewer.borrow());
         let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
         let mut pass = self.pass.take().unwrap();
         pass.run_pass(&*self.viewer.borrow(), shader, sd.clone(),
         &mut |fbo, viewer, typ, cache, _| {
+            fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
             {
                 let mut sdm = sd.borrow_mut();
                 sdm.viewer = viewer_data_from(viewer);
@@ -86,10 +88,15 @@ impl Scene {
         self.entities.push(entity);
     }
 }
-
-pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, shader_manager: &shader::ShaderManager, facade: &F) -> shader::PbrMaps 
+/// Generates an ibl from an hdr and skybox
+/// 
+/// `hdr_path` - the path to the hdr diffuse ibl image
+/// 
+/// `bg_skybox` - the skybox storing the texture to generate the specular ibl from
+pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, bg_skybox: &mut cubes::Skybox, 
+    shader_manager: &shader::ShaderManager, facade: &F) -> shader::PbrMaps 
 {
-    use super::{camera, drawable, textures};
+    use super::{camera, drawable};
     use pipeline::*;
     let cbo = cubes::gen_cubemap_from_sphere(hdr_path, 1024, shader_manager, facade);
     let cam = camera::PerspectiveCamera::default(1.);
@@ -97,17 +104,15 @@ pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, shader_manag
     let mut rt = render_target::MipCubemapRenderTarget::new(128, mip_levels, 10., cgmath::point3(0., 0., 0.));
     let iterations = Cell::new(0);
     let mut cache = shader::PipelineCache::default();
-    let mut skybox = cubes::Skybox::new(cubes::SkyboxTex::Sphere(
-        textures::load_texture_hdr(hdr_path, facade)), facade);
     let res = rt.draw(&cam, None, &mut cache, &mut |fbo, viewer, _, cache, _| {
         let its = iterations.get();
         let mip_level = its / 6;
-        skybox.set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
+        bg_skybox.set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
         let sd = drawable::default_scene_data(viewer);
-        drawable::render_drawable(&mut skybox, None, fbo, &sd, &cache, shader_manager);
+        drawable::render_drawable(bg_skybox, None, fbo, &sd, &cache, shader_manager);
         iterations.set(its + 1);
     });
-    skybox.set_mip_progress(None);
+    bg_skybox.set_mip_progress(None);
     let mut tp = texture_processor::GenLutProcessor::new(512, 512, facade);
     let brdf = tp.process(None, shader_manager, &mut cache, None);
     match (res, brdf) {

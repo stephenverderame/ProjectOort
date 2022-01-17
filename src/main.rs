@@ -62,7 +62,7 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let blur = Box::new(texture_processor::SepConvProcessor::new(render_width, render_height, 10, wnd_ctx));
     let compose = Box::new(texture_processor::UiCompositeProcessor::new(wnd_ctx, || { 
         let mut surface = graphics_engine::get_active_ctx().as_surface();
-        surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
+        surface.clear_color_and_depth((1., 0., 0., 1.), 1.);
         surface
     }, |disp| disp.finish()));
     let depth_render = Box::new(render_target::DepthRenderTarget::new(render_width, render_height, 
@@ -84,7 +84,7 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     pipeline::RenderPass::new(vec![depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3], 
         vec![cull_lights, eb, blur, compose, to_cache], 
         pipeline::Pipeline::new(vec![0], vec![(0, (5, 0)), (5, (2, 0)), (5, (3, 0)), (5, (4, 0)), (2, (9, 0)), (3, (9, 1)), (4, (9, 2)), (9, (1, 0)),
-            (1, (6, 0)), (6, (7, 0)), (7, (8, 1)), (1, (8, 0))]))
+            (1, (6, 0)), (6, (7, 0)), (7, (8, 1)), (0, (8, 0))]))
 }
 
 
@@ -93,7 +93,8 @@ fn main() {
     let render_height = 1080;
 
     let controller = RefCell::new(controls::PlayerControls::new());
-    let mut wnd = WindowMaker::new(render_width, render_height).title("Space Fight").build();
+    let mut wnd = WindowMaker::new(render_width, render_height).title("Space Fight")
+        .depth_buffer(24).msaa(4).build();
 
     let ship_model = model::Model::new("assets/Ships/StarSparrow01.obj", &*wnd.ctx());
     let user = Rc::new(RefCell::new(player::Player::new(ship_model, render_width as f32 / render_height as f32, 
@@ -102,8 +103,8 @@ fn main() {
     let asteroid_character = RefCell::new(object::GameObject::new(model::Model::new("assets/test/dancing_vampire.dae", &*wnd.ctx())).with_depth());
     asteroid_character.borrow_mut().data.transform.borrow_mut().scale = vec3(0.07, 0.07, 0.07);
     (*asteroid_character.borrow_mut()).start_anim("", true);
-    let skybox = cubes::Skybox::new(cubes::SkyboxTex::Cube(cubes::gen_cubemap_from_sphere("assets/Milkyway/Milkyway_BG.jpg", 1024, 
-        &*wnd.shaders, &*wnd.ctx())), &*wnd.ctx());
+    let mut skybox = cubes::Skybox::cvt_from_sphere("assets/Milkyway/Milkyway_BG.jpg", 1024, &*wnd.shaders, &*wnd.ctx());
+    let ibl = scene::gen_ibl_from_hdr("assets/Milkyway/Milkyway_Light.hdr", &mut skybox, &*wnd.shaders, &*wnd.ctx());
     let sky_entity = Rc::new(RefCell::new(
         entity::Entity {
             geometry: Box::new(skybox),
@@ -120,15 +121,15 @@ fn main() {
 
     let mut main_scene = scene::Scene::new(get_main_render_pass(render_width, render_height, user.clone(), &*wnd.ctx()),
         user.clone());
-    main_scene.set_ibl_maps(scene::gen_ibl_from_hdr("assets/Milkyway/Milkyway_Light.hdr", &*wnd.shaders, &*wnd.ctx()));
+    main_scene.set_ibl_maps(ibl);
     main_scene.set_light_dir(vec3(-120., 120., 0.));
 
     let mut laser = object::GameObjects::new(model::Model::new("assets/laser2.obj", &*wnd.ctx()));
     let container = object::GameObject::from(model::Model::new("assets/BlackMarble/floor.obj", &*wnd.ctx()), 
         node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None));
     
-    main_scene.set_entities(vec![user.borrow().as_entity(), laser.as_entity(), container.as_entity(), asteroid.as_entity(),
-        asteroid_character.borrow().as_entity(), sky_entity]);
+    main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.as_entity(), container.as_entity(), asteroid.as_entity(),
+        asteroid_character.borrow().as_entity()]);
     wnd.scene_manager().insert_scene("main", main_scene).change_scene("main");
 
     laser.new_instance(object::ObjectInstanceData {
