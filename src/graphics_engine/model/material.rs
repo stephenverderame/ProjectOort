@@ -85,11 +85,11 @@ pub struct Material {
     emission_tex: Option<glium::texture::SrgbTexture2d>,
 }
 /// Gets a mutable nullptr
-fn null<T>() -> *mut T {
+const fn null<T>() -> *mut T {
     0 as *mut T
 }
 /// Gets a constant nullptr
-fn null_c<T>() -> *const T {
+const fn null_c<T>() -> *const T {
     0 as *const T
 }
 

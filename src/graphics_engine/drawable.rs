@@ -43,6 +43,7 @@ impl<'a> VertexSourceData<'a> {
         }
     }
 
+    /// Gets the vertex source at the specified index
     /// Requires idx < len
     pub fn index(&self, idx: usize) -> glium::vertex::VerticesSource<'a> {
         use VertexSourceData::*;
@@ -64,6 +65,7 @@ impl<'a> VertexSourceData<'a> {
         }
     }
 
+    /// Creates a new vertex source data by adding a multi vertices source to the existing ones
     #[allow(dead_code)]
     pub fn append_flat(self, data: &mut dyn Iterator<Item = glium::vertex::VerticesSource<'a>>) -> Self {
         use VertexSourceData::*;
@@ -95,7 +97,7 @@ impl<'a> VertexHolder<'a> {
         }
     }
 
-    /// Creates a new VertexHolder by appending a data source to the current data source(s)
+    /// See `VertexSourceData::append`
     pub fn append(self, data: glium::vertex::VerticesSource<'a>) -> Self {
         VertexHolder {
             data: self.data.append(data),
@@ -103,6 +105,7 @@ impl<'a> VertexHolder<'a> {
         }
     }
 
+    /// See `VertexSourceData::append_flat`
     #[allow(dead_code)]
     pub fn append_flat(mut self, data: &'a mut dyn Iterator<Item = glium::vertex::VerticesSource<'a>>) -> Self {
         self.data = self.data.append_flat(data);
@@ -133,8 +136,10 @@ impl<'a> glium::vertex::MultiVerticesSource<'a> for VertexHolder<'a> {
 
 /// Something that can be drawn
 pub trait Drawable {
-    /// Draws the drawable to the given surface `frame`, with the provided scene information
-    /// and shader manager.
+    /// Gets the shader uniform, vertices, and indices for rendering the drawable
+    /// 
+    /// `positions` - the model matrices to render this drawable at. If this is empty, the specific
+    /// drawable may choose what to do
     fn render_args<'a>(&'a mut self, positions: &[[[f32; 4]; 4]]) 
         -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>;
 }
@@ -154,6 +159,7 @@ pub trait Viewer {
     fn view_dist(&self) -> (f32, f32);
 }
 
+/// Constructs shader viewer matrices from a viewer
 pub fn viewer_data_from(viewer: &dyn Viewer) -> shader::ViewerData {
     let view = viewer.view_mat();
     let proj = viewer.proj_mat();

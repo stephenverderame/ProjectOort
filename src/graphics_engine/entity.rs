@@ -4,12 +4,21 @@ use super::model;
 use std::rc::Rc;
 use std::cell::RefCell;
 use super::shader;
+
+/// An entity is a drawable combined with positional data
+/// An entity can be in many positions at once
 pub trait AbstractEntity {
+    /// Gets the transformations for all locations for this entity
     fn transformations(&self) -> &[Rc<RefCell<dyn Transformation>>];
+
+    /// Gets the drawable for this entity
     fn drawable(&mut self) -> &mut dyn Drawable;
+
+    /// Determines if the entity should be drawn during `pass`
     fn should_render(&self, pass: shader::RenderPassType) -> bool;
 }
 
+/// An entity with any drawable
 pub struct Entity {
     pub geometry: Box<dyn Drawable>,
     pub locations: Vec<Rc<RefCell<dyn Transformation>>>,
@@ -41,7 +50,7 @@ impl AbstractEntity for Entity {
         self.render_passes.iter().any(|x| *x == pass)
     }
 }
-
+/// An entity whose drawable is an externaly loaded model
 pub struct ModelEntity {
     pub geometry: Box<model::Model>,
     pub locations: Vec<Rc<RefCell<dyn Transformation>>>,

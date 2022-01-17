@@ -26,6 +26,7 @@ fn set_active_ctx(ctx: Rc<RefCell<glium::Display>>, shader: Rc<shader::ShaderMan
 
 /// If `ctx` is the active context, removes it and the active shader manager
 /// to allow them to be destroyed
+/// Requires the active context is not in use
 fn remove_ctx_if_active(ctx: Rc<RefCell<glium::Display>>) {
     ACTIVE_CTX.with(|v| {
         let active_ctx = v.take().expect("Active ctx in use");
@@ -36,13 +37,15 @@ fn remove_ctx_if_active(ctx: Rc<RefCell<glium::Display>>) {
         }
     });
 }
-
+/// RAII for the active glium context and shader manager
+/// Returns the context to the shared static variable when it is dropped
 pub struct ActiveCtx {
     pub ctx: Rc<RefCell<glium::Display>>,
     pub shader: Rc<shader::ShaderManager>,
 }
 
 impl ActiveCtx {
+    /// Gets the mutable surface of the active context
     pub fn as_surface(self) -> MutCtx {
         use std::ptr::addr_of_mut;
         let mut ctx : MaybeUninit<MutCtx> = MaybeUninit::uninit();
@@ -64,7 +67,8 @@ impl Drop for ActiveCtx {
         ACTIVE_MANAGER.with(|v| v.set(Some(self.shader.clone())));
     }
 }
-
+/// Gets the thread_local active context
+/// Panics if the active context has already been borrowed
 pub fn get_active_ctx() -> ActiveCtx {
     ActiveCtx {
         ctx: ACTIVE_CTX.with(|v| 
@@ -73,7 +77,8 @@ pub fn get_active_ctx() -> ActiveCtx {
             v.take().expect("Active manager not set or already in use")),
     }
 }
-
+/// RAII for the draw frame of the shared active context
+/// Dereferences into a `glium::Frame`
 pub struct MutCtx {
     ctx: ActiveCtx,
     display: std::cell::Ref<'static, glium::Display>,

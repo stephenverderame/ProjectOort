@@ -118,6 +118,7 @@ impl Window {
         }
     }
 
+    /// Runs the main loop and blocks until the window is closed
     pub fn main_loop(&self, mut callbacks: WindowCallbacks) {
         let shaders = self.shaders.clone();
         let mut last_time = Instant::now();

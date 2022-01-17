@@ -64,6 +64,17 @@ impl Skybox {
     pub fn set_mip_progress(&mut self, progress: Option<f32>) {
         self.mip_progress = progress;
     }
+
+    pub fn to_entity(self) -> super::entity::Entity {
+        use super::entity;
+        use std::rc::Rc;
+        use std::cell::RefCell;
+        entity::Entity {
+            geometry: Box::new(self),
+            render_passes: vec![shader::RenderPassType::Visual],
+            locations: vec![Rc::new(RefCell::new(cgmath::Matrix4::from_scale(1f64)))],
+        }
+    }
 }
 
 impl Drawable for Skybox {

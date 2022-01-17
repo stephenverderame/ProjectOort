@@ -42,11 +42,15 @@ impl GameObject {
         }
     }
 
+    /// Indicates the entity should be rendered during a depth pass
+    #[inline]
     pub fn with_depth(self) -> Self {
         self.entity.borrow_mut().render_passes.push(shader::RenderPassType::Depth);
         self
     }
 
+    /// Starts the animation with the given name
+    /// See `Animator`
     #[inline(always)]
     pub fn start_anim(&mut self, name: &str, do_loop: bool) {
         (&mut *self.entity.borrow_mut()).geometry.get_animator().start(name, do_loop)

@@ -119,6 +119,13 @@ impl Mesh {
         Mesh { vbo, ebo, mat_idx: (*mesh).material_index as usize }
     }
 
+    /// Gets the uniform, vertex information, and indices for this mesh
+    /// 
+    /// `model` - the model matrix for this mesh or `None` to use instancing at the model level
+    /// 
+    /// `mats` - the material list for the entire model
+    /// 
+    /// `bones` - the bones SSBO or `None` to not animate the mesh
     pub fn render_args<'a>(&'a self, model: Option<[[f32; 4]; 4]>, mats: &'a Vec<Material>, bones: Option<&'a ssbo::SSBO::<[[f32; 4]; 4]>>) 
         -> (shader::UniformInfo<'a>, VertexHolder<'a>, glium::index::IndicesSource<'a>)
     {

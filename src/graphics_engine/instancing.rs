@@ -12,8 +12,7 @@ glium::implement_vertex!(InstanceAttribute, instance_model_col0, instance_model_
     instance_model_col3, instance_color);
 
 /// A dynamically resizing buffer of per-instance information
-/// When more data is required than what's stored, allocates 2x the amount
-/// of memory to reduce the amortized cost
+/// If the amount of instances change, the buffer is resized
 pub struct InstanceBuffer {
     instance_data: Option<glium::VertexBuffer<InstanceAttribute>>,
     buffer_count: usize,

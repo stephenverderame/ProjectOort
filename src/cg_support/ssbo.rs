@@ -232,12 +232,14 @@ impl<T : Copy> Drop for SSBO<T> {
     }
 }
 
+/// RAII for the pointer returned from a call to glMapBuffer
 pub struct MappedBuffer<T : Copy> {
     gpu_buf: gl::types::GLuint,
     buf: *const T,
     size: u32,
 }
 
+/// RAII for the slice from the mapped buffer pointer
 pub struct MappedBufferSlice<'a, 'b, T : Copy> {
     pub slice: &'a [T],
     _owner: &'b MappedBuffer<T>, // reference to owner so we can't outlive it

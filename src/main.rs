@@ -69,15 +69,15 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
         None, None));
     let cull_lights = Box::new(texture_processor::CullLightProcessor::new(render_width, render_height, 16));
     let to_cache = Box::new(texture_processor::ToCacheProcessor::new());
-    //let uc = user.clone();
+
     let user_clone = user.clone();
     let render_cascade_1 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
     Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 30., 2048) }))));
-    //let uc = user.clone();
+
     let user_clone = user.clone();
     let render_cascade_2 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
     Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 30., 80., 2048) }))));
-    //let uc = user.clone();
+    
     let user_clone = user.clone();
     let render_cascade_3 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
     Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 80., 400., 2048) }))));
@@ -105,13 +105,7 @@ fn main() {
     (*asteroid_character.borrow_mut()).start_anim("", true);
     let mut skybox = cubes::Skybox::cvt_from_sphere("assets/Milkyway/Milkyway_BG.jpg", 1024, &*wnd.shaders, &*wnd.ctx());
     let ibl = scene::gen_ibl_from_hdr("assets/Milkyway/Milkyway_Light.hdr", &mut skybox, &*wnd.shaders, &*wnd.ctx());
-    let sky_entity = Rc::new(RefCell::new(
-        entity::Entity {
-            geometry: Box::new(skybox),
-            locations: vec![Rc::new(RefCell::new(Matrix4::from_scale(1f64)))],
-            render_passes: vec![shader::RenderPassType::Visual],
-        }
-    ));
+    let sky_entity = Rc::new(RefCell::new(skybox.to_entity()));
     
     let mut collision_tree = collisions::CollisionTree::new(point3(0., 0., 0.), 150.);
     let collision_compute = collisions::TriangleTriangleGPU::from_active_ctx();

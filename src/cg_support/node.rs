@@ -154,13 +154,5 @@ mod test {
         c.set_parent(p.clone());
         assert_eq!(c.mat().transform_point(point3(1., 0., 1.)),
             point3(8., 0., 4.));
-
-        p.borrow_mut().remove_parent();
-        p.borrow_mut().anchor = point3(0f64, 0., 0.);
-        p.borrow_mut().pos = point3(0.058007f64, 0.452938, 0.037287);
-        p.borrow_mut().orientation = Quaternion::new(0.991916f64, 0.051606, 0.099089, -0.060177);
-        p.borrow_mut().scale = vec3(1.2f64, 0.8, 3.);
-        let o = p.borrow().mat().transform_point(point3(-0.737862f64, 1.01066, 0.478124));
-        cgmath::assert_relative_eq!(o, point3(0.638277f64, 0.26307, 1.37283));
     }
 }
