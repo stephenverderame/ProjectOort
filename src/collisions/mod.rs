@@ -41,8 +41,8 @@ impl Drop for MeshMap {
 }
 
 pub struct CollisionObject {
-    obj: Rc<RefCell<object::Object>>,
-    bvh: Rc<RefCell<collision_mesh::CollisionMesh>>,
+    obj: Rc<RefCell<object::Object>>, //shared with octree
+    mesh: Rc<RefCell<collision_mesh::CollisionMesh>>, //shared between all objects with the same geometry
 }
 
 impl CollisionObject {
@@ -51,19 +51,19 @@ impl CollisionObject {
         let mut mmap = get_loaded_meshes();
         if let Some(mesh) = mmap.loaded_meshes.as_ref().unwrap().get(mesh_path) {
             let (center, radius) = mesh.borrow().bounding_sphere();
-            let o = object::Object::with_mesh(transform, center, radius, &mesh);
+            let obj = Rc::new(RefCell::new(object::Object::with_mesh(transform, center, radius, &mesh)));
             CollisionObject {
-                obj: Rc::new(RefCell::new(o)),
-                bvh: mesh.clone()
+                obj,
+                mesh: mesh.clone()
             }
         } else {
             let mesh = Rc::new(RefCell::new(collision_mesh::CollisionMesh::new(mesh_path, bvh_stop)));
             mmap.loaded_meshes.as_mut().unwrap().insert(mesh_path.to_owned(), mesh.clone());
             let (center, radius) = mesh.borrow().bounding_sphere();
-            let o = object::Object::with_mesh(transform, center, radius, &mesh);
+            let obj = Rc::new(RefCell::new(object::Object::with_mesh(transform, center, radius, &mesh)));
             CollisionObject {
-                obj: Rc::new(RefCell::new(o)),
-                bvh: mesh.clone()
+                obj,
+                mesh: mesh.clone()
             }
         }
     }
@@ -78,12 +78,19 @@ impl CollisionObject {
             mesh: prototype.obj.borrow().mesh.clone(),
         }));
         CollisionObject {
-            obj, bvh: prototype.bvh.clone(),
+            obj, mesh: prototype.mesh.clone(),
         }
     }
 
     pub fn is_collision(&self, other: &CollisionObject, highp_strategy: &dyn HighPCollision) -> bool {
-        self.bvh.borrow().collision(&self.obj.borrow().model.borrow().mat(), &other.bvh.borrow(),
+        self.collision(other, highp_strategy).is_some()
+    }
+
+    /// Gets the hit point and normal for each collider
+    /// The receiver's hit point and normal (`self`) is stored in `pt_norm_a` in the `HitData` if
+    /// any data is returned
+    pub fn collision(&self, other: &CollisionObject, highp_strategy: &dyn HighPCollision) -> Option<Hit> {
+        self.mesh.borrow().collision(&self.obj.borrow().model.borrow().mat(), &other.mesh.borrow(),
             &other.obj.borrow().model.borrow().mat(), highp_strategy)
     }
 
@@ -91,7 +98,7 @@ impl CollisionObject {
     #[allow(dead_code)]
     pub fn get_main_and_leaf_cube_transformations(&self) -> (Vec<cgmath::Matrix4<f64>>, Vec<cgmath::Matrix4<f64>>) {
         use cgmath::*;
-        let (main, leaf) = self.bvh.borrow().main_and_leaf_boxes();
+        let (main, leaf) = self.mesh.borrow().main_and_leaf_boxes();
 
         (main.into_iter().map(|x| {
             Matrix4::from_translation(x.center.to_vec()) * 
@@ -112,8 +119,8 @@ impl CollisionObject {
         use cgmath::*;
         let our_mat = self.obj.borrow().model.borrow().mat();
         let other_mat = other.obj.borrow().model.borrow().mat();
-        let (our, other) = self.bvh.borrow().get_colliding_volumes(&our_mat,
-            &other.bvh.borrow(), &other_mat);
+        let (our, other) = self.mesh.borrow().get_colliding_volumes(&our_mat,
+            &other.mesh.borrow(), &other_mat);
         our.into_iter().map(|x| {
             our_mat * Matrix4::from_translation(x.center.to_vec()) * 
             Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
@@ -127,15 +134,19 @@ impl CollisionObject {
     pub fn get_transformation(&self) -> Rc<RefCell<node::Node>> {
         self.obj.borrow().model.clone()
     }
-}
-#[derive(PartialEq, Eq)]
-pub enum ObjectType {
-    Static, Dynamic
+
+    #[inline(always)]
+    pub fn update_in_collision_tree(&self) {
+        Octree::update(&self.obj)
+    }
+
+    pub fn is_in_collision_tree(&self) -> bool {
+        self.obj.borrow().octree_cell.upgrade().is_some()
+    }
 }
 
 pub struct CollisionTree {
     tree: Octree,
-    dynamic_objects: Vec<Rc<RefCell<object::Object>>>,
 }
 
 impl CollisionTree {
@@ -143,37 +154,30 @@ impl CollisionTree {
     pub fn new(center: cgmath::Point3<f64>, half_width: f64) -> CollisionTree {
         CollisionTree {
             tree: Octree::new(center, half_width),
-            dynamic_objects: Vec::new(),
         }
     }
 
     #[inline]
-    pub fn insert(&mut self, obj: &CollisionObject, typ: ObjectType) {
+    pub fn insert(&mut self, obj: &CollisionObject) {
         self.tree.insert(obj.obj.clone());
-        if typ == ObjectType::Dynamic {
-            self.dynamic_objects.push(obj.obj.clone());
-        }
     }
 
     /// Updates all dynamic objects in the tree
     #[inline]
-    pub fn update(&self) {
-        for obj in &self.dynamic_objects {
-            Octree::update(obj)
-        }
+    pub fn update(&self, obj: &CollisionObject) {
+        Octree::update(&obj.obj)
     }
 
     #[inline]
     #[allow(dead_code)]
     pub fn remove(&mut self, obj: &CollisionObject) {
-        self.dynamic_objects.retain(|e| !Rc::ptr_eq(e, &obj.obj));
         self.tree.remove(&obj.obj)
     }
 
     pub fn get_colliders(&self, obj: &CollisionObject) -> Vec<CollisionObject> {
         self.tree.get_colliders(&obj.obj).into_iter().map(|x| {
             CollisionObject {
-                bvh: x.borrow().mesh.upgrade().unwrap(),
+                mesh: x.borrow().mesh.upgrade().unwrap(),
                 obj: x.clone(),
             }
         }).collect()

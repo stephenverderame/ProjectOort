@@ -168,6 +168,13 @@ impl<T : Copy> SSBO<T> {
             assert_no_error!();
         }
     }
+    pub fn zero_bytes(&mut self) {
+        unsafe {
+            let val = 0u8;
+            gl::ClearNamedBufferData(self.buffer, gl::R8, gl::RED, gl::UNSIGNED_BYTE, 
+                &val as *const u8 as *const std::ffi::c_void);
+        }
+    }
 
     /// Updates the data of the SSBO, resizing if necessary (for dynamic mode)
     pub fn update(&mut self, data: &[T]) {

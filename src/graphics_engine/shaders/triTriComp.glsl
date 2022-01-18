@@ -19,8 +19,6 @@ layout(std430, binding = 7) writeonly buffer Collisions {
 uniform mat4 model_a;
 uniform mat4 model_b;
 
-shared int collisions;
-
 const float eps = 0.000001;
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
@@ -168,7 +166,11 @@ void mollerTriangleTest(uvec2 location) {
         
         if (intervalOverlap(a_t, b_t)) {
             // intervals overlap, so collision detected
-            atomicAdd(collisions, 1);
+
+            // this is a data race but we zero the out buffer and
+            // only care if something is written and don't care about what it is
+            out_buffer[location.x] = uvec4(1);
+            out_buffer[a_triangles.length() + location.y] = uvec4(1);
         }
     } else if (coplanar) {
         // project onto axis-aligned plane that is closest to the plane
@@ -192,7 +194,8 @@ void mollerTriangleTest(uvec2 location) {
             || lineIntersection2D(a1, a3, b1, b2) || lineIntersection2D(a1, a3, b2, b3)
             || lineIntersection2D(a1, a3, b1, b3)) 
         {
-            atomicAdd(collisions, 1);
+            out_buffer[location.x] = uvec4(1);
+            out_buffer[a_triangles.length() + location.y] = uvec4(1);
         }
     }
 }
@@ -208,13 +211,6 @@ void main() {
 
     if (location.x < a_triangles.length() && location.y < b_triangles.length()) {
         mollerTriangleTest(location);
-    }
-
-    barrier();
-
-    if (gl_LocalInvocationIndex == 0) {
-        uint workGroupId = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;
-        out_buffer[workGroupId].x = float(collisions);
     }
 
 }

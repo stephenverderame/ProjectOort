@@ -1,23 +1,22 @@
-use super::bvh::{OBBTree, TreeStopCriteria};
-use super::highp_col::HighPCollision;
+use super::bvh::{OBBTree, TreeStopCriteria, CollisionVertex};
+use super::highp_col::{HighPCollision, Hit};
 use super::obb;
 use tobj;
 use cgmath::*;
 
 pub struct CollisionMesh {
     sub_meshes: Vec<OBBTree<f32>>,
-
 }
 
-fn get_mesh_data(mesh: &tobj::Mesh) -> (Vec<Point3<f32>>, Vec<u32>) {
-    let mut verts = Vec::<Point3<f32>>::new();
+fn get_mesh_data(mesh: &tobj::Mesh) -> (Vec<CollisionVertex<f32>>, Vec<u32>) {
+    let mut verts = Vec::new();
     let indices = mesh.indices.clone();
     for idx in 0 .. mesh.positions.len() / 3 {
         let idx = idx as usize;
-        /*let normal = if mesh.normals.is_empty() { point3(0., 0., 0.) } else 
-        { point3(mesh.normals[idx * 3], mesh.normals[idx * 3 + 1], mesh.normals[idx * 3 + 2]) };*/
-        let vert = point3(mesh.positions[idx * 3], mesh.positions[idx * 3 + 1], mesh.positions[idx * 3 + 2]);
-        verts.push(vert);
+        let norm = if mesh.normals.is_empty() { vec3(0., 0., 0.) } else 
+        { vec3(mesh.normals[idx * 3], mesh.normals[idx * 3 + 1], mesh.normals[idx * 3 + 2]) };
+        let pos = point3(mesh.positions[idx * 3], mesh.positions[idx * 3 + 1], mesh.positions[idx * 3 + 2]);
+        verts.push(CollisionVertex{ pos, norm });
     }
     (verts, indices)
 }
@@ -39,7 +38,7 @@ impl CollisionMesh {
     }
 
     pub fn collision(&self, self_transform: &Matrix4<f64>, other: &CollisionMesh,
-        other_transform: &Matrix4<f64>, highp_strat: &dyn HighPCollision) -> bool 
+        other_transform: &Matrix4<f64>, highp_strat: &dyn HighPCollision) -> Option<Hit>
     {
         let mut our_tris = Vec::new();
         let mut other_tris = Vec::new();
@@ -52,7 +51,7 @@ impl CollisionMesh {
             }
         }
         //println!("Triangle checks: {} x {}", our_tris.len(), other_tris.len());
-        if our_tris.is_empty() || other_tris.is_empty() { false }
+        if our_tris.is_empty() || other_tris.is_empty() { None }
         else {
             highp_strat.collide(&our_tris, &self_transform, 
                 &other_tris, &other_transform)
@@ -147,8 +146,10 @@ mod test {
     fn triangle_tests() {
         let (shader, _) = init();
         let strat = highp_col::TriangleTriangleGPU::new(&shader);
-        let vertices = vec![point3(1f32, 0., 0.), point3(0., 1., 0.), point3(-1., 0., 0.)];
-        let triangle = bvh::Triangle::array_from(vec![0, 1, 2], &vertices as *const Vec<Point3<f32>>);
+        let vertices = vec![CollisionVertex{ pos: point3(1f32, 0., 0.), norm: vec3(0., 0., 1.) }, 
+            CollisionVertex{ pos: point3(0., 1., 0.), norm: vec3(0., 0., 1.) }, 
+            CollisionVertex{ pos: point3(-1., 0., 0.), norm: vec3(0., 0., 1.)}];
+        let triangle = bvh::Triangle::array_from(vec![0, 1, 2], &vertices as *const Vec<CollisionVertex<f32>>);
         let mut t_b = node::Node::default();
         let mut t_a = node::Node::default();
         assert_eq!(strat.collide(&triangle, &Matrix4::from_scale(1.), &triangle, &Matrix4::from_translation(vec3(0., 0., 1.))), false); //plane test reject
@@ -166,10 +167,13 @@ mod test {
         t_a.scale = vec3(1.895f64, 1.895, 1.895);
         assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true); // intersect via scale
 
-        let vertices2 = vec![point3(-0.292f32, -0.0536, 0.00074), point3(-0.392, 0.273, 0.296), point3(0.747, 0.515, 0.255)];
+        let vertices2 = vec![
+            CollisionVertex{pos: point3(-0.292f32, -0.0536, 0.00074), norm: vec3(0., 0., 0.) }, 
+            CollisionVertex{pos: point3(-0.392, 0.273, 0.296), norm: vec3(0., 0., 0.)}, 
+            CollisionVertex{pos: point3(0.747, 0.515, 0.255), norm: vec3(0., 0., 0.) }];
         t_a.pos = point3(0., 0f64, 0.);
         t_a.orientation = Matrix3::from_angle_x(Deg(0.)).into();
-        let triangle2 = bvh::Triangle::array_from(vec![0, 1, 2], &vertices2 as *const Vec<Point3<f32>>);
+        let triangle2 = bvh::Triangle::array_from(vec![0, 1, 2], &vertices2 as *const Vec<CollisionVertex<f32>>);
         assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), false); // random triangle no intersect
         t_a.pos = point3(-0.16618f64, 0.97175, 0.65434);
         assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), true); // random triangle intersect

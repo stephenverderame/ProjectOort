@@ -1,20 +1,59 @@
 use super::bvh::Triangle;
+
+/// Encapsulates collision information
+pub struct HitData {
+    pos_norm_a: (Point3<f64>, Vector3<f64>),
+    pos_norm_b: (Point3<f64>, Vector3<f64>),
+}
+
+pub enum Hit {
+    NoData,
+    Hit(HitData),
+}
+
 /// Performs the high-precision collision test
 pub trait HighPCollision {
     fn collide(&self, this_triangles: &[Triangle<f32>], this_transform: &cgmath::Matrix4<f64>,
-        other_triangles: &[Triangle<f32>], other_transform: &cgmath::Matrix4<f64>) -> bool;
+        other_triangles: &[Triangle<f32>], other_transform: &cgmath::Matrix4<f64>) -> Option<Hit>;
 }
 
 pub struct HighPNone {}
 
 impl HighPCollision for HighPNone {
     fn collide(&self, _: &[Triangle<f32>], 
-        _: &cgmath::Matrix4<f64>, _: &[Triangle<f32>], _: &cgmath::Matrix4<f64>) -> bool { true }
+        _: &cgmath::Matrix4<f64>, _: &[Triangle<f32>], _: &cgmath::Matrix4<f64>) -> Option<Hit> 
+        { Some(Hit::NoData) }
 }
 
 use crate::graphics_engine::shader;
 use crate::cg_support::ssbo;
 use cgmath::*;
+
+fn hit_from_colliders(colliders_a: &[&Triangle<f32>], colliders_b: &[&Triangle<f32>], 
+    model_a: &Matrix4<f64>, model_b: &Matrix4<f64>) -> HitData 
+{
+    let avg_pt_norm = |colliders : &[&Triangle<f32>], model: &Matrix4<f64>| {
+        let mut avg_point = point3(0f64, 0., 0.);
+        let mut avg_norm = vec3(0f64, 0., 0.);
+        for t in colliders {
+            avg_point += t.centroid().to_vec();
+            let sum : Vector3<f32> = t.norms().into_iter().sum();
+            avg_norm += sum.cast().unwrap() / 3f64;
+        }
+        avg_point /= colliders_a.len() as f64;
+        avg_norm /= colliders_a.len() as f64;
+        let norm_trans = Matrix3::new(
+            model.x.x, model.x.y, model.x.z,
+            model.y.x, model.y.y, model.y.z,
+            model.z.x, model.z.y, model.z.z);
+        (model.transform_point(avg_point), 
+        (norm_trans * avg_norm).normalize())
+    };
+    HitData {
+        pos_norm_a: avg_pt_norm(colliders_a, model_a),
+        pos_norm_b: avg_pt_norm(colliders_b, model_b),
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 #[repr(align(64))]
@@ -49,7 +88,7 @@ impl<'a> TriangleTriangleGPU<'a> {
 impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
 
     fn collide(&self, a_triangles: &[Triangle<f32>], a_mat: &Matrix4<f64>, 
-        b_triangles: &[Triangle<f32>], b_mat: &Matrix4<f64>) -> bool 
+        b_triangles: &[Triangle<f32>], b_mat: &Matrix4<f64>) -> Option<Hit>
     {
         let map_func = |mat: Matrix4<f64>| {
             move |x: &Triangle<f32>| {
@@ -63,22 +102,23 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
             }
         };
 
-        let a_triangles : Vec<ShaderTriangle> = a_triangles.iter().map(map_func(*a_mat)).collect();
-        let b_triangles : Vec<ShaderTriangle> = b_triangles.iter().map(map_func(*b_mat)).collect();
+        let a_in_triangles : Vec<ShaderTriangle> = a_triangles.iter().map(map_func(*a_mat)).collect();
+        let b_in_triangles : Vec<ShaderTriangle> = b_triangles.iter().map(map_func(*b_mat)).collect();
 
         let a_len = a_triangles.len() as u32;
         let b_len = b_triangles.len() as u32;
 
-        let input_a = ssbo::SSBO::create_static(&a_triangles/*.clone()*/);
-        let input_b = ssbo::SSBO::create_static(&b_triangles);
+        let input_a = ssbo::SSBO::create_static(&a_in_triangles);
+        let input_b = ssbo::SSBO::create_static(&b_in_triangles);
 
         let work_groups_x = ((a_len + a_len % TriangleTriangleGPU::WORK_GROUP_SIZE) / 
             TriangleTriangleGPU::WORK_GROUP_SIZE).max(1);
         let work_groups_y = ((b_len + b_len % TriangleTriangleGPU::WORK_GROUP_SIZE) / 
             TriangleTriangleGPU::WORK_GROUP_SIZE).max(1);
 
-        let output : ssbo::SSBO<[f32; 4]> 
-            = ssbo::SSBO::static_empty(work_groups_x * work_groups_y);
+        let mut output : ssbo::SSBO<[u32; 4]> 
+            = ssbo::SSBO::static_empty(a_len + b_len);
+        output.zero_bytes();
         
         input_a.bind(5);
         input_b.bind(6);
@@ -108,13 +148,21 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
                 point3(a_triangles[idx]._c[0], a_triangles[idx]._c[1], a_triangles[idx]._c[2]));
         }*/
 
-        for e in output.map_read().as_slice().iter() {
+        let mut a_colliders = Vec::new();
+        let mut b_colliders = Vec::new();
+        for (e, idx) in output.map_read().as_slice().iter().zip(0 .. a_len + b_len) {
             //println!("Output got {:?}", e);
-            if e[0] > 0. { 
-                return true; 
+            if e[0] > 0 { 
+                if idx < a_len {
+                    a_colliders.push(&a_triangles[idx as usize]);
+                } else {
+                    b_colliders.push(&b_triangles[(idx - a_len) as usize]);
+                }
             }
         }
-        false
+        if !a_colliders.is_empty() && !b_colliders.is_empty() {
+            Some(Hit::Hit(hit_from_colliders(&a_colliders, &b_colliders, a_mat, b_mat)))
+        } else { None }
 
     }
 }
@@ -268,7 +316,7 @@ impl TriangleTriangleCPU {
 impl HighPCollision for TriangleTriangleCPU {
 
     fn collide(&self, a_triangles: &[Triangle<f32>], a_mat: &Matrix4<f64>, 
-        b_triangles: &[Triangle<f32>], b_mat: &Matrix4<f64>) -> bool 
+        b_triangles: &[Triangle<f32>], b_mat: &Matrix4<f64>) -> Option<Hit>
     {
         for a in a_triangles {
             let a_verts : Vec<Point3<f64>> = 
@@ -277,10 +325,10 @@ impl HighPCollision for TriangleTriangleCPU {
                 let b_verts : Vec<Point3<f64>> =
                 b.verts().into_iter().map(|x| b_mat.transform_point(x.cast().unwrap())).collect();
                 if TriangleTriangleCPU::moller_test(&a_verts, &b_verts) {
-                    return true
+                    return Some(Hit::NoData)
                 }
             }
         }
-        false
+        None
     }
 }

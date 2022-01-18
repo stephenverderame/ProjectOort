@@ -53,6 +53,21 @@ impl Node {
         }
     }
 
+    pub fn pos(mut self, pos: Point3<f64>) -> Self {
+        self.pos = pos;
+        self
+    }
+
+    pub fn scale(mut self, scale: Vector3<f64>) -> Self {
+        self.scale = scale;
+        self
+    }
+
+    pub fn rot(mut self, rot: Quaternion<f64>) -> Self {
+        self.orientation = rot;
+        self
+    }
+
     pub fn set_parent(&mut self, parent: Rc<RefCell<Node>>) {
         self.parent = Some(parent);
     }

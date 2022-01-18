@@ -33,9 +33,15 @@ impl TreeStopCriteria {
 }
 
 #[derive(Clone)]
+pub struct CollisionVertex<T : BaseFloat> {
+    pub pos: Point3<T>,
+    pub norm: Vector3<T>,
+}
+
+#[derive(Clone)]
 pub struct Triangle<T : BaseFloat> {
     indices: [u32; 3],
-    vertices: *const Vec<Point3<T>>,
+    vertices: *const Vec<CollisionVertex<T>>,
 }
 
 impl<T : BaseFloat> std::fmt::Debug for Triangle<T> {
@@ -47,21 +53,28 @@ impl<T : BaseFloat> std::fmt::Debug for Triangle<T> {
 impl<T : BaseFloat> Triangle<T> {
     pub fn centroid(&self) -> Point3<f64> {
         let vertices = unsafe { &*self.vertices };
-        let v = ((vertices[self.indices[0] as usize].to_vec() +
-        vertices[self.indices[1] as usize].to_vec() +
-        vertices[self.indices[2] as usize].to_vec()) / 
+        let v = ((vertices[self.indices[0] as usize].pos.to_vec() +
+        vertices[self.indices[1] as usize].pos.to_vec() +
+        vertices[self.indices[2] as usize].pos.to_vec()) / 
         T::from(3).unwrap()).cast().unwrap();
         point3(v.x, v.y, v.z)
     }
 
     pub fn verts(&self) -> Vec<Point3<T>> {
         let vertices = unsafe { &*self.vertices };
-        vec![vertices[self.indices[0] as usize],
-        vertices[self.indices[1] as usize],
-        vertices[self.indices[2] as usize]]
+        vec![vertices[self.indices[0] as usize].pos,
+        vertices[self.indices[1] as usize].pos,
+        vertices[self.indices[2] as usize].pos]
     }
 
-    pub fn array_from(indices: Vec<u32>, vertices: *const Vec<Point3<T>>) -> Vec<Triangle<T>> {
+    pub fn norms(&self) -> Vec<Vector3<T>> {
+        let vertices = unsafe { &*self.vertices };
+        vec![vertices[self.indices[0] as usize].norm,
+        vertices[self.indices[1] as usize].norm,
+        vertices[self.indices[2] as usize].norm]
+    }
+
+    pub fn array_from(indices: Vec<u32>, vertices: *const Vec<CollisionVertex<T>>) -> Vec<Triangle<T>> {
         use itertools::Itertools;
         assert_eq!(indices.len() % 3, 0);
         let mut res = Vec::new();
@@ -274,7 +287,7 @@ impl<T : BaseFloat> BVHNode<T> {
 }
 
 struct SelfRef<T : BaseFloat> {
-    vertices: Vec<Point3<T>>,
+    vertices: Vec<CollisionVertex<T>>,
     _m: PhantomPinned,
 }
 
@@ -284,9 +297,9 @@ pub struct OBBTree<T : BaseFloat> {
 }
 
 impl<T : BaseFloat> OBBTree<T> {
-    pub fn from(indices: Vec<u32>, vertices: Vec<Point3<T>>, stop: TreeStopCriteria) -> OBBTree<T> {
+    pub fn from(indices: Vec<u32>, vertices: Vec<CollisionVertex<T>>, stop: TreeStopCriteria) -> OBBTree<T> {
         let vertices = Box::pin(SelfRef { vertices, _m: PhantomPinned });
-        let ptr = &vertices.as_ref().vertices as *const Vec<Point3<T>>;
+        let ptr = &vertices.as_ref().vertices as *const Vec<CollisionVertex<T>>;
         let triangles = unsafe { Triangle::array_from(indices, &*ptr) };
         OBBTree {
             _vertices: vertices,

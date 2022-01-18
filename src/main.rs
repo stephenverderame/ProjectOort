@@ -6,6 +6,7 @@ mod collisions;
 mod object;
 mod player;
 mod controls;
+mod physics;
 extern crate gl;
 use graphics_engine::window::*;
 
@@ -17,21 +18,15 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use cg_support::node;
 
-fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, lasers: &mut object::GameObjects) {
+fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, lasers: &mut object::GameObject) {
     if controller.fire {
         let mut transform = user.root.borrow().clone();
         transform.scale = cgmath::vec3(0.3, 0.3, 1.);
-        let transform = Rc::new(RefCell::new(transform));
-        lasers.new_instance(object::ObjectInstanceData {
-            collider: Some(collisions::CollisionObject::new(transform.clone(), "assets/laser2.obj", 
-                collisions::TreeStopCriteria::AlwaysStop)),
-            transform, 
-            velocity: user.forward() * 40f64,
-        });
+        lasers.new_instance(transform, Some(user.forward() * 40f64));
     }
 }
 
-fn gen_asteroid_field(obj: &mut object::GameObjects, ct: &mut collisions::CollisionTree) {
+fn gen_asteroid_field(obj: &mut object::GameObject, ct: &mut collisions::CollisionTree) {
     use rand::distributions::*;
     let scale_distrib = rand::distributions::Uniform::from(0.01 .. 0.3);
     let pos_distrib = rand::distributions::Uniform::from(-100.0 .. 100.0);
@@ -41,16 +36,9 @@ fn gen_asteroid_field(obj: &mut object::GameObjects, ct: &mut collisions::Collis
         let scale = scale_distrib.sample(&mut rng);
         let axis = vec3(pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng)).normalize();
         let rot = Quaternion::<f64>::from_axis_angle(axis, Deg::<f64>(angle_distrib.sample(&mut rng)));
-        let transform = Rc::new(RefCell::new(
-            node::Node::new(Some(point3(pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng))),
-            Some(rot), Some(vec3(scale, scale, scale)), None)));
-        let collider = collisions::CollisionObject::new(transform.clone(), "assets/asteroid1/Asteroid.obj", 
-            collisions::TreeStopCriteria::default());
-        ct.insert(&collider, collisions::ObjectType::Static);
-        obj.new_instance(object::ObjectInstanceData {
-            collider: Some(collider),
-            transform, velocity: vec3(0., 0., 0.),
-        })
+        let transform = node::Node::new(Some(point3(pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng), pos_distrib.sample(&mut rng))),
+            Some(rot), Some(vec3(scale, scale, scale)), None);
+        obj.new_instance(transform, None);
     }
 }
 
@@ -77,7 +65,7 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let user_clone = user.clone();
     let render_cascade_2 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
     Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 30., 80., 2048) }))));
-    
+
     let user_clone = user.clone();
     let render_cascade_3 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
     Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 80., 400., 2048) }))));
@@ -99,11 +87,12 @@ fn main() {
     let ship_model = model::Model::new("assets/Ships/StarSparrow01.obj", &*wnd.ctx());
     let user = Rc::new(RefCell::new(player::Player::new(ship_model, render_width as f32 / render_height as f32, 
         "assets/Ships/StarSparrow01.obj")));
-    let mut asteroid = object::GameObjects::new(model::Model::new("assets/asteroid1/Asteroid.obj", &*wnd.ctx())).with_depth();
-    let asteroid_character = RefCell::new(object::GameObject::new(model::Model::new("assets/test/dancing_vampire.dae", &*wnd.ctx())).with_depth());
-    asteroid_character.borrow_mut().data.transform.borrow_mut().scale = vec3(0.07, 0.07, 0.07);
+    let mut asteroid = object::GameObject::new(model::Model::new("assets/asteroid1/Asteroid.obj", &*wnd.ctx())).with_depth()
+        .with_collisions("assets/asteroid1/Asteroid.obj", collisions::TreeStopCriteria::default()).immobile();
+    let asteroid_character = RefCell::new(object::AnimGameObject::new(model::Model::new("assets/test/dancing_vampire.dae", &*wnd.ctx())).with_depth());
+    asteroid_character.borrow().transform().borrow_mut().scale = vec3(0.07, 0.07, 0.07);
     (*asteroid_character.borrow_mut()).start_anim("", true);
-    let mut skybox = cubes::Skybox::cvt_from_sphere("assets/Milkyway/Milkyway_BG.jpg", 1024, &*wnd.shaders, &*wnd.ctx());
+    let mut skybox = cubes::Skybox::cvt_from_sphere("assets/Milkyway/Milkyway_BG.jpg", 2048, &*wnd.shaders, &*wnd.ctx());
     let ibl = scene::gen_ibl_from_hdr("assets/Milkyway/Milkyway_Light.hdr", &mut skybox, &*wnd.shaders, &*wnd.ctx());
     let sky_entity = Rc::new(RefCell::new(skybox.to_entity()));
     
@@ -118,26 +107,16 @@ fn main() {
     main_scene.set_ibl_maps(ibl);
     main_scene.set_light_dir(vec3(-120., 120., 0.));
 
-    let mut laser = object::GameObjects::new(model::Model::new("assets/laser2.obj", &*wnd.ctx()));
-    let container = object::GameObject::from(model::Model::new("assets/BlackMarble/floor.obj", &*wnd.ctx()), 
-        node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None)).with_depth();
+    let mut laser = object::GameObject::new(model::Model::new("assets/laser2.obj", &*wnd.ctx()));
+    let container = object::GameObject::new(model::Model::new("assets/BlackMarble/floor.obj", &*wnd.ctx())) 
+        .at_pos(node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None)).with_depth();
     
     main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.as_entity(), container.as_entity(), asteroid.as_entity(),
         asteroid_character.borrow().as_entity()]);
     wnd.scene_manager().insert_scene("main", main_scene).change_scene("main");
 
-    laser.new_instance(object::ObjectInstanceData {
-        transform: Rc::new(RefCell::new(node::Node::new(
-            Some(point3(0., 0., 0.)), None, Some(vec3(0.3, 0.3, 3.)), None))),
-        velocity: vec3(0., 0., 0.),
-        collider: None,
-    });
-    laser.new_instance(object::ObjectInstanceData {
-        transform: Rc::new(RefCell::new(
-            node::Node::new(Some(point3(-120., 120., 0.)), None, None, None))),
-        velocity: vec3(0., 0., 0.),
-        collider: None,
-    });
+    laser.new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)), None);
+    laser.new_instance(node::Node::default().pos(point3(-120., 120., 0.)), None);
 
     let mut draw_cb = |dt : std::time::Duration, mut scene : std::cell::RefMut<scene::Scene>| {
         let dt = dt.as_secs_f64();
@@ -158,10 +137,8 @@ fn main() {
         controller.borrow_mut().reset_toggles();
         let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 
             Deg::<f64>(45. * dt), Deg::<f64>(0.)).into();
-        let orig_rot = laser.instances[0].transform.borrow().orientation;
-        laser.instances[0].transform.borrow_mut().orientation = orig_rot * q;
-        laser.instance_motion(dt);
-        asteroid.instance_motion(dt);
+        let orig_rot = laser.transform().borrow().orientation;
+        laser.transform().borrow_mut().orientation = orig_rot * q;
         collision_tree.update();
 
         let light_data = {
