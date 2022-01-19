@@ -11,6 +11,7 @@ pub enum TreeStopCriteria {
     MaxPrimitivesPerLeaf(usize),
     #[allow(dead_code)]
     MaxDepth(u32),
+    #[allow(dead_code)]
     AlwaysStop,
 }
 

@@ -62,9 +62,11 @@ impl InstanceBuffer {
         self.active_count = data.len();
     }
 
-    pub fn get_stored_buffer(&self) -> &glium::vertex::VertexBuffer<InstanceAttribute>
+    /// Gets the stored instance buffer or `None` if there has been no instances stored
+    /// in the buffer
+    pub fn get_stored_buffer(&self) -> Option<&glium::vertex::VertexBuffer<InstanceAttribute>>
     {
-        self.instance_data.as_ref().unwrap()
+        self.instance_data.as_ref()
     }
 
 }

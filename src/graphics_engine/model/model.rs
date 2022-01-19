@@ -163,16 +163,18 @@ impl Model {
         -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
         let mut v = Vec::new();
-        {
-            let ctx = super::super::get_active_ctx();
-            let ctx = ctx.ctx.borrow();
-            self.instances.update_buffer(positions, &*ctx);
-        }
-        let data : glium::vertex::VerticesSource<'a> 
-            = From::from(self.instances.get_stored_buffer().per_instance().unwrap());
-        for mesh in &self.meshes {
-            let (uniform, vertices, indices) = mesh.render_args(None, &self.materials, None);
-            v.push((uniform, vertices.append(data.clone()), indices));
+        if !positions.is_empty() {
+            {
+                let ctx = super::super::get_active_ctx();
+                let ctx = ctx.ctx.borrow();
+                self.instances.update_buffer(positions, &*ctx);
+            }
+            let data : glium::vertex::VerticesSource<'a> 
+                = From::from(self.instances.get_stored_buffer().unwrap().per_instance().unwrap());
+            for mesh in &self.meshes {
+                let (uniform, vertices, indices) = mesh.render_args(None, &self.materials, None);
+                v.push((uniform, vertices.append(data.clone()), indices));
+            }
         }
         v
     }

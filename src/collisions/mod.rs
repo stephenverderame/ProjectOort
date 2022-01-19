@@ -40,8 +40,9 @@ impl Drop for MeshMap {
     }
 }
 
+#[derive(Clone)]
 pub struct CollisionObject {
-    obj: Rc<RefCell<object::Object>>, //shared with octree
+    obj: Rc<RefCell<object::Object>>, //shared with octree, which holds weak pointers
     mesh: Rc<RefCell<collision_mesh::CollisionMesh>>, //shared between all objects with the same geometry
 }
 
@@ -80,10 +81,6 @@ impl CollisionObject {
         CollisionObject {
             obj, mesh: prototype.mesh.clone(),
         }
-    }
-
-    pub fn is_collision(&self, other: &CollisionObject, highp_strategy: &dyn HighPCollision) -> bool {
-        self.collision(other, highp_strategy).is_some()
     }
 
     /// Gets the hit point and normal for each collider
@@ -145,6 +142,26 @@ impl CollisionObject {
     }
 }
 
+impl std::hash::Hash for CollisionObject {
+    fn hash<H : std::hash::Hasher>(&self, state: &mut H) {
+        self.obj.as_ptr().hash(state);
+    }
+}
+
+impl PartialEq for CollisionObject {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.obj, &other.obj)
+    }
+}
+
+impl Eq for CollisionObject {}
+
+impl PartialEq<Rc<RefCell<object::Object>>> for CollisionObject {
+    fn eq(&self, other: &Rc<RefCell<object::Object>>) -> bool {
+        Rc::ptr_eq(&self.obj, other)
+    }
+}
+
 pub struct CollisionTree {
     tree: Octree,
 }
@@ -162,7 +179,7 @@ impl CollisionTree {
         self.tree.insert(obj.obj.clone());
     }
 
-    /// Updates all dynamic objects in the tree
+    /// Updates the given object in the tree
     #[inline]
     pub fn update(&self, obj: &CollisionObject) {
         Octree::update(&obj.obj)

@@ -203,12 +203,6 @@ void mollerTriangleTest(uvec2 location) {
 void main() {
     uvec2 location = gl_GlobalInvocationID.xy;
 
-    if (gl_LocalInvocationIndex == 0) {
-        collisions = 0;
-    }
-
-    barrier();
-
     if (location.x < a_triangles.length() && location.y < b_triangles.length()) {
         mollerTriangleTest(location);
     }

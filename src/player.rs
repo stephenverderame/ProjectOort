@@ -43,27 +43,28 @@ impl Player {
                 locations: vec![root_node.clone()],
                 render_passes: vec![shader::RenderPassType::Visual, shader::RenderPassType::Depth],
             })),
-            body: physics::RigidBody::new(root_node, Some(
-                collisions::CollisionObject::new(root_node.clone(), c_str, collisions::TreeStopCriteria::default())),
+            body: physics::RigidBody::new(root_node.clone(), Some(
+                collisions::CollisionObject::new(root_node, c_str, collisions::TreeStopCriteria::default())),
                 physics::BodyType::Dynamic),
         }
     }
 
     /// Updates the players' forces based on the input controls and returns the rigid body
-    pub fn as_rigid_body(&mut self, input: &controls::PlayerControls) -> &physics::RigidBody {
+    pub fn as_rigid_body(&mut self, input: &controls::PlayerControls) -> &mut physics::RigidBody {
         use cgmath::*;
-        let model : cgmath::Matrix4<f64> = std::convert::From::from(&*self.body.transform.borrow());
-        let transform = &mut *self.body.transform.borrow_mut();
-        let forward = model.transform_vector(cgmath::vec3(0., 0., 1.));
-        self.body.velocity = 
-            match input.movement {
-                controls::Movement::Forward => forward * 30f64,
-                controls::Movement::Backwards => forward * -10f64,
-                _ => vec3(0., 0., 0.),
-            };
-        self.body.rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(input.pitch), 
-            Deg::<f64>(0.), Deg::<f64>(input.roll)).into();
-        &self.body
+        {
+            let model : cgmath::Matrix4<f64> = std::convert::From::from(&*self.body.transform.borrow());
+            let forward = model.transform_vector(cgmath::vec3(0., 0., 1.));
+            self.body.velocity = 
+                match input.movement {
+                    controls::Movement::Forward => forward * 30f64,
+                    controls::Movement::Backwards => forward * -10f64,
+                    _ => vec3(0., 0., 0.),
+                };
+            self.body.rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(input.pitch), 
+                Deg::<f64>(0.), Deg::<f64>(input.roll)).into();
+        }
+        &mut self.body
         
     }
 

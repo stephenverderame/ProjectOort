@@ -5,8 +5,12 @@ use super::object::Object;
 extern crate arr_macro;
 
 
-type ObjectList = Vec<Rc<RefCell<Object>>>;
+type ObjectList = Vec<Weak<RefCell<Object>>>;
 
+/// A node in an octree holding weak references to objects that fit in it and
+/// (optionally) 8 child nodes
+/// 
+/// Each node is a `2 * h_width` x `2 * h_width` x `2 * h_width` box centered around `center`
 pub struct ONode {
     center: Point3<f64>,
     h_width: f64, // dist to center to any axis-aligned side of AABB
@@ -65,15 +69,17 @@ impl ONode {
     /// 
     /// Returns the new object list for the current node
     fn split_into_children(children: &mut [Rc<RefCell<ONode>>; 8], 
-        objects: &mut Vec<Rc<RefCell<Object>>>, center: &Point3<f64>, h_width: f64) -> Vec<Rc<RefCell<Object>>> {
-        let mut new_objs = Vec::<Rc<RefCell<Object>>>::new();
-        for obj in objects {
+        objects: &mut Vec<Weak<RefCell<Object>>>, center: &Point3<f64>, h_width: f64) 
+        -> Vec<Weak<RefCell<Object>>> 
+    {
+        let mut new_objs = Vec::new();
+        for obj in objects.iter().filter(|x| x.strong_count() > 0).map(|x| x.upgrade().unwrap()) {
             match ONode::get_octant_index(center, h_width, &obj) {
                 Some(idx) => {
                     //println!("{:?} has octant index: {}", obj, idx);
-                    children[idx as usize].borrow_mut().insert(obj.clone())
+                    children[idx as usize].borrow_mut().insert(obj)
                 },
-                None => new_objs.push(obj.clone())
+                None => new_objs.push(Rc::downgrade(&obj))
             }
         };
         new_objs
@@ -96,7 +102,7 @@ impl ONode {
     pub fn insert(&mut self, obj: Rc<RefCell<Object>>) {
         if self.children.is_none() && self.objects.len() + 1 < ONode::MAX_OBJS_PER_LEAF {
             obj.borrow_mut().octree_cell = self.self_ref.clone();
-            self.objects.push(obj);
+            self.objects.push(Rc::downgrade(&obj));
             return
         } else if self.children.is_none() {
             self.children = Some(ONode::create_children(self.self_ref.clone(),
@@ -109,7 +115,7 @@ impl ONode {
                 .borrow_mut().insert(obj.clone()),
             None => {
                 obj.borrow_mut().octree_cell = self.self_ref.clone();
-                self.objects.push(obj.clone())
+                self.objects.push(Rc::downgrade(&obj))
             },
         }
     }
@@ -117,12 +123,14 @@ impl ONode {
     /// Gets all objects that have overlapping bounding spheres as `test_obj` in `node` or children of `node`
     /// 
     /// `node` - the containing octree cell of `test_obj`
-    fn get_subtree_colliders(node: &Rc<RefCell<ONode>>, test_obj: &Rc<RefCell<Object>>) -> ObjectList {
-        let mut v : ObjectList = Vec::new();
-        for obj in node.borrow().objects.iter() {
-            if Rc::ptr_eq(obj, test_obj) { continue; }
+    fn get_subtree_colliders(node: &Rc<RefCell<ONode>>, test_obj: &Rc<RefCell<Object>>) -> Vec<Rc<RefCell<Object>>> {
+        let mut v = Vec::new();
+        node.borrow_mut().objects.retain(|x| x.strong_count() > 0);
+        for obj in node.borrow().objects.iter().map(|x| x.upgrade().unwrap())
+            .filter(|x| !Rc::ptr_eq(x, test_obj)) 
+        {
             if obj.borrow().bounding_sphere_collide(&*test_obj.borrow()) {
-                v.push(obj.clone())
+                v.push(obj)
             }
         }
         if let Some(children) = node.borrow().children.as_ref() {
@@ -136,13 +144,14 @@ impl ONode {
     /// Gets all objects that have overlappring bounding spheres as `test` object that is a parent of `test_obj`
     /// 
     /// `node` - the containing octree cell of `test_obj`
-    fn get_parent_colliders(node: &Rc<RefCell<ONode>>, test_obj: &Rc<RefCell<Object>>) -> ObjectList {
+    fn get_parent_colliders(node: &Rc<RefCell<ONode>>, test_obj: &Rc<RefCell<Object>>) -> Vec<Rc<RefCell<Object>>> {
         let mut n = node.borrow().parent.clone();
         let mut v = Vec::new();
         while let Some(parent) = n.upgrade() {
-            for obj in &parent.borrow().objects {
+            parent.borrow_mut().objects.retain(|x| x.strong_count() > 0);
+            for obj in parent.borrow().objects.iter().map(|x| x.upgrade().unwrap()) {
                 if obj.borrow().bounding_sphere_collide(&*test_obj.borrow()){
-                    v.push(obj.clone())
+                    v.push(obj)
                 }
             }
             n = parent.borrow().parent.clone();
@@ -150,7 +159,10 @@ impl ONode {
         v
     }
 
-    pub fn get_possible_colliders(obj: &Rc<RefCell<Object>>) -> ObjectList {
+    /// Gets objects that might collide with `obj`
+    /// 
+    /// As the tree is traversed, references to freed objects are removed from object lists
+    pub fn get_possible_colliders(obj: &Rc<RefCell<Object>>) -> Vec<Rc<RefCell<Object>>> {
         if let Some(cell) = obj.borrow().octree_cell.upgrade() {
             let mut v = ONode::get_subtree_colliders(&cell, obj);
             v.append(&mut ONode::get_parent_colliders(&cell, obj));
@@ -164,14 +176,16 @@ impl ONode {
     pub fn update(&mut self, obj: &Rc<RefCell<Object>>) {
         if let Some(parent) = self.parent.upgrade() {
             if ONode::get_octant_index(&parent.borrow().center, parent.borrow().h_width, obj) != Some(self.self_index) {
-                self.objects.retain(|o| !Rc::ptr_eq(o, obj));
+                self.objects.retain(|o| 
+                    o.strong_count() > 0 && !Rc::ptr_eq(&o.upgrade().unwrap(), obj));
                 return parent.borrow_mut().insert(obj.clone())
             }
         } 
         if let Some(child_idx) = ONode::get_octant_index(&self.center, self.h_width, &obj) {
             match self.children.as_mut() {
                 Some(children) => {
-                    self.objects.retain(|o| !Rc::ptr_eq(o, obj));
+                    self.objects.retain(|o| 
+                        o.strong_count() > 0 && !Rc::ptr_eq(&o.upgrade().unwrap(), obj));
                     children[child_idx as usize].borrow_mut().insert(obj.clone())
                 },
                 _ => (),
@@ -206,13 +220,14 @@ impl Octree {
     }
 
     /// Get's all objects that have overlapping bounding spheres with `obj`
-    pub fn get_colliders(&self, obj: &Rc<RefCell<Object>>) -> ObjectList {
+    pub fn get_colliders(&self, obj: &Rc<RefCell<Object>>) -> Vec<Rc<RefCell<Object>>> {
         ONode::get_possible_colliders(obj)
     }
 
     pub fn remove(&mut self, obj: &Rc<RefCell<Object>>) {
         if let Some(node) = obj.borrow().octree_cell.upgrade() {
-            node.borrow_mut().objects.retain(|e| !Rc::ptr_eq(e, obj));
+            node.borrow_mut().objects.retain(|e| 
+                e.strong_count() > 0 && !Rc::ptr_eq(&e.upgrade().unwrap(), obj));
             if node.borrow().objects.is_empty() {
                 if let Some(parent) = node.borrow().parent.upgrade() {
                     Octree::maybe_make_leaf(&parent, &node);
@@ -472,7 +487,7 @@ mod test {
         use rand::thread_rng;
         use rand::seq::SliceRandom;
         let mut tree = Octree::new(point3(0., 0., 0.), 200.);
-        let mut objs : ObjectList = (0 .. 300).map(|_| {
+        let mut objs : Vec<Rc<RefCell<Object>>> = (0 .. 300).map(|_| {
             let o = random_obj(point3(0., 0., 0.), 200.);
             tree.insert(o.clone());
             o

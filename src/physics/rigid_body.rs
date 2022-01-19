@@ -4,7 +4,7 @@ use crate::collisions;
 use crate::cg_support::*;
 use cgmath::*;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Copy, Clone, Hash)]
 pub enum BodyType {
     Static, Dynamic
 }

@@ -136,9 +136,9 @@ mod test {
         let method = highp_col::HighPNone {};
         let plane_mesh = CollisionMesh::new("assets/Ships/StarSparrow01.obj", TreeStopCriteria::default());
         assert_eq!(plane_mesh.collision(&Matrix4::from_scale(1.), 
-            &plane_mesh, &Matrix4::from_translation(vec3(3., 4., 1.)), &method), false);
+            &plane_mesh, &Matrix4::from_translation(vec3(3., 4., 1.)), &method).is_some(), false);
         assert_eq!(plane_mesh.collision(&Matrix4::from_scale(1.), 
-            &plane_mesh, &Matrix4::from_translation(vec3(3., 3., 1.)), &method), true);
+            &plane_mesh, &Matrix4::from_translation(vec3(3., 3., 1.)), &method).is_some(), true);
     }
 
     #[test]
@@ -152,20 +152,21 @@ mod test {
         let triangle = bvh::Triangle::array_from(vec![0, 1, 2], &vertices as *const Vec<CollisionVertex<f32>>);
         let mut t_b = node::Node::default();
         let mut t_a = node::Node::default();
-        assert_eq!(strat.collide(&triangle, &Matrix4::from_scale(1.), &triangle, &Matrix4::from_translation(vec3(0., 0., 1.))), false); //plane test reject
+        assert_eq!(strat.collide(&triangle, &Matrix4::from_scale(1.), 
+            &triangle, &Matrix4::from_translation(vec3(0., 0., 1.))).is_some(), false); //plane test reject
         t_b.orientation = Matrix3::from_angle_y(Deg(70f64)).into();
         t_b.pos = point3(0., 0., 0.8);
-        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true); //small intersect
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); //small intersect
         t_a.pos = point3(1., 0., 0.);
-        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true); //small intersect off origin
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); //small intersect off origin
         t_b.pos = point3(-0.3, 0., 0.5);
-        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), false); //plane test pass, no intersect
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), false); //plane test pass, no intersect
         t_b.pos = point3(-0.3, 1., 0.5);
         t_b.orientation = Matrix3::from_angle_y(Deg(120f64)).into();
         t_a.orientation = From::from(Euler::new(Deg(20f64), Deg(0.), Deg(53.)));
-        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), false); //plane test pass, no intersect (more transforms)
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), false); //plane test pass, no intersect (more transforms)
         t_a.scale = vec3(1.895f64, 1.895, 1.895);
-        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true); // intersect via scale
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); // intersect via scale
 
         let vertices2 = vec![
             CollisionVertex{pos: point3(-0.292f32, -0.0536, 0.00074), norm: vec3(0., 0., 0.) }, 
@@ -174,15 +175,15 @@ mod test {
         t_a.pos = point3(0., 0f64, 0.);
         t_a.orientation = Matrix3::from_angle_x(Deg(0.)).into();
         let triangle2 = bvh::Triangle::array_from(vec![0, 1, 2], &vertices2 as *const Vec<CollisionVertex<f32>>);
-        assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), false); // random triangle no intersect
+        assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()).is_some(), false); // random triangle no intersect
         t_a.pos = point3(-0.16618f64, 0.97175, 0.65434);
-        assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()), true); // random triangle intersect
+        assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); // random triangle intersect
         t_a = node::Node::default();
         t_b = node::Node::default();
         t_a.pos = point3(1.06508f64, 0.559814, 0.);
-        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), true); //coplanar intersect
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); //coplanar intersect
         t_a.pos = point3(3f64, 0., 0.);
-        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()), false); //coplanar no intersect
+        assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), false); //coplanar no intersect
     }
 
     #[test]
@@ -199,7 +200,7 @@ mod test {
             Some(Quaternion::new(0.142821f64, 0.96663, -0.146196, -0.154451)),
             Some(vec3(0.375723f64, 0.375723, 0.375723)), None);
 
-        assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat), false);
+        assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat).is_some(), false);
 
         t_ship = node::Node::new(Some(point3(-3.095402600732103f64, 9.244842371955391, 8.95973740527222)),
             Some(Quaternion::new(0.8425839759656641f64, -0.4024286753361133, 0.03029610177936822, 0.3566308328371091)),
@@ -207,7 +208,7 @@ mod test {
         t_ast = node::Node::new(Some(point3(-22.790083507848195f64, 12.473857310034916, 10.514631403774104)),
             Some(Quaternion::new(0.9999590317878406f64, 0.007635050334856993, -0.0012676281267735207, -0.004694025057539509)),
             Some(vec3(0.23743170979346961f64, 0.23743170979346961, 0.23743170979346961)), None);       
-        assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat), false);
+        assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat).is_some(), false);
 
 
         t_ship.pos = point3(-25.20556890402142, 34.70378892431485, 33.41363920806364);
@@ -215,6 +216,6 @@ mod test {
         t_ast.pos = point3(-37.86042001868104, 17.471324865149157, 39.919355753951976);
         t_ast.orientation = Quaternion::new(0.7633320035030866, -0.41610255061356016, -0.27499327009999497, -0.4105625667307782);
         t_ast.scale = vec3(0.23288870438198583, 0.23288870438198583, 0.23288870438198583);
-        assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat), false);
+        assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat).is_some(), false);
     }
 }

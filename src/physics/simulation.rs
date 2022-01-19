@@ -1,8 +1,8 @@
 use crate::collisions;
 use super::*;
 use cgmath::*;
-use std::collections::HashMap;
-use collisions::{Hit, HitData};
+use std::collections::{HashMap};
+use collisions::*;
 
 /// Data to resolve a collision
 #[derive(Clone)]
@@ -18,6 +18,14 @@ impl CollisionResolution {
             vel: vec3(0., 0., 0.),
             rot: Quaternion::new(1., 0., 0., 0.),
             is_collide: false,
+        }
+    }
+
+    fn add_collision(&mut self, norm: Vector3<f64>, body: &RigidBody) {
+        self.vel -= body.velocity.dot(norm) * norm;
+        if !self.is_collide {
+            self.is_collide = true;
+            self.rot = 1. / body.rot_vel;
         }
     }
 }
@@ -41,13 +49,14 @@ fn insert_into_octree(tree: &mut collisions::CollisionTree, objs: &[&mut RigidBo
 
 /// Calculates velocity and updates position and orientation of each dynamic body
 fn apply_forces(objs: &[&mut RigidBody], dt: f64) {
+    //println!("{:?}", objs[100].rot_vel);
     for obj in objs {
         if obj.body_type == BodyType::Dynamic {
             {
-                let t = obj.transform.borrow_mut();
-                (*t).pos += obj.velocity * dt;
+                let mut t = obj.transform.borrow_mut();
+                (&mut *t).pos += obj.velocity * dt;
                 let rot = (*t).orientation;
-                (*t).orientation = rot * obj.rot_vel * dt;
+                (&mut *t).orientation = rot * obj.rot_vel;// * dt;
             }
             obj.collider.as_ref().map(|x| x.update_in_collision_tree());
 
@@ -59,7 +68,7 @@ fn apply_forces(objs: &[&mut RigidBody], dt: f64) {
 fn resolve_forces(objects: &[&mut RigidBody], resolvers: Vec<CollisionResolution>) {
     for (resolver, body_idx) in resolvers.into_iter().zip(0 .. objects.len()) {
         if resolver.is_collide {
-            let obj = objects[body_idx];
+            let obj = &objects[body_idx];
             obj.transform.borrow_mut().pos += resolver.vel;
             let rot = obj.transform.borrow().orientation;
             obj.transform.borrow_mut().orientation = rot * resolver.rot;
@@ -95,21 +104,33 @@ impl Simulation {
     fn get_resolving_forces(&self, objects: &[&mut RigidBody]) -> Vec<CollisionResolution> {
         let mut resolvers = Vec::<CollisionResolution>::new();
         resolvers.resize(objects.len(), CollisionResolution::identity());
-        for (body, body_idx) in objects.iter().zip(0 .. objects.len()) { // fix: checking every collision twice
-            if let Some(collider) = &body.collider {
-                if body.body_type == BodyType::Dynamic {
-                    let method = &**self.collision_methods.get(&body.col_type).unwrap();
-                    for other in self.obj_tree.get_colliders(collider) {
-                        if let Some(Hit::Hit(HitData { pos_norm_a: (pos, norm), .. })) 
-                            = collider.collision(&other, method) 
-                        {
-                            resolvers[body_idx].vel -= body.velocity.dot(norm) * norm;
-                            resolvers[body_idx].rot = 1. / body.rot_vel;
-                            resolvers[body_idx].is_collide = true;
-                        }
+        let mut tested_collisions = HashMap::new();
+        for (body, collider, body_idx) in objects.iter().zip(0 .. objects.len())
+            .filter(|(body, _)| body.collider.is_some() && body.body_type == BodyType::Dynamic)
+            .map(|(body, idx)| (body, body.collider.as_ref().unwrap(), idx)) 
+        {
+            let mut temp_map = HashMap::new();
+            let method = &**self.collision_methods.get(&body.col_type).unwrap();
+            for other in self.obj_tree.get_colliders(collider)
+            {
+                if let Some((_pos, norm)) = tested_collisions.get(&(other.clone(), collider.clone())) 
+                {
+                    resolvers[body_idx].add_collision(*norm, body);
+                }
+                else {
+                    match collider.collision(&other, method) {
+                        Some(Hit::Hit(HitData {pos_norm_a: (_pos, norm), pos_norm_b})) => {
+                            resolvers[body_idx].add_collision(norm, body);
+                            temp_map.insert((collider.clone(), other.clone()), pos_norm_b);
+                        },
+                        Some(Hit::NoData) => {
+                            panic!("Complete undo not implemented")
+                        },
+                        None => (),
                     }
                 }
             }
+            for e in temp_map { tested_collisions.insert(e.0, e.1); }
         }
         resolvers
     }

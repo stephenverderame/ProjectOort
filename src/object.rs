@@ -41,6 +41,7 @@ impl AnimGameObject {
 
     /// Indicates the object cannot move
     #[inline]
+    #[allow(dead_code)]
     pub fn immobile(mut self) -> Self {
         self.data.body_type = BodyType::Static;
         self
@@ -77,6 +78,7 @@ pub struct GameObject {
 }
 
 impl GameObject {
+    /// Creates a new game object with the specified graphics model
     pub fn new(model: model::Model) -> Self {
         Self {
             instances: Vec::<RigidBody>::new(),
@@ -102,6 +104,7 @@ impl GameObject {
     }
 
     /// Enables this object to be rendered during a depth pass
+    #[inline]
     pub fn with_depth(self) -> Self {
         self.entity.borrow_mut().render_passes.push(shader::RenderPassType::Depth);
         self
@@ -110,6 +113,7 @@ impl GameObject {
     /// Sets the initial position of an instance of this object
     pub fn at_pos(mut self, transform: node::Node) -> Self {
         let transform = Rc::new(RefCell::new(transform));
+        self.entity.borrow_mut().locations.push(transform.clone());
         self.instances.push(RigidBody::new(transform.clone(),
             self.collision_prototype.as_ref().map(|x| collisions::CollisionObject::from(transform, x)),
             self.bod_type));
@@ -152,9 +156,23 @@ impl GameObject {
     /// Assumes this object has at least one instance, gets the transform of the first instance
     /// Helper function for when the game object only represents on object
     #[inline(always)]
+    #[allow(dead_code)]
     pub fn transform(&self) -> &Rc<RefCell<node::Node>>
     {
         &self.instances[0].transform
+    }
+
+    /// Gets a mutable slice of the rigid bodies
+    #[inline(always)]
+    pub fn bodies(&mut self) -> &mut [RigidBody]
+    {
+        &mut self.instances
+    }
+
+    /// Gets a vector of mutable references to the rigid bodies
+    #[inline(always)]
+    pub fn bodies_ref(&mut self) -> Vec<&mut RigidBody> {
+        self.instances.iter_mut().collect()
     }
 }
 

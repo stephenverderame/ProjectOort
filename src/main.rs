@@ -20,13 +20,13 @@ use cg_support::node;
 
 fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, lasers: &mut object::GameObject) {
     if controller.fire {
-        let mut transform = user.root.borrow().clone();
+        let mut transform = user.root().borrow().clone();
         transform.scale = cgmath::vec3(0.3, 0.3, 1.);
         lasers.new_instance(transform, Some(user.forward() * 40f64));
     }
 }
 
-fn gen_asteroid_field(obj: &mut object::GameObject, ct: &mut collisions::CollisionTree) {
+fn gen_asteroid_field(obj: &mut object::GameObject) {
     use rand::distributions::*;
     let scale_distrib = rand::distributions::Uniform::from(0.01 .. 0.3);
     let pos_distrib = rand::distributions::Uniform::from(-100.0 .. 100.0);
@@ -95,12 +95,8 @@ fn main() {
     let mut skybox = cubes::Skybox::cvt_from_sphere("assets/Milkyway/Milkyway_BG.jpg", 2048, &*wnd.shaders, &*wnd.ctx());
     let ibl = scene::gen_ibl_from_hdr("assets/Milkyway/Milkyway_Light.hdr", &mut skybox, &*wnd.shaders, &*wnd.ctx());
     let sky_entity = Rc::new(RefCell::new(skybox.to_entity()));
-    
-    let mut collision_tree = collisions::CollisionTree::new(point3(0., 0., 0.), 150.);
-    let collision_compute = collisions::TriangleTriangleGPU::from_active_ctx();
 
-    gen_asteroid_field(&mut asteroid, &mut collision_tree);
-    collision_tree.insert(&(*user.borrow()).collision_obj, collisions::ObjectType::Dynamic);
+    gen_asteroid_field(&mut asteroid);
 
     let mut main_scene = scene::Scene::new(get_main_render_pass(render_width, render_height, user.clone(), &*wnd.ctx()),
         user.clone());
@@ -117,30 +113,21 @@ fn main() {
 
     laser.new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)), None);
     laser.new_instance(node::Node::default().pos(point3(-120., 120., 0.)), None);
+    laser.bodies_ref()[0].rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(0.), Deg::<f64>(45. * 0.1), Deg::<f64>(0.)).into();
+
+    let mut sim = physics::Simulation::new(point3(0., 0., 0.), 200.);
 
     let mut draw_cb = |dt : std::time::Duration, mut scene : std::cell::RefMut<scene::Scene>| {
-        let dt = dt.as_secs_f64();
-        let old_user_pos = user.borrow().root.borrow().clone();
-        user.borrow_mut().move_player(&*controller.borrow(), dt);
+
         {
-            let u = user.borrow();
-            handle_shots(&u, &*controller.borrow(), &mut laser);
+            let mut u = user.borrow_mut();
+            let c = controller.borrow();
+            handle_shots(&*u, &*c, &mut laser);
+            let mut bodies = asteroid.bodies_ref();
+            bodies.append(&mut laser.bodies_ref());
+            bodies.push(u.as_rigid_body(&*c));
+            sim.step(&bodies, dt);
         }
-        let user_colliders = collision_tree.get_colliders(&user.borrow().collision_obj);
-        for collider in user_colliders {
-            if collider.is_collision(&(*user.borrow()).collision_obj, &collision_compute) {
-                *user.borrow_mut().root.borrow_mut() = old_user_pos;
-                break;
-            }
-        }
-
-        controller.borrow_mut().reset_toggles();
-        let q : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(0.), 
-            Deg::<f64>(45. * dt), Deg::<f64>(0.)).into();
-        let orig_rot = laser.transform().borrow().orientation;
-        laser.transform().borrow_mut().orientation = orig_rot * q;
-        collision_tree.update();
-
         let light_data = {
             let mut lights = Vec::new();
             laser.iter_positions(|node| {
@@ -155,6 +142,7 @@ fn main() {
             lights
         };
         (&mut *scene).set_lights(&light_data);
+        controller.borrow_mut().reset_toggles();
     };
     let mut controller_cb = |ev, _: std::cell::RefMut<SceneManager>| (&mut *controller.borrow_mut()).on_input(ev);
     let mut resize_cb = |new_size : glutin::dpi::PhysicalSize<u32>| 

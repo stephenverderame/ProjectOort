@@ -2,8 +2,8 @@ use super::bvh::Triangle;
 
 /// Encapsulates collision information
 pub struct HitData {
-    pos_norm_a: (Point3<f64>, Vector3<f64>),
-    pos_norm_b: (Point3<f64>, Vector3<f64>),
+    pub pos_norm_a: (Point3<f64>, Vector3<f64>),
+    pub pos_norm_b: (Point3<f64>, Vector3<f64>),
 }
 
 pub enum Hit {
