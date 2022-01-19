@@ -167,8 +167,8 @@ impl<T : BaseFloat> BVHNode<T> {
 
     fn new(triangles: Vec<Triangle<T>>, recursion_depth: u32, stop: TreeStopCriteria) -> BVHNode<T> {
         let volume = aobb_from_triangles(&triangles);
-        let split = largest_extent_index(&volume);
         if !stop.should_stop(triangles.len(), recursion_depth) {
+            let split = largest_extent_index(&volume);
             BVHNode::with_split(triangles, split, volume, recursion_depth, stop)
         } else {
             BVHNode {
@@ -317,6 +317,7 @@ impl<T : BaseFloat> OBBTree<T> {
         self.root.triangles_to_check(self_transform, &other.root, other_transform)
     }
 
+    /// Gets the largest local space AABB that encloses the entire bvh
     pub fn bounding_box(&self) -> AABB {
         self.root.volume.clone()
     }

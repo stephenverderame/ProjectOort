@@ -94,8 +94,7 @@ impl GameObject {
 
     /// Enables this object to interact with other rigid bodies
     pub fn with_collisions(mut self, collision_mesh: &str, tree_args: collisions::TreeStopCriteria) -> Self {
-        self.collision_prototype = Some(collisions::CollisionObject::new(Rc::new(RefCell::new(node::Node::default())),
-            collision_mesh, tree_args));
+        self.collision_prototype = Some(collisions::CollisionObject::prototype(collision_mesh, tree_args));
         for body in &mut self.instances {
             body.collider = Some(
                 collisions::CollisionObject::from(body.transform.clone(), self.collision_prototype.as_ref().unwrap()));
@@ -162,11 +161,12 @@ impl GameObject {
         &self.instances[0].transform
     }
 
-    /// Gets a mutable slice of the rigid bodies
+    /// Gets a mutable reference to the rigid body at index `idx`
+    /// Requires there are more instances than `idx`
     #[inline(always)]
-    pub fn bodies(&mut self) -> &mut [RigidBody]
+    pub fn body(&mut self, idx: usize) -> &mut RigidBody
     {
-        &mut self.instances
+        &mut self.instances[idx]
     }
 
     /// Gets a vector of mutable references to the rigid bodies

@@ -7,12 +7,19 @@ pub struct HitData {
 }
 
 pub enum Hit {
+    /// A collision ocurred, but we have no resolution data about it
     NoData,
     Hit(HitData),
 }
 
 /// Performs the high-precision collision test
 pub trait HighPCollision {
+    /// Determines if there is a collision between `this_triangles` and `other_triangles`
+    /// 
+    /// Triangles are specified in local object space
+    /// 
+    /// Returns `None` if there is no collision, otherwise returns a `Hit` that may contain more information about the
+    /// collision
     fn collide(&self, this_triangles: &[Triangle<f32>], this_transform: &cgmath::Matrix4<f64>,
         other_triangles: &[Triangle<f32>], other_transform: &cgmath::Matrix4<f64>) -> Option<Hit>;
 }
@@ -29,6 +36,10 @@ use crate::graphics_engine::shader;
 use crate::cg_support::ssbo;
 use cgmath::*;
 
+/// Hit data from triangles that a high-precision test determined are colliding
+/// 
+/// Requires that for all triangles in `colliders_a`, there exists a triangle that intersects it in `colliders_b` and
+/// vice versa
 fn hit_from_colliders(colliders_a: &[&Triangle<f32>], colliders_b: &[&Triangle<f32>], 
     model_a: &Matrix4<f64>, model_b: &Matrix4<f64>) -> HitData 
 {

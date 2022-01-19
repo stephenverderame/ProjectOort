@@ -13,13 +13,15 @@ layout(std430, binding = 6) readonly buffer BTriangles {
 };
 
 layout(std430, binding = 7) writeonly buffer Collisions {
-    vec4 out_buffer[];
+    // array of a_traingles followed by b_triangles
+    // Assumes that the buffer is sent to the GPU zeroed out
+
+    // Each element is not 0 if its corresponding triangle has a collision
+    uvec4 out_buffer[];
 };
 
-uniform mat4 model_a;
-uniform mat4 model_b;
-
 const float eps = 0.000001;
+
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 

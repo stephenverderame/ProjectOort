@@ -36,4 +36,13 @@ impl RigidBody {
             col_type: CollisionMethod::Triangle,
         }
     }
+
+    /// Get's the world space center of this rigid body
+    pub fn center(&self) -> Point3<f64> {
+        if let Some(collider) = &self.collider {
+            collider.bounding_sphere().0
+        } else {
+            self.transform.borrow().mat().transform_point(point3(0., 0., 0.))
+        }
+    }
 }

@@ -12,13 +12,13 @@ use crate::cg_support::node;
 pub use bvh::TreeStopCriteria;
 pub use highp_col::*;
 
-static mut LOADED_MESHES: Option<HashMap<String, Rc<RefCell<collision_mesh::CollisionMesh>>>> =
+static mut LOADED_MESHES: Option<HashMap<(String, TreeStopCriteria), Rc<RefCell<collision_mesh::CollisionMesh>>>> =
     None;
 
 static mut MESH_MAP_INIT : bool = false;
 
 struct MeshMap {
-    loaded_meshes: Option<HashMap<String, Rc<RefCell<collision_mesh::CollisionMesh>>>>,
+    loaded_meshes: Option<HashMap<(String, TreeStopCriteria), Rc<RefCell<collision_mesh::CollisionMesh>>>>,
 }
 
 fn get_loaded_meshes() -> MeshMap {
@@ -47,10 +47,14 @@ pub struct CollisionObject {
 }
 
 impl CollisionObject {
+    /// Creates a new collision mesh for the collision mesh at `mesh_path` with the specified arguments if one does not exist
+    /// or loads the cached one
+    /// 
+    /// `transform` - the transform specific for this particular collision object
     pub fn new(transform: Rc<RefCell<node::Node>>, mesh_path: &str, 
         bvh_stop: bvh::TreeStopCriteria) -> CollisionObject {
         let mut mmap = get_loaded_meshes();
-        if let Some(mesh) = mmap.loaded_meshes.as_ref().unwrap().get(mesh_path) {
+        if let Some(mesh) = mmap.loaded_meshes.as_ref().unwrap().get(&(mesh_path.to_string(), bvh_stop)) {
             let (center, radius) = mesh.borrow().bounding_sphere();
             let obj = Rc::new(RefCell::new(object::Object::with_mesh(transform, center, radius, &mesh)));
             CollisionObject {
@@ -59,7 +63,7 @@ impl CollisionObject {
             }
         } else {
             let mesh = Rc::new(RefCell::new(collision_mesh::CollisionMesh::new(mesh_path, bvh_stop)));
-            mmap.loaded_meshes.as_mut().unwrap().insert(mesh_path.to_owned(), mesh.clone());
+            mmap.loaded_meshes.as_mut().unwrap().insert((mesh_path.to_owned(), bvh_stop), mesh.clone());
             let (center, radius) = mesh.borrow().bounding_sphere();
             let obj = Rc::new(RefCell::new(object::Object::with_mesh(transform, center, radius, &mesh)));
             CollisionObject {
@@ -67,6 +71,12 @@ impl CollisionObject {
                 mesh: mesh.clone()
             }
         }
+    }
+
+    /// Creates a new collision object that's meant to serve as a prototype to make
+    /// new collision objects from
+    pub fn prototype(mesh_path: &str, bvh_stop: TreeStopCriteria) -> Self {
+        Self::new(Rc::new(RefCell::new(node::Node::default())), mesh_path, bvh_stop)
     }
 
     /// Creates a new collision object by copying an existing one
@@ -128,6 +138,7 @@ impl CollisionObject {
     }
 
     #[allow(dead_code)]
+    #[inline(always)]
     pub fn get_transformation(&self) -> Rc<RefCell<node::Node>> {
         self.obj.borrow().model.clone()
     }
@@ -137,8 +148,20 @@ impl CollisionObject {
         Octree::update(&self.obj)
     }
 
+    #[inline(always)]
     pub fn is_in_collision_tree(&self) -> bool {
         self.obj.borrow().octree_cell.upgrade().is_some()
+    }
+
+    /// Gets the center and radius of a bounding sphere for this mesh in world space
+    #[inline(always)]
+    pub fn bounding_sphere(&self) -> (cgmath::Point3<f64>, f64) {
+        use cgmath::*;
+        let transform = self.obj.borrow().model.clone();
+        let transform = transform.borrow();
+        let (pt, radius) = self.mesh.borrow().bounding_sphere();
+        let max_scale = transform.scale.x.abs().max(transform.scale.y.abs().max(transform.scale.z.abs()));
+        (transform.mat().transform_point(pt), radius * max_scale)
     }
 }
 
@@ -177,12 +200,6 @@ impl CollisionTree {
     #[inline]
     pub fn insert(&mut self, obj: &CollisionObject) {
         self.tree.insert(obj.obj.clone());
-    }
-
-    /// Updates the given object in the tree
-    #[inline]
-    pub fn update(&self, obj: &CollisionObject) {
-        Octree::update(&obj.obj)
     }
 
     #[inline]

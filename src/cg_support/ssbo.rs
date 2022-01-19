@@ -5,7 +5,6 @@ enum SSBOMode {
     /// Size and data does not change (doing either creates a new buffer)
     Static,
     /// Size does not change but the data can (new data must be less than original size)
-    #[allow(dead_code)]
     StaticAllocDynamic,
 }
 
@@ -168,11 +167,14 @@ impl<T : Copy> SSBO<T> {
             assert_no_error!();
         }
     }
+    /// Sets the entire memory of the ssbo to 0s
+    /// Stes the data byte-wise
     pub fn zero_bytes(&mut self) {
         unsafe {
             let val = 0u8;
             gl::ClearNamedBufferData(self.buffer, gl::R8, gl::RED, gl::UNSIGNED_BYTE, 
                 &val as *const u8 as *const std::ffi::c_void);
+            assert_no_error!();
         }
     }
 
