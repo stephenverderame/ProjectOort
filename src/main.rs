@@ -113,7 +113,7 @@ fn main() {
 
     laser.new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)), None);
     laser.new_instance(node::Node::default().pos(point3(-120., 120., 0.)), None);
-    laser.body(0).rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(0.), Deg::<f64>(45. * 0.1), Deg::<f64>(0.)).into();
+    laser.body(0).rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(0.), Deg::<f64>(45. * 0.05), Deg::<f64>(0.)).into();
 
     let mut sim = physics::Simulation::new(point3(0., 0., 0.), 200.);
 

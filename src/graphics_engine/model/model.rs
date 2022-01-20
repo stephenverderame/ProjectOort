@@ -36,7 +36,7 @@ pub struct Model {
     materials: Vec<Material>,
     animator: Animator,
     bone_buffer: Option<ssbo::SSBO<[[f32; 4]; 4]>>,
-    instances: instancing::InstanceBuffer,
+    instances: instancing::InstanceBuffer<instancing::InstancePosition>,
 }
 
 impl Model {
@@ -167,7 +167,7 @@ impl Model {
             {
                 let ctx = super::super::get_active_ctx();
                 let ctx = ctx.ctx.borrow();
-                self.instances.update_buffer(positions, &*ctx);
+                self.instances.update_buffer(&instancing::model_mats_to_vertex(positions), &*ctx);
             }
             let data : glium::vertex::VerticesSource<'a> 
                 = From::from(self.instances.get_stored_buffer().unwrap().per_instance().unwrap());

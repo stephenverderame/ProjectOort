@@ -1,50 +1,59 @@
 #[derive(Copy, Clone)]
-pub struct InstanceAttribute {
+pub struct InstancePosition {
     //instance_model: [[f32; 4]; 4],
     pub instance_model_col0: [f32; 4],
     pub instance_model_col1: [f32; 4],
     pub instance_model_col2: [f32; 4],
     pub instance_model_col3: [f32; 4],
-    pub instance_color: [f32; 3],
 }
 
-glium::implement_vertex!(InstanceAttribute, instance_model_col0, instance_model_col1, instance_model_col2, 
+glium::implement_vertex!(InstancePosition, instance_model_col0, instance_model_col1, instance_model_col2, 
+    instance_model_col3);
+
+
+#[derive(Copy, Clone)]
+pub struct InstanceAttributes {
+    pub instance_model_col0: [f32; 4],
+    pub instance_model_col1: [f32; 4],
+    pub instance_model_col2: [f32; 4],
+    pub instance_model_col3: [f32; 4],
+    pub instance_color: [f32; 4],
+}
+
+glium::implement_vertex!(InstanceAttributes, instance_model_col0, instance_model_col1, instance_model_col2, 
     instance_model_col3, instance_color);
 
 /// A dynamically resizing buffer of per-instance information
 /// If the amount of instances change, the buffer is resized
-pub struct InstanceBuffer {
-    instance_data: Option<glium::VertexBuffer<InstanceAttribute>>,
+pub struct InstanceBuffer<T : Copy + glium::Vertex> {
+    instance_data: Option<glium::VertexBuffer<T>>,
     buffer_count: usize,
-    active_count: usize,
 }
 
-impl InstanceBuffer {
-    pub fn new() -> InstanceBuffer {
+impl<T : Copy + glium::Vertex> InstanceBuffer<T> {
+    pub fn new() -> InstanceBuffer<T> {
         InstanceBuffer {
             instance_data: None,
             buffer_count: 0,
-            active_count: 0,
         }
     }
 
-    fn resize_buffer<F : glium::backend::Facade>(instances: &[[[f32; 4]; 4]], facade: &F) 
-    -> (glium::VertexBuffer<InstanceAttribute>, usize)
-    {
-        let new_size = instances.len();
-        let data : Vec<InstanceAttribute> = instances.iter().map(|data| {
-            InstanceAttribute {
-                instance_model_col0: data[0],
-                instance_model_col1: data[1],
-                instance_model_col2: data[2],
-                instance_model_col3: data[3],
-                instance_color: [0.5451, 0f32, 0.5451],
-            }
-        }).collect();
-        (glium::VertexBuffer::dynamic(facade, &data).unwrap(), new_size)
+    pub fn new_sized<F : glium::backend::Facade>(num: usize, facade: &F) -> Self {
+        InstanceBuffer {
+            instance_data: Some(glium::VertexBuffer::empty_dynamic(facade, num).unwrap()),
+            buffer_count: num,
+        }
     }
 
-    pub fn update_buffer<F : glium::backend::Facade>(&mut self, data: &[[[f32; 4]; 4]], facade: &F)
+    fn resize_buffer<F : glium::backend::Facade>(instances: &[T], facade: &F) 
+    -> (glium::VertexBuffer<T>, usize)
+    {
+        let new_size = instances.len();
+        (glium::VertexBuffer::dynamic(facade, instances).unwrap(), new_size)
+    }
+
+    /// Updates the buffer with `data`, resizing the buffer if its length is not `data.len()`
+    pub fn update_buffer<F : glium::backend::Facade>(&mut self, data: &[T], facade: &F)
     {
         if data.len() != self.buffer_count {
             let (buffer, size) = InstanceBuffer::resize_buffer(data, facade);
@@ -53,20 +62,48 @@ impl InstanceBuffer {
         } else if let Some(buffer) = &mut self.instance_data {
            let mut mapping = buffer.map();
            for (dst, src) in mapping.iter_mut().zip(data.iter()) {
-               dst.instance_model_col0 = src[0];
-               dst.instance_model_col1 = src[1];
-               dst.instance_model_col2 = src[2];
-               dst.instance_model_col3 = src[3];
+               *dst = *src;
            }
         }
-        self.active_count = data.len();
+    }
+
+    /// Updates the buffer with `data` which must be less than the allocated buffer
+    /// 
+    /// `data` is assigned to the first `data.len()` elements of the buffer, and `empty` is assigned to the rest
+    pub fn update_no_grow(&mut self, data: &[T], empty: T) {
+        if self.buffer_count < data.len() || self.instance_data.is_none() {
+            panic!("Cannot grow data");
+        }
+
+        if let Some(buf) = &mut self.instance_data {
+          let mut mapping = buf.map();
+           for (dst, idx) in mapping.iter_mut().zip(0 .. self.buffer_count) {
+               if idx < data.len() {
+                   *dst = data[idx];
+               } else {
+                   *dst = empty;
+               }
+           }
+        }
     }
 
     /// Gets the stored instance buffer or `None` if there has been no instances stored
     /// in the buffer
-    pub fn get_stored_buffer(&self) -> Option<&glium::vertex::VertexBuffer<InstanceAttribute>>
+    pub fn get_stored_buffer(&self) -> Option<&glium::vertex::VertexBuffer<T>>
     {
         self.instance_data.as_ref()
     }
 
+}
+
+pub fn model_mats_to_vertex(data: &[[[f32; 4]; 4]]) -> Vec<InstancePosition>
+{
+    data.iter().map(|x|
+        InstancePosition {
+            instance_model_col0: x[0],
+            instance_model_col1: x[1],
+            instance_model_col2: x[2],
+            instance_model_col3: x[3],
+        }
+    ).collect()
 }

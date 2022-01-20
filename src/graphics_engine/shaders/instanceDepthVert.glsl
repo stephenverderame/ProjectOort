@@ -4,7 +4,6 @@ layout (location = 1) in vec4 instance_model_col0;
 layout (location = 2) in vec4 instance_model_col1;
 layout (location = 3) in vec4 instance_model_col2;
 layout (location = 4) in vec4 instance_model_col3;
-layout (location = 5) in vec3 instance_color;
 
 uniform mat4 viewproj;
 

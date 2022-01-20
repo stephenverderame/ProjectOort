@@ -28,6 +28,14 @@ pub struct Vertex {
 }
 glium::implement_vertex!(Vertex, pos, normal, tex_coords, tangent, bone_ids, bone_weights);
 
+#[derive(Clone, Copy)]
+pub struct VertexSimple {
+    pub pos: [f32; 3],
+    pub tex_coords: [f32; 2],
+}
+
+glium::implement_vertex!(VertexSimple, pos, tex_coords);
+
 /// Sources of vertex data
 pub enum VertexSourceData<'a> {
     Single(glium::vertex::VerticesSource<'a>),
@@ -217,6 +225,8 @@ pub fn render_drawable<S : glium::Surface>(drawable: &mut dyn Drawable, matrices
             shader::UniformType::PrefilterHdrEnvUniform(uniform) =>
                 surface.draw(vbo, ebo, shader, &uniform, &params),
             shader::UniformType::BrdfLutUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::BillboardUniform(uniform) =>
                 surface.draw(vbo, ebo, shader, &uniform, &params),
         }.unwrap()
     }

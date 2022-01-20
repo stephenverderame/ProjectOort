@@ -21,6 +21,7 @@ enum ShaderType {
     DepthAnim,
     TriIntersectionCompute,
     CollisionDebug,
+    Billboard,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -213,6 +214,7 @@ pub enum UniformInfo<'a> {
     TriangleCollisionsInfo,
     LightCullInfo(LightCullData<'a>),
     CollisionDebugInfo([[f32; 4]; 4]),
+    BillboardInfo(&'a glium::texture::SrgbTexture2d),
 }
 
 impl<'a> std::fmt::Debug for UniformInfo<'a> {
@@ -231,6 +233,7 @@ impl<'a> std::fmt::Debug for UniformInfo<'a> {
             TriangleCollisionsInfo => "Compute triangle",
             LightCullInfo(_) => "Compute light cull",
             CollisionDebugInfo(_) => "Collision debug",
+            BillboardInfo(_) => "Billboard",
         };
         f.write_str(name)
     }
@@ -263,6 +266,7 @@ impl<'a> UniformInfo<'a> {
             (LightCullInfo(_), _) => ShaderType::CullLightsCompute,
             (TriangleCollisionsInfo, _) => ShaderType::TriIntersectionCompute,
             (CollisionDebugInfo(_), _) => ShaderType::CollisionDebug,
+            (BillboardInfo(_), _) => ShaderType::Billboard,
         }
     }
 }
@@ -288,6 +292,7 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
     BrdfLutUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
     DepthUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
+    BillboardUniform(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, EmptyUniforms>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
