@@ -1,4 +1,3 @@
-use super::super::drawable::*;
 use crate::cg_support::node::Node;
 use cgmath::*;
 use super::super::shader;
@@ -19,12 +18,47 @@ pub struct Particle {
     pub lifetime: std::time::Duration,
 }
 
-pub struct ParticleEmitter<I, S, D, Ia, G> where
+impl Particle {
+    pub fn new(emitter_location: Point3<f64>, particle_transform: Node) -> Self {
+        Self {
+            birth: std::time::Instant::now(),
+            transform: particle_transform,
+            origin: emitter_location,
+            color: vec4(0.5, 0.5, 0.5, 1.0),
+            vel: vec3(0., 0., 0.),
+            rot_vel: Quaternion::new(1.0, 0., 0., 0.),
+            lifetime: std::time::Duration::from_secs(1),
+        }
+    }
+
+    pub fn vel(mut self, vel: Vector3<f64>) -> Self {
+        self.vel = vel;
+        self
+    }
+
+    pub fn rot_vel(mut self, rot_vel: Quaternion<f64>) -> Self {
+        self.rot_vel = rot_vel;
+        self
+    }
+
+    pub fn lifetime(mut self, life: std::time::Duration) -> Self {
+        self.lifetime = life;
+        self
+    }
+
+    pub fn color(mut self, color: Vector4<f32>) -> Self {
+        self.color = color;
+        self
+    }
+}
+
+pub struct ParticleEmitter<I, S, D, Ia, G, Lg> where
     I : Fn(&Node) -> Particle,
     S : FnMut(&mut Particle, f64),
     D : Fn(&Particle) -> bool,
     Ia : glium::Vertex + Copy,
     G : Fn(&Particle) -> Ia,
+    Lg : Fn(&Particle) -> Option<shader::LightData>,
 {
     pos: Node,
     /// Function that accepts the emitter transform and produces new particles
@@ -40,16 +74,18 @@ pub struct ParticleEmitter<I, S, D, Ia, G> where
     /// This is not necessarily the time all particles are no longer visible
     emitter_end: Option<Instant>,
     particles: VecDeque<Particle>,
-    particle_model: Box<dyn Drawable>,
     instances: InstanceBuffer<Ia>,
+    /// Function that turns a particle into a light source
+    light_getter: Lg,
 }
 
-impl<I, S, D, Ia, G> ParticleEmitter<I, S, D, Ia, G> where
+impl<I, S, D, Ia, G, Lg> ParticleEmitter<I, S, D, Ia, G, Lg> where
     I : Fn(&Node) -> Particle,
     S : FnMut(&mut Particle, f64),
     D : Fn(&Particle) -> bool,
     Ia : glium::Vertex + Copy,
     G : Fn(&Particle) -> Ia,
+    Lg : Fn(&Particle) -> Option<shader::LightData>,
 {
     /// Creates a new particle emitter
     /// 
@@ -62,8 +98,10 @@ impl<I, S, D, Ia, G> ParticleEmitter<I, S, D, Ia, G> where
     /// `particle_stepper` - Function that moves the particles
     /// 
     /// `particle_getter` - Function that gets the instance data to be sent to the shader from a particle
-    pub fn new<F : glium::backend::Facade>(pos: Node, lifetime: Option<Duration>, num: u32, particle: Box<dyn Drawable>, facade: &F,
-        particle_generator: I, particle_killer: D, particle_stepper: S, particle_getter: G) -> Self
+    /// 
+    /// `light_getter` - Function that gets a light source from a particle
+    pub fn new<F : glium::backend::Facade>(pos: Node, lifetime: Option<Duration>, num: u32, facade: &F,
+        particle_generator: I, particle_killer: D, particle_stepper: S, particle_getter: G, light_getter: Lg) -> Self
     {
         Self {
             pos, emitter_end: lifetime.map(|duration| Instant::now() + duration),
@@ -72,9 +110,9 @@ impl<I, S, D, Ia, G> ParticleEmitter<I, S, D, Ia, G> where
             gen_particle: particle_generator,
             dead_particle: particle_killer,
             step_particle: particle_stepper,
-            particle_model: particle,
             particles: VecDeque::new(),
             particle_data: particle_getter,
+            light_getter,
         }
     }
 
@@ -93,32 +131,13 @@ impl<I, S, D, Ia, G> ParticleEmitter<I, S, D, Ia, G> where
     }
 }
 
-
-impl<I, S, D, Ia, G> Drawable for ParticleEmitter<I, S, D, Ia, G> where
+impl<I, S, D, Ia, G, Lg> Emitter for ParticleEmitter<I, S, D, Ia, G, Lg> where
     I : Fn(&Node) -> Particle,
     S : FnMut(&mut Particle, f64),
     D : Fn(&Particle) -> bool,
     Ia : glium::Vertex + Copy,
     G : Fn(&Particle) -> Ia,
-{
-    fn render_args<'a>(&'a mut self, p: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo<'a>, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
-    {
-        let mut v = Vec::new();
-        for (u, holder, i) in self.particle_model.render_args(p) {
-            v.push((u, 
-                holder.append(From::from(self.instances.get_stored_buffer().unwrap().per_instance().unwrap())), 
-                i));
-        }
-        v
-    }
-}
-
-impl<I, S, D, Ia, G> Emitter for ParticleEmitter<I, S, D, Ia, G> where
-    I : Fn(&Node) -> Particle,
-    S : FnMut(&mut Particle, f64),
-    D : Fn(&Particle) -> bool,
-    Ia : glium::Vertex + Copy,
-    G : Fn(&Particle) -> Ia,
+    Lg : Fn(&Particle) -> Option<shader::LightData>,
 {
     fn emit(&mut self, dt: Duration) {
         let mut death = HashSet::new();
@@ -142,6 +161,19 @@ impl<I, S, D, Ia, G> Emitter for ParticleEmitter<I, S, D, Ia, G> where
     }
     
     fn lights(&self) -> Option<Vec<shader::LightData>> {
-        None
+        let mut v = Vec::new();
+        for p in &self.particles {
+            if let Some(data) = (self.light_getter)(p) {
+                v.push(data)
+            }
+        }
+       if v.is_empty() { None }
+       else { Some(v) }
+    }
+
+    /// Gets the instance data for all particles
+    fn instance_data<'a>(&'a self) -> glium::vertex::VerticesSource<'a>
+    {
+        From::from(self.instances.get_stored_buffer().unwrap().per_instance().unwrap())
     }
 }

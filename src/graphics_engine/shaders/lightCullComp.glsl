@@ -1,8 +1,12 @@
 #version 430
 
 struct LightData {
-    vec4 start;
-    vec4 end;
+    vec3 start;
+    float radius;
+    vec3 end;
+    float luminance;
+    vec3 color; 
+    uint light_mode;
 };
 
 layout(std430, binding = 0) readonly buffer LightBuffer {

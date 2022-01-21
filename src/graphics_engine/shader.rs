@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use crate::cg_support::ssbo;
 use glium::implement_uniform_block;
+use cgmath::*;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 enum ShaderType {
@@ -80,8 +81,46 @@ impl ShaderType {
 /// Instance lighting data for each laser
 #[derive(Copy, Clone)]
 pub struct LightData {
-    pub light_start: [f32; 4],
-    pub light_end: [f32; 4],
+    _light_start: [f32; 3],
+    _radius: f32,
+    _light_end: [f32; 3],
+    _luminance: f32,
+    _color: [f32; 3],
+    _mode: u32,
+}
+
+impl LightData {
+    pub fn tube_light(start: Point3<f32>, end: Point3<f32>, radius: f32, luminance: f32,
+        color: Vector3<f32>) -> Self {
+            Self {
+                _light_start: start.into(),
+                _light_end: end.into(),
+                _radius: radius, _luminance: luminance,
+                _color: color.into(),
+                _mode: 1,
+            }
+    }
+
+    #[allow(dead_code)]
+    pub fn sphere_light(pos: Point3<f32>, radius: f32, luminance: f32, color: Vector3<f32>) -> Self {
+        Self {
+            _light_start: pos.into(),
+            _light_end: pos.into(),
+            _radius: radius, _luminance: luminance,
+            _color: color.into(),
+            _mode: 0,
+        }
+    }
+
+    pub fn point_light(pos: Point3<f32>, luminance: f32, color: Vector3<f32>) -> Self {
+        Self {
+            _light_start: pos.into(),
+            _light_end: pos.into(),
+            _radius: 1., _luminance: luminance,
+            _color: color.into(),
+            _mode: 2,
+        }
+    }
 }
 
 /// The ShaderManager stores all shaders and all draw parameters for each shader

@@ -37,6 +37,7 @@ pub struct Model {
     animator: Animator,
     bone_buffer: Option<ssbo::SSBO<[[f32; 4]; 4]>>,
     instances: instancing::InstanceBuffer<instancing::InstancePosition>,
+    instancing: bool,
 }
 
 impl Model {
@@ -134,7 +135,14 @@ impl Model {
         let animator = Animator::new(scene.animation_iter(), Rc::new(bone_map), Rc::new(root_node));
         Model { meshes, materials, animator, 
             bone_buffer, 
-            instances: instancing::InstanceBuffer::new() }
+            instances: instancing::InstanceBuffer::new(),
+            instancing: false, }
+    }
+
+    /// Enables model instancing
+    pub fn with_instancing(mut self) -> Self {
+        self.instancing = true;
+        self
     }
 
     /// Render this model once, animating if there is one
@@ -188,7 +196,7 @@ impl Drawable for Model {
     fn render_args<'a>(&'a mut self, positions: &[[[f32; 4]; 4]]) 
         -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
-        if positions.len() == 1 {
+        if !self.instancing {
             self.render(positions[0])
         } else {
             self.render_instanced(positions)

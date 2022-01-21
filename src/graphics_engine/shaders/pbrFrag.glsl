@@ -29,8 +29,12 @@ uniform int tile_num_x;
 const float max_reflection_mips = 4.0; // we use 5 mip maps (0 to 4)
 
 struct LightData {
-    vec4 start;
-    vec4 end;
+    vec3 start;
+    float radius;
+    vec3 end;
+    float luminance;
+    vec3 color; 
+    uint light_mode;
 };
 
 layout(std430, binding = 0) readonly buffer LightBuffer {
@@ -52,8 +56,6 @@ layout(std140, binding = 2) uniform CascadeUniform {
 
 uniform sampler2D cascadeDepthMaps[3];
 uniform mat4 view;
-
-const vec3 light_color = vec3(0.5451, 0, 0.5451);
 
 const float PI = 3.14159265359;
 
@@ -223,7 +225,7 @@ float calcShadow(vec3 norm) {
 float normalDistribGGX(vec3 norm, vec3 halfway, float roughness, float alphaPrime) {
     // Trowbridge-Reitz
     float a = roughness * roughness;
-    float a2 = a * alphaPrime; //a2 * a2 for point lights
+    float a2 = a * alphaPrime; //a * a for point lights
     float n_dot_h = max(dot(norm, halfway), 0.0);
     float n_dot_h_2 = n_dot_h * n_dot_h;
 
@@ -280,21 +282,8 @@ vec3 getNormal() {
     return normalize(tbn * tangentNormal);
 }
 
-float pointLightAttenutation(vec3 light_pos, vec3 frag_pos) {
-    float dist = length(light_pos - frag_pos);
-    float attenuation = 1.0 / (dist * dist);
-    return attenuation;
-}
-
-/// closest point to `pos` on line defined by `lineStart` and `lineEnd`
-vec3 closestOnLine(vec3 lineStart, vec3 lineEnd, vec3 pos) {
-    vec3 v = lineEnd - lineStart;
-    float t = clamp(dot(pos - lineStart, v) / dot(v, v), 0.0, 1.0);
-    return v * t + lineStart;
-}
-
 /// `R` - reflection vector
-vec3 lightDirSphere(vec3 R, vec3 light_pos, float radius, vec3 frag_pos) {
+vec3 lightDirSphere(vec3 R, vec3 light_pos, float radius) {
     vec3 oldLightDir = light_pos - frag_pos;
     vec3 centerToRay = dot(R, oldLightDir) * R - oldLightDir;
 
@@ -303,15 +292,7 @@ vec3 lightDirSphere(vec3 R, vec3 light_pos, float radius, vec3 frag_pos) {
     return closestPoint;
 }
 
-float sphereAreaLightAttenuation(float dist, float radius, vec3 frag_pos) {
-    float f = clamp(1.0 - pow(dist/radius, 4), 0.0, 1.0);
-    return (f * f) / (dist * dist + 1.0);
 
-}
-vec3 lightDirTube2(vec3 tubeStart, vec3 tubeEnd, vec3 norm, vec3 R, float radius) {
-    vec3 center = closestOnLine(tubeStart, tubeEnd, frag_pos);
-    return lightDirSphere(R, center, radius, frag_pos);
-}
 /// Gets the unnormalized view direction from the closest point on the tube to the frag position
 vec3 lightDirTube(vec3 tubeStart, vec3 tubeEnd, vec3 norm, vec3 R, float radius) {
     vec3 L0 = tubeStart - frag_pos;
@@ -336,6 +317,29 @@ vec3 lightDirTube(vec3 tubeStart, vec3 tubeEnd, vec3 norm, vec3 R, float radius)
     closestPoint = closestPoint + centerToRay * clamp(radius / length(centerToRay), 0.0, 1.0);
     return closestPoint;
 }
+/// Returns the unnormalized light direction based on the type of light
+vec3 lightDir(LightData light, vec3 R, vec3 norm) {
+    switch (light.light_mode) {
+        case 0:
+            return lightDirSphere(R, light.start, light.radius);
+        case 1:
+            return lightDirTube(light.start, light.end, norm, R, light.radius);
+        case 2: //point light
+            return light.start - frag_pos;
+        default:
+            return vec3(0);
+    }
+}
+
+float lightAPrime(LightData light, float roughness, float dist) {
+    switch (light.light_mode) {
+        case 0:
+        case 1:
+            return clamp(light.radius / (dist * 2.0) + roughness * roughness, 0.0, 1.0);
+        default:
+            return roughness * roughness;
+    }
+}
 
 /// Computes the direct radiance from an array of light sources
 /// `R` - reflection vector
@@ -359,22 +363,22 @@ vec3 directRadiance(vec3 norm, vec3 view_dir, vec3 f0, float roughness,
 
         LightData light = lights[visibleLightBuffer.indices[offset + i]];
 
-        const float light_radius = 1.5;
-        const float luminance = 10;
+        float light_radius = light.radius;
+        float luminance = light.luminance;
         
-        vec3 light_dir = lightDirTube(light.start.xyz, light.end.xyz, norm, R, light_radius);
+        vec3 light_dir = lightDir(light, R, norm);
         float dist = max(length(light_dir), 0.00001);
 
         float attenuation = 1.0 / (dist * dist + 0.3);
-        vec3 light_radiance = light_color * attenuation;
+        vec3 light_radiance = light.color * attenuation;
 
         light_dir = normalize(light_dir);
         vec3 halfway = normalize(light_dir + view_dir);
 
-        float areaLightAPrime = clamp(light_radius / (dist * 2.0) + roughness * roughness, 0.0, 1.0);
+        float aPrime = lightAPrime(light, roughness, dist);
 
         vec3 fresnel = fresnelSchlick(f0, view_dir, halfway);
-        float ndf = normalDistribGGX(norm, halfway, roughness, areaLightAPrime);
+        float ndf = normalDistribGGX(norm, halfway, roughness, aPrime);
         float g = geometrySmith(norm, view_dir, light_dir, roughness);
 
         // cook-torrence brdf

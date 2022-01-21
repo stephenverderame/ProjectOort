@@ -14,18 +14,19 @@ pub enum CollisionMethod {
     Triangle
 }
 
-pub struct RigidBody {
+pub struct RigidBody<T> {
     pub transform: Rc<RefCell<node::Node>>,
     pub velocity: cgmath::Vector3<f64>,
     pub rot_vel: Quaternion<f64>,
     pub collider: Option<collisions::CollisionObject>,
     pub body_type: BodyType,
     pub col_type: CollisionMethod,
+    pub metadata: T,
 }
 
-impl RigidBody {
+impl<T> RigidBody<T> {
     pub fn new(transform: Rc<RefCell<node::Node>>, collider: Option<collisions::CollisionObject>,
-        body_type: BodyType) -> Self
+        body_type: BodyType, metadata: T) -> Self
     {
         Self {
             transform,
@@ -34,6 +35,7 @@ impl RigidBody {
             rot_vel: Quaternion::new(1., 0., 0., 0.),
             body_type,
             col_type: CollisionMethod::Triangle,
+            metadata
         }
     }
 

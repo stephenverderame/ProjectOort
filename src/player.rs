@@ -10,6 +10,7 @@ use crate::camera;
 use drawable::Viewer;
 use crate::collisions;
 use crate::physics;
+use super::object;
 
 use cgmath::*;
 
@@ -20,7 +21,7 @@ pub struct Player {
     cam: Node,
     entity: Rc<RefCell<entity::Entity>>,
     pub aspect: f32,
-    body: physics::RigidBody,
+    body: physics::RigidBody<object::ObjectType>,
 }
 
 impl Player {
@@ -45,12 +46,12 @@ impl Player {
             })),
             body: physics::RigidBody::new(root_node.clone(), Some(
                 collisions::CollisionObject::new(root_node, c_str, collisions::TreeStopCriteria::default())),
-                physics::BodyType::Dynamic),
+                physics::BodyType::Dynamic, object::ObjectType::Ship),
         }
     }
 
     /// Updates the players' forces based on the input controls and returns the rigid body
-    pub fn as_rigid_body(&mut self, input: &controls::PlayerControls) -> &mut physics::RigidBody {
+    pub fn as_rigid_body(&mut self, input: &controls::PlayerControls) -> &mut physics::RigidBody<object::ObjectType> {
         use cgmath::*;
         {
             let model : cgmath::Matrix4<f64> = std::convert::From::from(&*self.body.transform.borrow());

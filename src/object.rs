@@ -6,11 +6,17 @@ use std::cell::RefCell;
 use crate::collisions;
 use crate::graphics_engine::shader;
 use crate::physics::*;
+use crate::cg_support::Transformation;
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+pub enum ObjectType {
+    Laser, Ship, Asteroid, Any
+}
 
 /// A game object that only stores a model
 /// and gives access to model animation 
 pub struct AnimGameObject {
-    pub data: RigidBody,
+    pub data: RigidBody<ObjectType>,
     entity: Rc<RefCell<ModelEntity>>,
 }
 
@@ -23,7 +29,7 @@ impl AnimGameObject {
     pub fn from(model: model::Model, transform: node::Node) -> Self {
         let transform = Rc::new(RefCell::new(transform));
         Self {
-            data: RigidBody::new(transform.clone(), None, BodyType::Dynamic),
+            data: RigidBody::new(transform.clone(), None, BodyType::Dynamic, ObjectType::Any),
             entity: Rc::new(RefCell::new(ModelEntity {
                 geometry: Box::new(model),
                 locations: vec![transform],
@@ -71,17 +77,18 @@ impl AnimGameObject {
 /// a node in the scene graph
 /// A game object is a flyweight
 pub struct GameObject {
-    instances: Vec<RigidBody>,
+    instances: Vec<RigidBody<ObjectType>>,
     entity: Rc<RefCell<Entity>>,
     collision_prototype: Option<collisions::CollisionObject>,
     bod_type: BodyType,
+    typ: ObjectType,
 }
 
 impl GameObject {
     /// Creates a new game object with the specified graphics model
-    pub fn new(model: model::Model) -> Self {
+    pub fn new(model: model::Model, typ: ObjectType) -> Self {
         Self {
-            instances: Vec::<RigidBody>::new(),
+            instances: Vec::<RigidBody<ObjectType>>::new(),
             entity: Rc::new(RefCell::new(Entity {
                 geometry: Box::new(model),
                 locations: Vec::new(),
@@ -89,6 +96,7 @@ impl GameObject {
             })),
             collision_prototype: None,
             bod_type: BodyType::Dynamic,
+            typ,
         }
     }
 
@@ -115,7 +123,7 @@ impl GameObject {
         self.entity.borrow_mut().locations.push(transform.clone());
         self.instances.push(RigidBody::new(transform.clone(),
             self.collision_prototype.as_ref().map(|x| collisions::CollisionObject::from(transform, x)),
-            self.bod_type));
+            self.bod_type, self.typ));
         self
     }
 
@@ -125,7 +133,7 @@ impl GameObject {
         self.entity.borrow_mut().locations.push(transform.clone());
         self.instances.push(RigidBody::new(transform.clone(),
             self.collision_prototype.as_ref().map(|x| collisions::CollisionObject::from(transform, x)),
-            self.bod_type));  
+            self.bod_type, self.typ));  
         if let Some(vel) = initial_vel {
             self.instances.last_mut().unwrap().velocity = vel;
         }     
@@ -164,15 +172,33 @@ impl GameObject {
     /// Gets a mutable reference to the rigid body at index `idx`
     /// Requires there are more instances than `idx`
     #[inline(always)]
-    pub fn body(&mut self, idx: usize) -> &mut RigidBody
+    pub fn body(&mut self, idx: usize) -> &mut RigidBody<ObjectType>
     {
         &mut self.instances[idx]
     }
 
     /// Gets a vector of mutable references to the rigid bodies
     #[inline(always)]
-    pub fn bodies_ref(&mut self) -> Vec<&mut RigidBody> {
+    pub fn bodies_ref(&mut self) -> Vec<&mut RigidBody<ObjectType>> {
         self.instances.iter_mut().collect()
+    }
+
+    #[inline(always)]
+    pub fn bodies(&mut self) -> &mut Vec<RigidBody<ObjectType>> {
+        &mut self.instances
+    }
+
+    /// Retains all instances (both visual and rigid body) whose transformation pointer satisfies the given
+    /// predicate
+    /// 
+    /// `pred` - takes a pointer to the object transformation and returns `false` to remove it
+    pub fn retain<T : Fn(*const ()) -> bool>(&mut self, pred: T) {
+        self.instances.retain(|body| pred(body.transform.as_ptr() as *const ()));
+        // *const () to compare fat and thin pointers
+        self.entity.borrow_mut().locations.retain(|model| {
+            let r = pred(model.as_ptr() as *const ());
+            r
+        });
     }
 }
 

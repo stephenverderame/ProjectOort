@@ -18,12 +18,12 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use cg_support::node;
 use graphics_engine::particles;
-use particles::Emitter;
 
 fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, lasers: &mut object::GameObject) {
     if controller.fire {
         let mut transform = user.root().borrow().clone();
         transform.scale = cgmath::vec3(0.3, 0.3, 1.);
+        transform.pos += user.forward() * 10.;
         lasers.new_instance(transform, Some(user.forward() * 40f64));
     }
 }
@@ -89,7 +89,8 @@ fn main() {
     let ship_model = model::Model::new("assets/Ships/StarSparrow01.obj", &*wnd.ctx());
     let user = Rc::new(RefCell::new(player::Player::new(ship_model, render_width as f32 / render_height as f32, 
         "assets/Ships/StarSparrow01.obj")));
-    let mut asteroid = object::GameObject::new(model::Model::new("assets/asteroid1/Asteroid.obj", &*wnd.ctx())).with_depth()
+    let mut asteroid = object::GameObject::new(model::Model::new("assets/asteroid1/Asteroid.obj", &*wnd.ctx()).with_instancing(), 
+        object::ObjectType::Asteroid).with_depth()
         .with_collisions("assets/asteroid1/Asteroid.obj", collisions::TreeStopCriteria::default()).immobile();
     let asteroid_character = RefCell::new(object::AnimGameObject::new(model::Model::new("assets/test/dancing_vampire.dae", &*wnd.ctx())).with_depth());
     asteroid_character.borrow().transform().borrow_mut().scale = vec3(0.07, 0.07, 0.07);
@@ -105,46 +106,63 @@ fn main() {
     main_scene.set_ibl_maps(ibl);
     main_scene.set_light_dir(vec3(-120., 120., 0.));
 
-    let mut laser = object::GameObject::new(model::Model::new("assets/laser2.obj", &*wnd.ctx()));
-    let container = object::GameObject::new(model::Model::new("assets/BlackMarble/floor.obj", &*wnd.ctx())) 
+    let laser = Rc::new(RefCell::new(object::GameObject::new(model::Model::new("assets/laser2.obj", &*wnd.ctx()).with_instancing(), 
+        object::ObjectType::Laser).with_collisions("assets/laser2.obj", collisions::TreeStopCriteria::default())));
+    let container = object::GameObject::new(model::Model::new("assets/BlackMarble/floor.obj", &*wnd.ctx()), object::ObjectType::Any) 
         .at_pos(node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None)).with_depth();
     let particles = Rc::new(RefCell::new(
-        particles::ParticleSystem::new().with_emitter(particles::dust_emitter(&*wnd.ctx(), point3(0., 0., 0.)))));
+        particles::ParticleSystem::new().with_emitter(particles::dust_emitter(&*wnd.ctx(), point3(0., 0., 0.)), 0)
+        .with_billboard("assets/particles/smoke_07.png").with_billboard("assets/particles/circle_05.png")));
     
     // skybox must be rendered first, particles must be rendered last
-    main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.as_entity(), container.as_entity(), asteroid.as_entity(),
+    main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.borrow().as_entity(), container.as_entity(), asteroid.as_entity(),
         asteroid_character.borrow().as_entity(), particles.clone()]);
     wnd.scene_manager().insert_scene("main", main_scene).change_scene("main");
 
-    laser.new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)), None);
-    laser.new_instance(node::Node::default().pos(point3(-120., 120., 0.)), None);
-    laser.body(0).rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(0.), Deg::<f64>(45. * 0.05), Deg::<f64>(0.)).into();
+    laser.borrow_mut().new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)), None);
+    laser.borrow_mut().new_instance(node::Node::default().pos(point3(-120., 120., 0.)), None);
+    laser.borrow_mut().body(0).rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(0.), Deg::<f64>(45. * 0.05), Deg::<f64>(0.)).into();
 
-    let mut sim = physics::Simulation::new(point3(0., 0., 0.), 200.);
+    let dead_lasers = RefCell::new(Vec::new());
+    let mut sim = physics::Simulation::<object::ObjectType>::new(point3(0., 0., 0.), 200.)
+    .with_on_hit(|a, _, hit| {
+        if a.metadata == object::ObjectType::Laser {
+            let ctx = graphics_engine::get_active_ctx();
+            let facade = ctx.ctx.borrow();
+            particles.borrow_mut().new_emitter(
+                particles::laser_hit_emitter(hit.pos_norm_b.0, hit.pos_norm_b.1, a.velocity, &*facade), 1
+            );
+            dead_lasers.borrow_mut().push(a.transform.clone());
+            false
+        } else { true }
+    });
 
     let mut draw_cb = |dt : std::time::Duration, mut scene : std::cell::RefMut<scene::Scene>| {
 
+        dead_lasers.borrow_mut().clear();
         {
             let mut u = user.borrow_mut();
             let c = controller.borrow();
-            handle_shots(&*u, &*c, &mut laser);
+            let mut lz = laser.borrow_mut();
+            handle_shots(&*u, &*c, &mut *lz);
             let mut bodies = asteroid.bodies_ref();
-            bodies.append(&mut laser.bodies_ref());
+            bodies.append(&mut lz.bodies_ref());
             bodies.push(u.as_rigid_body(&*c));
             sim.step(&bodies, dt);
         }
+        laser.borrow_mut().retain(|laser_ptr|
+            !dead_lasers.borrow().iter().any(|dead| dead.as_ptr() as *const () == laser_ptr));
         particles.borrow_mut().emit(dt);
         let light_data = {
             let mut lights = Vec::new();
-            laser.iter_positions(|node| {
+            laser.borrow().iter_positions(|node| {
                 let mat : cgmath::Matrix4<f32> = From::from(node);
                 let start = mat.transform_point(point3(0., 0., 3.));
                 let end = mat.transform_point(point3(0., 0., -3.));
-                lights.push(shader::LightData {
-                    light_start: [start.x, start.y, start.z, 0f32],
-                    light_end: [end.x, end.y, end.z, 0f32],
-                });
+                lights.push(shader::LightData::tube_light(start, end, 1.5, 10., 
+                    vec3(0.5451, 0., 0.5451)));
             });
+            lights.append(&mut particles.borrow().lights().unwrap_or_else(|| Vec::new()));
             lights
         };
         (&mut *scene).set_lights(&light_data);
