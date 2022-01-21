@@ -17,6 +17,8 @@ use graphics_engine::*;
 use std::rc::Rc;
 use std::cell::RefCell;
 use cg_support::node;
+use graphics_engine::particles;
+use particles::Emitter;
 
 fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, lasers: &mut object::GameObject) {
     if controller.fire {
@@ -106,9 +108,12 @@ fn main() {
     let mut laser = object::GameObject::new(model::Model::new("assets/laser2.obj", &*wnd.ctx()));
     let container = object::GameObject::new(model::Model::new("assets/BlackMarble/floor.obj", &*wnd.ctx())) 
         .at_pos(node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None)).with_depth();
+    let particles = Rc::new(RefCell::new(
+        particles::ParticleSystem::new().with_emitter(particles::dust_emitter(&*wnd.ctx(), point3(0., 0., 0.)))));
     
+    // skybox must be rendered first, particles must be rendered last
     main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.as_entity(), container.as_entity(), asteroid.as_entity(),
-        asteroid_character.borrow().as_entity()]);
+        asteroid_character.borrow().as_entity(), particles.clone()]);
     wnd.scene_manager().insert_scene("main", main_scene).change_scene("main");
 
     laser.new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)), None);
@@ -128,6 +133,7 @@ fn main() {
             bodies.push(u.as_rigid_body(&*c));
             sim.step(&bodies, dt);
         }
+        particles.borrow_mut().emit(dt);
         let light_data = {
             let mut lights = Vec::new();
             laser.iter_positions(|node| {

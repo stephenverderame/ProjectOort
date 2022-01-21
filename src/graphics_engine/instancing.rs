@@ -12,16 +12,13 @@ glium::implement_vertex!(InstancePosition, instance_model_col0, instance_model_c
 
 
 #[derive(Copy, Clone)]
-pub struct InstanceAttributes {
-    pub instance_model_col0: [f32; 4],
-    pub instance_model_col1: [f32; 4],
-    pub instance_model_col2: [f32; 4],
-    pub instance_model_col3: [f32; 4],
+pub struct BillboardAttributes {
+    pub instance_pos_rot: [f32; 4],
+    pub instance_scale: [f32; 2],
     pub instance_color: [f32; 4],
 }
 
-glium::implement_vertex!(InstanceAttributes, instance_model_col0, instance_model_col1, instance_model_col2, 
-    instance_model_col3, instance_color);
+glium::implement_vertex!(BillboardAttributes, instance_pos_rot, instance_scale, instance_color);
 
 /// A dynamically resizing buffer of per-instance information
 /// If the amount of instances change, the buffer is resized

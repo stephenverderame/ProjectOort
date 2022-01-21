@@ -61,6 +61,17 @@ impl ShaderType {
                     line_width: Some(2.),
                     .. Default::default()
                 },
+            Billboard =>
+                glium::DrawParameters {
+                    depth: glium::Depth {
+                        test: DepthTest::IfLess,
+                        write: false,
+                        .. Default::default()
+                    },
+                    blend: glium::Blend::alpha_blending(),
+                    backface_culling: glium::BackfaceCullingMode::CullClockwise,
+                    .. Default::default()
+                },
             _ => glium::DrawParameters::default(),
         }
     }
@@ -292,7 +303,8 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
     BrdfLutUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
     DepthUniform(UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
-    BillboardUniform(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, EmptyUniforms>),
+    BillboardUniform(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], 
+        UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -402,6 +414,8 @@ impl ShaderManager {
             "shaders/depthAnimVert.glsl", "shaders/depthFrag.glsl").unwrap();
         let debug = load_shader_source!(facade,
             "shaders/depthVert.glsl", "shaders/constantColor.glsl").unwrap();
+        let billboard = load_shader_source!(facade,
+            "shaders/billboardVert.glsl", "shaders/billboardFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -422,6 +436,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::PbrAnim, pbr_anim);
         shaders.insert(ShaderType::DepthAnim, depth_anim);
         shaders.insert(ShaderType::CollisionDebug, debug);
+        shaders.insert(ShaderType::Billboard, billboard);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -534,6 +549,11 @@ impl ShaderManager {
             (CollisionDebugInfo(model), _) => UniformType::DepthUniform(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
                 model: model.clone(),
+            }),
+            (BillboardInfo(tex), _) => UniformType::BillboardUniform(glium::uniform! {
+                view: scene_data.unwrap().viewer.view,
+                proj: scene_data.unwrap().viewer.proj,
+                tex: sample_mip_repeat!(tex),
             }),
             (data, pass) => 
                 panic!("Invalid shader/shader data combination with shader (Args: `{:?}` '{:?}') during pass '{:?}'", data, typ, pass),

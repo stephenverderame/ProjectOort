@@ -10,7 +10,7 @@ pub mod window;
 pub mod entity;
 mod instancing;
 mod billboard;
-mod particles;
+pub mod particles;
 use std::rc::Rc;
 use std::cell::{Cell, RefCell};
 use std::mem::MaybeUninit;

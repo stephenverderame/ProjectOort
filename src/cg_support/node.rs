@@ -63,6 +63,11 @@ impl Node {
         self
     }
 
+    pub fn u_scale(mut self, scale: f64) -> Self {
+        self.scale = vec3(scale, scale, scale);
+        self
+    }
+
     pub fn rot(mut self, rot: Quaternion<f64>) -> Self {
         self.orientation = rot;
         self

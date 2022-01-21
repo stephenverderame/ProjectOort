@@ -2,9 +2,6 @@ use super::drawable::*;
 use VertexSimple as Vertex;
 use glium::*;
 use super::shader;
-use super::instancing;
-use std::rc::Rc;
-use std::cell::RefCell;
 
 const RECT_VERTS : [Vertex; 4] = [
     Vertex { pos: [1., 1., 0.], tex_coords: [1., 1.]},
@@ -38,8 +35,7 @@ impl Drawable for Rect3D {
     fn render_args<'a>(&'a mut self, _: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
         let info = shader::UniformInfo::BillboardInfo(&self.tex);
-        vec![(info, VertexHolder::new(VertexSourceData::Single(From::from(&self.vertices)))
-            .append(From::from(self.instances.get_stored_buffer().unwrap().per_instance().unwrap())), 
+        vec![(info, VertexHolder::new(VertexSourceData::Single(From::from(&self.vertices))), 
             From::from(&self.indices))]
     }
 }
