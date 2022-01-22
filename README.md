@@ -168,6 +168,63 @@ forces and acceleration.
 ![Collision Demo](images/collisions.gif)
 
 ---
+
+## Next Steps
+
+I don't forsee having much time to work on this during school, so the following are currently my *immediate* next TODOs.
+There's still much more besides this and I am writing this so I know how to pick up where I left off when I get the time.
+
+### Graphics
+
+- [ ] Conditional Pipeline Stages
+
+    Some pipeline stages don't need to be done every frame. Ie, relevant stages for invisibility (see below)
+
+- [ ] Pseudo-Invisibility through refraction
+
+    Initial ideas are to render a cubemap around an object that may have transparency and compute refraction vectors to sample said cubemap.
+    Problem with this is if multiple transparent objects overlap each other. Could solve this by ordering transparent objects by camera depth
+    and generating the transparency textures from farthest to nearest. Could also look into OIT but not sure how well that works with refraction.
+    During transparent texture generation, I was thinking of rendering all
+    transparent objects as opaque, which won't pose a problem so long as we don't need highly reflective surfaces.
+
+    I want the invisibility to be able to fade on and off, and thus the shadow to fade in and out. The idea that I think would work would be
+    to use multi-out framebuffers to get a depth texture for opaque objects, and a depth texture for each translucent object along with each
+    object's translucency factor. Another idea was to just render a depth texture, and transparency factor texture. Problem with this is if
+    a translucent object occludes an opaque object. Possible solution to this could be solved by using a fragment shader to store depth information manually.
+
+- [ ] Better Lasers
+
+    At the very least, could probably use a noise texture to provide color variation. I also think the geometry shader could be used to 
+    decrease uniformity. [Maybe like this](https://developer.download.nvidia.com/SDK/10/direct3d/Source/Lightning/doc/lightning_doc.pdf)
+    Could also use a particle system
+
+- [ ] (Optimization) Geometry shader for Billboards, rendering cascade maps in parallel, and rendering cubemaps in parallel
+
+    May want to profile this
+
+- [ ] (Bug) Artifacts with PCSS and CSM. 
+
+    You can kind of see a "sweep" when the shadows go from on cascade to the next. With straight CSM this is fixed by varying the PCF filter
+
+- [ ] (Nice-to-have) Rust macro to define a pipeline more easily. Idea was to try to create a DSL along the lines of Tikz graphs in Latex
+
+### Physics + Collisions
+
+- [ ] (Bug) BVH not detecting collisions when the ship is the "self"
+- [ ] Add mass and moment of inertia to `RigidBody`
+
+    I could probably estimate these values based on size and distribution of vertices
+
+- [ ] Torque and Force calculations
+
+    Although it would be more realistic for player controls to apply forces on the ship, it may be weird and have a "sliding on ice"
+    feel since, well, there's no air resistance in space. However it could also be a cool game mechanic, especially when asteroids start
+    moving.
+
+- [ ] Make asteroids dynamic
+- [ ] (Possible) use a swept ellipsoid for laser collisions. [Relevant Paper](http://www.peroxide.dk/papers/collision/collision.pdf)
+
 ## References
 [^0]: [Joey DeVries Opengl](https://learnopengl.com/PBR/Theory)
 [^1]: [Forward+: Bringing Deferred Lighting to the Next Level](https://takahiroharada.files.wordpress.com/2015/04/forward_plus.pdf)
@@ -179,4 +236,4 @@ forces and acceleration.
 [^7]: [Nvidia PCSS Implementation](https://developer.download.nvidia.com/whitepapers/2008/PCSS_Integration.pdf)
 [^8]: [Ericson's Realtime Collision Detection](https://realtimecollisiondetection.net/)
 [^9]: [A Fast Triangle-Triangle Intersection Test](https://web.stanford.edu/class/cs277/resources/papers/Moller1997b.pdf)
-[^10]: [Opengl-turial Billboards](http://www.opengl-tutorial.org/intermediate-tutorials/billboards-particles/billboards/)
+[^10]: [Opengl-tutorial Billboards](http://www.opengl-tutorial.org/intermediate-tutorials/billboards-particles/billboards/)
