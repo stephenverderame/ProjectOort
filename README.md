@@ -157,7 +157,9 @@ velocity dotted with the impact normal.
 
 I plan to add mass and moment of inertia estimates for each object in order to incorporate torques and rotations and more accurately calculate
 forces and acceleration.
+
 ---
+## Images
 
 ![Laser Demo](images/laser_smash.gif)
 
@@ -167,14 +169,14 @@ forces and acceleration.
 
 ---
 ## References
-0. [^0]: [Joey DeVries Opengl](https://learnopengl.com/PBR/Theory)
-1. [^1]: [Forward+: Bringing Deferred Lighting to the Next Level](https://takahiroharada.files.wordpress.com/2015/04/forward_plus.pdf)
-2. [^2]: [Bcrusco Github](https://github.com/bcrusco/Forward-Plus-Renderer)
-3. [^3]: [Alex Tardif's Area Lights](https://alextardif.com/arealights.html)
-4. [^4]: [Alex Tardif's Stable CSM](https://alextardif.com/shadowmapping.html)
-5. [^5]: [GameDev.net PCSS](https://www.gamedev.net/tutorials/programming/graphics/effect-area-light-shadows-part-1-pcss-r4971/)
-6. [^6]: [Nvidia PCSS Paper](https://developer.download.nvidia.com/shaderlibrary/docs/shadow_PCSS.pdf)
-7. [^7]: [Nvidia PCSS Implementation](https://developer.download.nvidia.com/whitepapers/2008/PCSS_Integration.pdf)
-8. [^8]: [Ericson's Realtime Collision Detection](https://realtimecollisiondetection.net/)
-9. [^9]: [A Fast Triangle-Triangle Intersection Test](https://web.stanford.edu/class/cs277/resources/papers/Moller1997b.pdf)
-10. [^10]: [Opengl-turial Billboards](http://www.opengl-tutorial.org/intermediate-tutorials/billboards-particles/billboards/)
+[^0]: [Joey DeVries Opengl](https://learnopengl.com/PBR/Theory)
+[^1]: [Forward+: Bringing Deferred Lighting to the Next Level](https://takahiroharada.files.wordpress.com/2015/04/forward_plus.pdf)
+[^2]: [Bcrusco Github](https://github.com/bcrusco/Forward-Plus-Renderer)
+[^3]: [Alex Tardif's Area Lights](https://alextardif.com/arealights.html)
+[^4]: [Alex Tardif's Stable CSM](https://alextardif.com/shadowmapping.html)
+[^5]: [GameDev.net PCSS](https://www.gamedev.net/tutorials/programming/graphics/effect-area-light-shadows-part-1-pcss-r4971/)
+[^6]: [Nvidia PCSS Paper](https://developer.download.nvidia.com/shaderlibrary/docs/shadow_PCSS.pdf)
+[^7]: [Nvidia PCSS Implementation](https://developer.download.nvidia.com/whitepapers/2008/PCSS_Integration.pdf)
+[^8]: [Ericson's Realtime Collision Detection](https://realtimecollisiondetection.net/)
+[^9]: [A Fast Triangle-Triangle Intersection Test](https://web.stanford.edu/class/cs277/resources/papers/Moller1997b.pdf)
+[^10]: [Opengl-turial Billboards](http://www.opengl-tutorial.org/intermediate-tutorials/billboards-particles/billboards/)
