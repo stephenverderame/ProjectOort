@@ -92,7 +92,7 @@ fn main() {
     let mut asteroid = object::GameObject::new(model::Model::new("assets/asteroid1/Asteroid.obj", &*wnd.ctx()).with_instancing(), 
         object::ObjectType::Asteroid).with_depth()
         .with_collisions("assets/asteroid1/Asteroid.obj", collisions::TreeStopCriteria::default()).immobile();
-    let asteroid_character = RefCell::new(object::AnimGameObject::new(model::Model::new("assets/test/dancing_vampire.dae", &*wnd.ctx())).with_depth());
+    let asteroid_character = RefCell::new(object::AnimGameObject::new(model::Model::new("assets/animTest/dancing_vampire.dae", &*wnd.ctx())).with_depth());
     asteroid_character.borrow().transform().borrow_mut().scale = vec3(0.07, 0.07, 0.07);
     (*asteroid_character.borrow_mut()).start_anim("", true);
     let mut skybox = cubes::Skybox::cvt_from_sphere("assets/Milkyway/Milkyway_BG.jpg", 2048, &*wnd.shaders, &*wnd.ctx());
@@ -119,7 +119,7 @@ fn main() {
         asteroid_character.borrow().as_entity(), particles.clone()]);
     wnd.scene_manager().insert_scene("main", main_scene).change_scene("main");
 
-    laser.borrow_mut().new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)), None);
+    laser.borrow_mut().new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)).pos(point3(10., 0., 10.)), None);
     laser.borrow_mut().new_instance(node::Node::default().pos(point3(-120., 120., 0.)), None);
     laser.borrow_mut().body(0).rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(0.), Deg::<f64>(45. * 0.05), Deg::<f64>(0.)).into();
 
@@ -169,8 +169,11 @@ fn main() {
         controller.borrow_mut().reset_toggles();
     };
     let mut controller_cb = |ev, _: std::cell::RefMut<SceneManager>| (&mut *controller.borrow_mut()).on_input(ev);
-    let mut resize_cb = |new_size : glutin::dpi::PhysicalSize<u32>| 
-        user.borrow_mut().aspect = new_size.width as f32 / new_size.height as f32;
+    let mut resize_cb = |new_size : glutin::dpi::PhysicalSize<u32>| {
+        if new_size.height != 0 {
+            user.borrow_mut().aspect = new_size.width as f32 / new_size.height as f32;
+        }
+    };
     let cbs = WindowCallbacks::new().with_draw_handler(&mut draw_cb).with_input_handler(&mut controller_cb)
         .with_resize_handler(&mut resize_cb);
     println!("Start game loop");
