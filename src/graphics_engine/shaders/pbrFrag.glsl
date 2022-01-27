@@ -37,6 +37,14 @@ struct LightData {
     uint light_mode;
 };
 
+struct TransparencyData {
+    float trans_fac;
+    float refraction_idx;
+    samplerCube tex;
+};
+
+uniform TransparencyData transparencyData;
+
 layout(std430, binding = 0) readonly buffer LightBuffer {
     uint light_num;
     LightData lights[];
@@ -412,6 +420,18 @@ vec3 applyFog(vec3 frag_color) {
 
 }
 
+vec3 applyTransparency(vec3 frag_color, vec3 view_dir, vec3 norm) {
+    if (transparencyData.trans_fac < 0.0001) {
+        return frag_color;
+    } else {
+        float ratio = 1.0 / transparencyData.refraction_idx;
+        vec3 incidence = -view_dir;
+        vec3 r = refract(incidence, norm, ratio);
+        return mix(frag_color, texture(transparencyData.tex, r).rgb, 
+            transparencyData.trans_fac);
+    }
+}
+
 void main() {
     vec3 albedo = texture(albedo_map, f_tex_coords).rgb; // load textures using SRGB so no need to gamma correct
     vec3 emission = texture(emission_map, f_tex_coords).rgb;
@@ -442,5 +462,5 @@ void main() {
     vec3 ambient = (kd * diffuse + specular) * ao * (1.0 - calcShadow(norm) * 0.7);
     vec3 color = ambient + direct_radiance + emission * 4;
 
-    frag_color = vec4(applyFog(color), 1.0);
+    frag_color = vec4(applyTransparency(applyFog(color), view_dir, norm), 1.0);
 }

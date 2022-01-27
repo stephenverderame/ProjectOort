@@ -410,18 +410,10 @@ impl ToCacheProcessor {
     pub fn new() -> ToCacheProcessor {
         ToCacheProcessor { }
     }
-}
 
-impl TextureProcessor for ToCacheProcessor {
-    fn process<'b>(&mut self, input: Option<Vec<&'b TextureType>>, _: &shader::ShaderManager, 
-        cache: &mut PipelineCache<'b>, _: Option<&shader::SceneData>) -> Option<TextureType>
-    {
+    fn cascade_maps_to_cache<'b>(input: Vec<&'b TextureType>, cache: &mut PipelineCache<'b>) {
         use std::mem::MaybeUninit;
-        if input.is_none() { return None }
-        else {
-            let input = input.unwrap();
-            assert_eq!(input.len(), 3);
-            let mut depth_texs = Vec::<&'b glium::texture::DepthTexture2d>::new();
+        let mut depth_texs = Vec::<&'b glium::texture::DepthTexture2d>::new();
             let mut mats: [MaybeUninit<[[f32; 4]; 4]>; 5] = unsafe { MaybeUninit::uninit().assume_init() };
             let mut fars: [MaybeUninit<f32>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
             for (tex, i) in input.into_iter().zip(0..3) {
@@ -453,7 +445,37 @@ impl TextureProcessor for ToCacheProcessor {
                 }).ok();
                 cache.cascade_maps = Some(depth_texs);
             }
+    }
+}
+
+impl TextureProcessor for ToCacheProcessor {
+    fn process<'b>(&mut self, input: Option<Vec<&'b TextureType>>, _: &shader::ShaderManager, 
+        cache: &mut PipelineCache<'b>, _: Option<&shader::SceneData>) -> Option<TextureType>
+    {
+        if input.is_none() { return None }
+        else {
+            let input = input.unwrap();
+            if input.len() == 1 {
+                if let TextureType::WithArg(b, StageArgs::ObjectArgs(i)) = input[0] {
+                    if let TextureType::TexCube(cbo) = &**b {
+                        cache.obj_cubemaps.insert(*i, cbo.to_ref());
+                        return None
+                    }
+                }
+            } else {
+                let mut is_cascade = true;
+                for i in &input {
+                    if let TextureType::WithArg(b, StageArgs::CascadeArgs(..)) = i {
+                        if let TextureType::Depth2d(_) = &**b {}
+                        else { is_cascade = false; break; }
+                    } else { is_cascade = false; break; }
+                }
+                if is_cascade {
+                    ToCacheProcessor::cascade_maps_to_cache(input, cache);
+                    return None
+                }
+            }
         }
-        None
+        panic!("Unrecognized cache input")
     }
 }

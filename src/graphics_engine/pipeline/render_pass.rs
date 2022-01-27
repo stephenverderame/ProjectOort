@@ -12,6 +12,7 @@ pub struct RenderPass {
     processes: Vec<Box<dyn TextureProcessor>>,
     topo_order: Vec<u16>,
     pipeline: Pipeline,
+    active_func: Option<Box<dyn Fn(u16) -> bool>>,
 }
 
 impl RenderPass {
@@ -20,7 +21,16 @@ impl RenderPass {
     /// The first `[0, targets.len())` ids refer to render targets. Then the next `[targets.len(), processes.len())` ids refer
     /// to processes. Therefore, the pipeline must contain nodes from `0` to `targets.len() + processes.len()` with the upper bound being exclusive
     pub fn new(targets: Vec<Box<dyn RenderTarget>>, processes: Vec<Box<dyn TextureProcessor>>, pipeline: Pipeline) -> RenderPass {
-        RenderPass { targets, processes, topo_order: pipeline.topo_order(), pipeline }
+        RenderPass { targets, processes, topo_order: pipeline.topo_order(), pipeline, active_func: None }
+    }
+
+    /// Sets the conditional stage predicate to the render pass.
+    /// If no predicate is supplied for the Render Pass, all stages are used
+    /// 
+    /// `pred` must return `true` if the stage id passed to it should be run
+    pub fn with_active_pred(mut self, pred: Box<dyn Fn(u16) -> bool>) -> Self {
+        self.active_func = Some(pred);
+        self
     }
 
     /// Stores the index of the texture result `v`, in the stored results for the node `k`.
@@ -95,6 +105,9 @@ impl RenderPass {
         let mut tex_count : usize = 0;
         let tex_buf_ptr = &mut saved_textures as *mut Vec<TextureType>;
         for node in &self.topo_order {
+            if let Some(pred) = &self.active_func {
+                if !pred(*node) { continue; }
+            }
             let unode = *node as usize;
             #[allow(unused_assignments)]
             let mut stage_out_tex : Option<TextureType> = None;

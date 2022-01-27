@@ -130,14 +130,14 @@ impl RenderTarget for DepthRenderTarget {
 /// Helper struct for render targets rendering to a cubemap with perspective
 struct CubemapRenderBase {
     view_dist: f32,
-    view_pos: cgmath::Point3<f32>,
+    get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>,
 }
 
 impl CubemapRenderBase {
-    fn new(view_dist: f32, view_pos: cgmath::Point3<f32>) -> CubemapRenderBase
+    fn new(view_dist: f32, get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>) -> CubemapRenderBase
     {
         CubemapRenderBase {
-            view_dist, view_pos,
+            view_dist, get_view_pos,
         }
     }
 
@@ -159,7 +159,7 @@ impl CubemapRenderBase {
         use super::super::camera::*;
         use cgmath::*;
         let mut cam = PerspectiveCamera {
-            cam: self.view_pos,
+            cam: (self.get_view_pos)(),
             aspect: 1f32,
             fov_deg: 90f32,
             target: cgmath::point3(0., 0., 0.),
@@ -187,6 +187,8 @@ pub struct CubemapRenderTarget {
     cbo_tex: texture::Cubemap,
     depth_buffer: framebuffer::DepthRenderBuffer,
     _size: u32,
+    pass_type: RenderPassType,
+    get_trans_id: Option<Box<dyn Fn() -> u32>>,
 }
 
 impl CubemapRenderTarget {
@@ -196,17 +198,35 @@ impl CubemapRenderTarget {
     /// `size` - the square side length of each texture face in the cubemap
     /// 
     /// `view_pos` - the position in the scene the cubemap is rendered from
-    pub fn new<F : glium::backend::Facade>(size: u32, view_dist: f32, view_pos: cgmath::Point3<f32>, facade: &F) 
+    pub fn new<F : glium::backend::Facade>(size: u32, view_dist: f32, 
+        get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>, facade: &F) 
         -> CubemapRenderTarget 
     {
         CubemapRenderTarget {
             _size: size, 
-            cubemap: CubemapRenderBase::new(view_dist, view_pos),
+            cubemap: CubemapRenderBase::new(view_dist, get_view_pos),
             depth_buffer: glium::framebuffer::DepthRenderBuffer::new(facade, 
                 glium::texture::DepthFormat::F32, size, size).unwrap(),
             cbo_tex: texture::Cubemap::empty_with_format(facade, texture::UncompressedFloatFormat::F16F16F16,
                 texture::MipmapsOption::NoMipmap, size).unwrap(),
+            pass_type: RenderPassType::Visual,
+            get_trans_id: None,
         }
+    }
+
+    /// Sets the render pass type of this Render Target
+    pub fn with_pass(mut self, pass: RenderPassType) -> Self {
+        self.pass_type = pass;
+        self
+    }
+
+    /// If this target is producing a texture for a specific object, specify a function
+    /// to get the object's graphical object id
+    /// 
+    /// This rendered texture will be returned as `WithArgs` along with this id
+    pub fn with_trans_getter(mut self, get_id: Box<dyn Fn() -> u32>) -> Self {
+        self.get_trans_id = Some(get_id);
+        self
     }
 }
 
@@ -215,14 +235,21 @@ impl RenderTarget for CubemapRenderTarget {
         func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
-        let ctx = super::super::get_active_ctx();
         self.cubemap.draw(&mut |face, cam| {
-            let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(&*ctx.ctx.borrow(), 
-                self.cbo_tex.main_level().image(face), self.depth_buffer.to_depth_attachment()).unwrap();
+            let mut fbo = {
+                let ctx = super::super::get_active_ctx();
+                let ctx = ctx.ctx.borrow();
+                glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(&*ctx, 
+                self.cbo_tex.main_level().image(face), self.depth_buffer.to_depth_attachment()).unwrap()
+            };
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
-            func(&mut fbo, cam, RenderPassType::Visual, cache, &pipeline_inputs);
+            func(&mut fbo, cam, self.pass_type, cache, &pipeline_inputs);
         });
-        Some(TextureType::TexCube(Ref(&self.cbo_tex)))
+        let tex = TextureType::TexCube(Ref(&self.cbo_tex));
+        if let Some(get_id) = &self.get_trans_id {
+            Some(TextureType::WithArg(
+                Box::new(tex), StageArgs::ObjectArgs(get_id())))
+        } else { Some(tex) }
     }
 
 }
@@ -248,10 +275,11 @@ impl MipCubemapRenderTarget {
     /// `view_pos` - the position in the scene the cubemap is rendered from
     /// 
     /// `mip_levels` - the amount of mipmaps
-    pub fn new(size: u32, mip_levels: u32, view_dist: f32, view_pos: cgmath::Point3<f32>) -> MipCubemapRenderTarget{
+    pub fn new(size: u32, mip_levels: u32, view_dist: f32, 
+        get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>) -> MipCubemapRenderTarget{
         MipCubemapRenderTarget {
             mip_levels, size,
-            cubemap: CubemapRenderBase::new(view_dist, view_pos),
+            cubemap: CubemapRenderBase::new(view_dist, get_view_pos),
         }
     }
 }

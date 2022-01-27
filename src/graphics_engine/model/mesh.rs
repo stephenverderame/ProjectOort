@@ -126,10 +126,12 @@ impl Mesh {
     /// `mats` - the material list for the entire model
     /// 
     /// `bones` - the bones SSBO or `None` to not animate the mesh
-    pub fn render_args<'a>(&'a self, model: Option<[[f32; 4]; 4]>, mats: &'a Vec<Material>, bones: Option<&'a ssbo::SSBO::<[[f32; 4]; 4]>>) 
+    pub fn render_args<'a>(&'a self, model: Option<[[f32; 4]; 4]>, mats: &'a Vec<Material>, 
+        bones: Option<&'a ssbo::SSBO::<[[f32; 4]; 4]>>, trans_data: Option<&'a shader::TransparencyData>) 
         -> (shader::UniformInfo<'a>, VertexHolder<'a>, glium::index::IndicesSource<'a>)
     {
-        let mat = mats[self.mat_idx.min(mats.len() - 1)].to_uniform_args(model.is_none(), model, bones);
+        let mat = mats[self.mat_idx.min(mats.len() - 1)]
+            .to_uniform_args(model.is_none(), model, bones, trans_data);
         (mat, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo))
     }
 }

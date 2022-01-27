@@ -61,6 +61,14 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let to_cache = Box::new(texture_processor::ToCacheProcessor::new());
 
     let user_clone = user.clone();
+    let translucency = Box::new(render_target::CubemapRenderTarget::new(2048, 100., 
+        Box::new(move || user_clone.borrow().root()
+            .borrow().mat().transform_point(point3(0., 0., 0.)).cast().unwrap()), wnd_ctx)
+        .with_trans_getter(Box::new(|| 0))
+        .with_pass(shader::RenderPassType::Transparent(user.borrow().as_entity().as_ptr() as *const entity::Entity)));
+    let trans_to_cache = Box::new(texture_processor::ToCacheProcessor::new());
+
+    let user_clone = user.clone();
     let render_cascade_1 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
     Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 30., 2048) }))));
 
@@ -71,10 +79,15 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let user_clone = user.clone();
     let render_cascade_3 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
     Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 80., 400., 2048) }))));
-    pipeline::RenderPass::new(vec![depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3], 
-        vec![cull_lights, eb, blur, compose, to_cache], 
-        pipeline::Pipeline::new(vec![0], vec![(0, (5, 0)), (5, (2, 0)), (5, (3, 0)), (5, (4, 0)), (2, (9, 0)), (3, (9, 1)), (4, (9, 2)), (9, (1, 0)),
-            (1, (6, 0)), (6, (7, 0)), (7, (8, 1)), (1, (8, 0))]))
+    pipeline::RenderPass::new(vec![depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency], 
+        vec![cull_lights, eb, blur, compose, to_cache, trans_to_cache], 
+        pipeline::Pipeline::new(vec![0], vec![
+            (0, (6, 0)), // light culling
+            (6, (2, 0)), (6, (3, 0)), (6, (4, 0)), // cull -> render cascades
+            (2, (10, 0)), (3, (10, 1)), (4, (10, 2)), // cascade to cache
+            (10, (5, 0)), (5, (11, 0)), (11, (1, 0)), // translucency, and store in cache
+            (1, (7, 0)), (7, (8, 0)), (8, (9, 1)), (1, (9, 0)) // main pass w/ bloom
+        ]))
 }
 
 

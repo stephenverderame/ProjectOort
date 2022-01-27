@@ -4,6 +4,7 @@ use crate::cg_support::ssbo;
 use super::entity::AbstractEntity;
 use std::rc::Rc;
 use std::cell::{RefCell, Cell};
+use std::collections::BTreeMap;
 
 /// A Scene manages the scene parameters and
 /// strings together multiple render passes
@@ -39,6 +40,50 @@ impl Scene {
         }
     }
 
+    fn render_transparency(&self, obj: *const entity::Entity, viewer: &dyn Viewer, 
+        scene_data: &shader::SceneData, cache: &shader::PipelineCache,
+        fbo: &mut glium::framebuffer::SimpleFrameBuffer,
+        shader: &shader::ShaderManager) 
+    {
+        use crate::cg_support::Transformation;
+        use cgmath::*;
+        //let mut map = BTreeMap::new();
+        let view_mat = viewer.view_mat().into_transform();
+        for entity in &self.entities {
+            if entity.as_ptr() as *const entity::Entity != obj && 
+                entity.borrow().should_render(shader::RenderPassType::Transparent(obj)) 
+            {
+                /*let cam_z = (view_mat * entity.borrow().transformations()[0].borrow().as_transform())
+                    .transform_point(point3(0., 0., 0.)).z;
+                map.insert(-((cam_z * 10f64.powi(8) + 0.5) as i64), entity.clone());*/
+                let mut entity = entity.borrow_mut();
+                entity::render_entity(&mut *entity, fbo, scene_data, cache, shader)
+            }
+        }
+
+        /*for (_, entity) in map {
+            let mut entity = entity.borrow_mut();
+            entity::render_entity(&mut *entity, fbo, scene_data, cache, shader)
+        }*/
+    }
+
+    fn render_entities(&self, viewer: &dyn Viewer, scene_data: &shader::SceneData, 
+        pass: shader::RenderPassType, cache: &shader::PipelineCache,
+        fbo: &mut glium::framebuffer::SimpleFrameBuffer,
+        shader: &shader::ShaderManager) 
+    {
+        match pass {
+            shader::RenderPassType::Transparent(ptr) => self.render_transparency(ptr, viewer, scene_data, cache, fbo, shader),
+            typ => 
+                for entity in &self.entities {
+                    if entity.borrow().should_render(typ) {
+                        let mut entity = entity.borrow_mut();
+                        entity::render_entity(&mut *entity, fbo, scene_data, cache, shader);
+                    }
+                },
+        }
+    }
+
     /// Renders the scene
     /// Returns either a texture result of the render or `None` if the result was rendered onto
     /// the screen
@@ -56,13 +101,8 @@ impl Scene {
                 sdm.viewer = viewer_data_from(viewer);
                 sdm.pass_type = typ;
             }
-            let sd = sd.borrow();
-            for entity in &self.entities {
-                if entity.borrow().should_render(typ) {
-                    let mut entity = entity.borrow_mut();
-                    entity::render_entity(&mut *entity, fbo, &*sd, cache, shader);
-                }
-            }
+            let scene_data = sd.borrow();
+            self.render_entities(viewer, &*scene_data, typ, cache, fbo, shader);
         });
         self.pass.set(Some(pass));
     }
@@ -101,7 +141,8 @@ pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, bg_skybox: &
     let cbo = cubes::gen_cubemap_from_sphere(hdr_path, 1024, shader_manager, facade);
     let cam = camera::PerspectiveCamera::default(1.);
     let mip_levels = 5;
-    let mut rt = render_target::MipCubemapRenderTarget::new(128, mip_levels, 10., cgmath::point3(0., 0., 0.));
+    let pos_func = || cgmath::point3(0., 0., 0.);
+    let mut rt = render_target::MipCubemapRenderTarget::new(128, mip_levels, 10., Box::new(pos_func));
     let iterations = Cell::new(0);
     let mut cache = shader::PipelineCache::default();
     let res = rt.draw(&cam, None, &mut cache, &mut |fbo, viewer, _, cache, _| {

@@ -71,7 +71,7 @@ impl Skybox {
         use std::cell::RefCell;
         entity::Entity {
             geometry: Box::new(self),
-            render_passes: vec![shader::RenderPassType::Visual],
+            render_passes: vec![shader::RenderPassType::Visual, shader::RenderPassType::transparent_tag()],
             locations: vec![Rc::new(RefCell::new(cgmath::Matrix4::from_scale(1f64)))],
         }
     }
@@ -107,7 +107,8 @@ pub fn gen_cubemap_from_sphere<F : glium::backend::Facade>(tex_path: &str, cubem
     let mut sky = Skybox::new(SkyboxTex::Sphere(
         textures::load_tex_2d_or_hdr(tex_path, facade)), facade);
     let cam = camera::PerspectiveCamera::default(1.);
-    let gen_sky = Box::new(render_target::CubemapRenderTarget::new(cubemap_size, 10., cgmath::point3(0., 0., 0.), facade));
+    let gen_sky = Box::new(render_target::CubemapRenderTarget::new(cubemap_size, 10., 
+        Box::new(|| cgmath::point3(0., 0., 0.)), facade));
     let cp = Box::new(texture_processor::CopyTextureProcessor::new(cubemap_size, cubemap_size, None, None));
     let mut gen_sky_pass = pipeline::RenderPass::new(vec![gen_sky], vec![cp], pipeline::Pipeline::new(vec![0], vec![(0, (1, 0))]));
     let sd = Rc::new(RefCell::new(shader::SceneData {

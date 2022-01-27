@@ -8,7 +8,8 @@ edition = "2018"
 
 [dependencies]
 glutin = "0.28.0"
-glium = "0.31.0"
+#glium = "0.31.0"
+glium = { path = "../GliumFork" }
 cgmath = "0.18.0"
 tobj = "3.2.0"
 image = "*"

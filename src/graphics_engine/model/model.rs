@@ -38,6 +38,7 @@ pub struct Model {
     bone_buffer: Option<ssbo::SSBO<[[f32; 4]; 4]>>,
     instances: instancing::InstanceBuffer<instancing::InstancePosition>,
     instancing: bool,
+    transparency: Option<shader::TransparencyData>,
 }
 
 impl Model {
@@ -136,13 +137,33 @@ impl Model {
         Model { meshes, materials, animator, 
             bone_buffer, 
             instances: instancing::InstanceBuffer::new(),
-            instancing: false, }
+            instancing: false,
+            transparency: None, }
     }
 
     /// Enables model instancing
     pub fn with_instancing(mut self) -> Self {
         self.instancing = true;
         self
+    }
+
+    /// Enables model to have refractive transparency
+    pub fn with_transparency(mut self, refraction_idx: f32, object_id: u32) -> Self {
+        self.transparency = Some(shader::TransparencyData {
+            refraction_idx,
+            trans_fac: 0.,
+            object_id,
+        });
+        self
+    }
+
+    /// Gets this model's transparency factor
+    /// which is a number from `0` to `1` where `0` indicates opaque and
+    /// `1` indicates fully transparent
+    /// 
+    /// Requires that this model has transparency which is enabled by `with_transparency()`
+    pub fn trans_fac(&mut self) -> &mut f32 {
+        &mut self.transparency.as_mut().unwrap().trans_fac
     }
 
     /// Render this model once, animating if there is one
@@ -158,7 +179,8 @@ impl Model {
         let mut v = Vec::new();
         let bones = self.bone_buffer.as_ref();
         for mesh in &self.meshes {
-            v.push(mesh.render_args(Some(model), &self.materials, bones.clone()));
+            v.push(mesh.render_args(Some(model), &self.materials, bones.clone(), 
+                self.transparency.as_ref()));
         }
         v
     }
@@ -180,7 +202,8 @@ impl Model {
             let data : glium::vertex::VerticesSource<'a> 
                 = From::from(self.instances.get_stored_buffer().unwrap().per_instance().unwrap());
             for mesh in &self.meshes {
-                let (uniform, vertices, indices) = mesh.render_args(None, &self.materials, None);
+                let (uniform, vertices, indices) = mesh.render_args(None, &self.materials, 
+                    None, self.transparency.as_ref());
                 v.push((uniform, vertices.append(data.clone()), indices));
             }
         }

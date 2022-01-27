@@ -33,7 +33,8 @@ impl AnimGameObject {
             entity: Rc::new(RefCell::new(ModelEntity {
                 geometry: Box::new(model),
                 locations: vec![transform],
-                render_passes: vec![shader::RenderPassType::Visual],
+                render_passes: vec![shader::RenderPassType::Visual, 
+                    shader::RenderPassType::transparent_tag()],
             })),
         }
     }
@@ -92,7 +93,8 @@ impl GameObject {
             entity: Rc::new(RefCell::new(Entity {
                 geometry: Box::new(model),
                 locations: Vec::new(),
-                render_passes: vec![shader::RenderPassType::Visual],
+                render_passes: vec![shader::RenderPassType::Visual,
+                    shader::RenderPassType::transparent_tag()],
             })),
             collision_prototype: None,
             bod_type: BodyType::Dynamic,

@@ -193,7 +193,10 @@ impl Material {
     /// `instancing` - if instanced rendering is being used
     /// 
     /// `model` - model matrix if available. If `None`, the identity matrix is used
-    pub fn to_uniform_args<'a>(&'a self, instancing: bool, model: Option<[[f32; 4]; 4]>, bones: Option<&'a ssbo::SSBO<[[f32; 4]; 4]>>) -> shader::UniformInfo {
+    pub fn to_uniform_args<'a>(&'a self, instancing: bool, model: Option<[[f32; 4]; 4]>, 
+        bones: Option<&'a ssbo::SSBO<[[f32; 4]; 4]>>, 
+        trans_data: Option<&'a shader::TransparencyData>) -> shader::UniformInfo 
+    {
         match &self.name[..] {
             "Laser" => shader::UniformInfo::LaserInfo,
             _ if self.pbr_data.is_some() => shader::UniformInfo::PBRInfo(shader::PBRData {
@@ -205,6 +208,7 @@ impl Material {
                 emission_map: self.emission_tex.as_ref(),
                 ao_map: self.pbr_data.as_ref().and_then(|data| { data.ao_tex.as_ref() }),
                 instancing, bone_mats: bones,
+                trans_data,
             }),
             x => panic!("Unimplemented texture with name: {}", x),
         }  
