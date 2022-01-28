@@ -47,6 +47,7 @@ fn gen_asteroid_field(obj: &mut object::GameObject) {
 fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<player::Player>>, wnd_ctx: &glium::Display) -> RenderPass {
     use glium::{Surface};
     use pipeline::*;
+    use graphics_engine::drawable::Viewer;
     let msaa = Box::new(render_target::MsaaRenderTarget::new(8, render_width, render_height, wnd_ctx));
     let eb = Box::new(texture_processor::ExtractBrightProcessor::new(wnd_ctx, render_width, render_height));
     let blur = Box::new(texture_processor::SepConvProcessor::new(render_width, render_height, 10, wnd_ctx));
@@ -61,7 +62,7 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let to_cache = Box::new(texture_processor::ToCacheProcessor::new());
 
     let user_clone = user.clone();
-    let translucency = Box::new(render_target::CubemapRenderTarget::new(2048, 100., 
+    let translucency = Box::new(render_target::CubemapRenderTarget::new(1024, user.borrow().view_dist().1, 
         Box::new(move || user_clone.borrow().root()
             .borrow().mat().transform_point(point3(0., 0., 0.)).cast().unwrap()), wnd_ctx)
         .with_trans_getter(Box::new(|| 0))
