@@ -147,9 +147,10 @@ pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, bg_skybox: &
     let mut cache = shader::PipelineCache::default();
     let res = rt.draw(&cam, None, &mut cache, &mut |fbo, viewer, _, cache, _| {
         let its = iterations.get();
-        let mip_level = its / 6;
+        let mip_level = its;
         bg_skybox.set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
-        let sd = drawable::default_scene_data(viewer);
+        let mut sd = drawable::default_scene_data(viewer);
+        sd.pass_type = shader::RenderPassType::LayeredVisual;
         drawable::render_drawable(bg_skybox, None, fbo, &sd, &cache, shader_manager);
         iterations.set(its + 1);
     });

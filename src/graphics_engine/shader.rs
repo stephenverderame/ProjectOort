@@ -30,6 +30,7 @@ enum ShaderType {
     ParallelLaser,
     ParallelSky,
     ParallelEqRect,
+    ParallelPrefilter,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -396,6 +397,7 @@ impl<'a> UniformInfo<'a> {
             (SepConvInfo(_), Visual) => ShaderType::BlurShader,
             (ExtractBrightInfo(_), Visual) => ShaderType::BloomShader,
             (PrefilterHdrEnvInfo(_), Visual) => ShaderType::PrefilterHdrShader,
+            (PrefilterHdrEnvInfo(_), LayeredVisual) => ShaderType::ParallelPrefilter,
             (GenLutInfo, Visual) => ShaderType::GenLutShader,
 
             // compute shaders
@@ -560,6 +562,9 @@ impl ShaderManager {
         let parallel_anim_pbr = load_shader_source!(facade,
             "shaders/pbrAnimVert.glsl", "shaders/pbrFrag.glsl",
             "shaders/parallelPbrGeom.glsl").unwrap();
+        let parallel_prefilter = load_shader_source!(facade,
+            "shaders/skyVert.glsl", "shaders/prefilterEnvFrag.glsl",
+            "shaders/parallelSkyGeom.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -587,6 +592,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::ParallelSky, parallel_sky);
         shaders.insert(ShaderType::ParallelEqRect, parallel_eq_rect);
         shaders.insert(ShaderType::ParallelAnimPbr, parallel_anim_pbr);
+        shaders.insert(ShaderType::ParallelPrefilter, parallel_prefilter);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
