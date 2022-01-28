@@ -8,6 +8,7 @@ layout (location = 5) in vec4 instance_model_col2;
 layout (location = 6) in vec4 instance_model_col3;
 
 uniform mat4 viewproj;
+uniform bool layered;
 
 out FragData {
     vec2 tex_coords;
@@ -17,7 +18,10 @@ out FragData {
 void main() {
     mat4 model = mat4(instance_model_col0, instance_model_col1, 
         instance_model_col2, instance_model_col3);
-    gl_Position = viewproj * model * vec4(pos, 1.0);
+    if (layered) 
+        gl_Position = model * vec4(pos, 1.0);
+    else
+        gl_Position = viewproj * model * vec4(pos, 1.0);
     v_out.tex_coords = tex_coords;
     v_out.color = vec3(0.5451, 0.0, 0.5451);
 }

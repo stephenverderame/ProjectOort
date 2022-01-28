@@ -5,7 +5,7 @@ layout (std430, binding = 5) readonly buffer ViewMatrices {
 };
 
 layout (triangles, invocations = 6) in;
-layout (triangle_strip, max_vertices = 18) out;
+layout (triangle_strip, max_vertices = 3) out;
 
 in FragData {
     vec2 tex_coords;
@@ -18,6 +18,7 @@ out FragData {
 } g_out;
 
 void main() {
+    gl_Layer = gl_InvocationID;
     for (int j = 0; j < 3; ++j) {
         g_out.color = g_in[j].color;
         g_out.tex_coords = g_in[j].tex_coords;

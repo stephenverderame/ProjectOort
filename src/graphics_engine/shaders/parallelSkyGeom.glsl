@@ -1,7 +1,7 @@
 #version 430 core
 
 layout (std430, binding = 5) readonly buffer ViewMatrices {
-    mat4 viewproj_mats[];
+    mat4 viewproj_mats[6];
 };
 
 layout (triangles, invocations = 6) in;
@@ -23,7 +23,7 @@ void main() {
     mat4 viewproj = proj * view;
     for (int j = 0; j < 3; ++j) {
         g_out.tex_coords = g_in[j].tex_coords;
-        gl_Position = viewproj * gl_in[j].gl_Position;
+        gl_Position = viewproj * vec4(g_in[j].tex_coords, 1.0);
         EmitVertex();
     }
     EndPrimitive();

@@ -114,7 +114,7 @@ pub fn gen_cubemap_from_sphere<F : glium::backend::Facade>(tex_path: &str, cubem
     let mut gen_sky_pass = pipeline::RenderPass::new(vec![gen_sky], vec![cp], pipeline::Pipeline::new(vec![0], vec![(0, (1, 0))]));
     let sd = Rc::new(RefCell::new(shader::SceneData {
         viewer: viewer_data_from(&cam),
-        pass_type: shader::RenderPassType::Visual,
+        pass_type: shader::RenderPassType::LayeredVisual,
         lights: None,
         light_pos: None,
         ibl_maps: None,

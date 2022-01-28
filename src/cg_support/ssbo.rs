@@ -1,3 +1,4 @@
+use std::cell::Cell;
 #[derive(PartialEq, Eq)]
 enum SSBOMode {
     /// Automatic resizing with implicit size member in the buffer
@@ -31,7 +32,7 @@ enum SSBOMode {
 /// and data updates must not use more memory than what was allocated.
 pub struct SSBO<T : Copy> {
     buffer: gl::types::GLuint,
-    buffer_count: u32,
+    buffer_count: Cell<u32>,
     mode: SSBOMode,
     phantom: std::marker::PhantomData<T>,
     // PhantomData which takes no space so compiler thinks this 
@@ -82,7 +83,7 @@ impl<T : Copy> SSBO<T> {
             }
         }
         SSBO {
-            buffer, buffer_count: length as u32,
+            buffer, buffer_count: Cell::new(length as u32),
             phantom: std::marker::PhantomData,
             mode: SSBOMode::Dynamic,
         }
@@ -104,7 +105,7 @@ impl<T : Copy> SSBO<T> {
             assert_no_error!();
         }
         SSBO {
-            buffer, buffer_count: buffer_size as u32,
+            buffer, buffer_count: Cell::new(buffer_size as u32),
             phantom: std::marker::PhantomData,
             mode,
         }
@@ -133,18 +134,18 @@ impl<T : Copy> SSBO<T> {
     /// Assumes that `data_size` elements cannot fit
     /// 
     /// Resizes the buffer to `2 * data_size` elements
-    unsafe fn dynamic_resize(&mut self, data_size: usize) {
-        self.buffer_count = data_size as u32 * 2;
+    unsafe fn dynamic_resize(&self, data_size: usize) {
+        self.buffer_count.set(data_size as u32 * 2);
         //self.del_buffer();
         gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
-        gl::BufferData(gl::SHADER_STORAGE_BUFFER, (16 + std::mem::size_of::<T>() as u32 * self.buffer_count) as isize, 
+        gl::BufferData(gl::SHADER_STORAGE_BUFFER, (16 + std::mem::size_of::<T>() as u32 * self.buffer_count.get()) as isize, 
                 0 as *const std::ffi::c_void, gl::DYNAMIC_COPY);
         assert_no_error!();
     }
 
-    fn update_dynamic(&mut self, data: &[T]) {
+    fn update_dynamic(&self, data: &[T]) {
         unsafe {
-            if data.len() as u32 >= self.buffer_count {
+            if data.len() as u32 >= self.buffer_count.get() {
                 self.dynamic_resize(data.len());
             }
             let size_w_padding = [data.len() as u32, 0u32, 0u32, 0u32];
@@ -156,8 +157,8 @@ impl<T : Copy> SSBO<T> {
         }
     }
 
-    fn update_static_alloc(&mut self, data: &[T]) {
-        if data.len() > self.buffer_count as usize {
+    fn update_static_alloc(&self, data: &[T]) {
+        if data.len() > self.buffer_count.get() as usize {
             panic!("Cannot allocate more memory in static alloc mode!");
         }
         unsafe {
@@ -169,7 +170,7 @@ impl<T : Copy> SSBO<T> {
     }
     /// Sets the entire memory of the ssbo to 0s
     /// Stes the data byte-wise
-    pub fn zero_bytes(&mut self) {
+    pub fn zero_bytes(&self) {
         unsafe {
             let val = 0u8;
             gl::ClearNamedBufferData(self.buffer, gl::R8, gl::RED, gl::UNSIGNED_BYTE, 
@@ -179,7 +180,7 @@ impl<T : Copy> SSBO<T> {
     }
 
     /// Updates the data of the SSBO, resizing if necessary (for dynamic mode)
-    pub fn update(&mut self, data: &[T]) {
+    pub fn update(&self, data: &[T]) {
         match self.mode {
             SSBOMode::Dynamic => self.update_dynamic(data),
             SSBOMode::StaticAllocDynamic => self.update_static_alloc(data),
@@ -201,12 +202,12 @@ impl<T : Copy> SSBO<T> {
     #[allow(dead_code)]
     pub fn get_data(&self) -> Vec<T> {
         let mut v = Vec::<T>::new();
-        v.resize(self.buffer_count as usize, unsafe { std::mem::zeroed() });
+        v.resize(self.buffer_count.get() as usize, unsafe { std::mem::zeroed() });
         unsafe {
             //println!("Read size {}", (std::mem::size_of::<T>() * self.buffer_count as usize) as isize);
             gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
             gl::GetBufferSubData(gl::SHADER_STORAGE_BUFFER, 0,
-                (std::mem::size_of::<T>() * self.buffer_count as usize) as isize, 
+                (std::mem::size_of::<T>() * self.buffer_count.get() as usize) as isize, 
                 v.as_mut_ptr() as *mut std::ffi::c_void);
             assert_no_error!();
         }
@@ -229,7 +230,7 @@ impl<T : Copy> SSBO<T> {
             }
             MappedBuffer {
                 gpu_buf: self.buffer,
-                size: self.buffer_count,
+                size: self.buffer_count.get(),
                 buf,
             }
         }
@@ -247,7 +248,7 @@ impl<T : Copy> SSBO<T> {
             }
             MutMappedBuffer {
                 gpu_buf: self.buffer,
-                size: self.buffer_count,
+                size: self.buffer_count.get(),
                 buf,
             }
         }

@@ -180,6 +180,9 @@ impl CubemapRenderBase {
             *mat_dst = (cam.proj_mat() * cam.view_mat()).into();
         }
         self.view_matrices.bind(5);
+        let tst : Matrix4<f32> = From::from(self.view_matrices.map_read().as_slice()[5]);
+        assert_relative_eq!(tst, cam.proj_mat() * cam.view_mat());
+        //println!("{:?}", cam.proj_mat() * cam.view_mat());
         StaticCamera::from(&cam)
     }
 }

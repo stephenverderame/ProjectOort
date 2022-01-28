@@ -408,7 +408,7 @@ impl<'a> UniformInfo<'a> {
 
 use glium::uniforms::*;
 pub enum UniformType<'a> {
-    LaserUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
+    LaserUniform(UniformsStorage<'a, bool, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
     SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     PbrUniform(UniformsArray<'static, Sampler<'a, glium::texture::DepthTexture2d>,
         UniformsStruct<'static, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, 
@@ -612,9 +612,15 @@ impl ShaderManager {
         let params = typ.get_draw_params(pass_tp);
         let shader = self.shaders.get(&typ).unwrap();
         let uniform = match (data, pass_tp) {
-            (LaserInfo, Visual) | (LaserInfo, Transparent(_)) | (LaserInfo, LayeredVisual) => 
+            (LaserInfo, Visual) => 
                 UniformType::LaserUniform(glium::uniform! {
-                    viewproj: scene_data.unwrap().viewer.viewproj
+                    viewproj: scene_data.unwrap().viewer.viewproj,
+                    layered: false,
+                }),
+            (LaserInfo, Transparent(_)) | (LaserInfo, LayeredVisual) =>
+                UniformType::LaserUniform(glium::uniform! {
+                    viewproj: scene_data.unwrap().viewer.viewproj,
+                    layered: true,
                 }),
             (SkyboxInfo(SkyboxData {env_map}), Visual) | (SkyboxInfo(SkyboxData {env_map}), Transparent(_))
             | (SkyboxInfo(SkyboxData {env_map}), LayeredVisual)
