@@ -199,6 +199,18 @@ pub struct StaticCamera {
     pub far: f32,
 }
 
+impl StaticCamera {
+    pub fn from(cam: &dyn Viewer) -> Self {
+        Self {
+            view: cam.view_mat(),
+            proj: cam.proj_mat(),
+            cam_pos: cam.cam_pos(),
+            near: cam.view_dist().0,
+            far: cam.view_dist().1,
+        }
+    }
+}
+
 impl Viewer for StaticCamera {
     fn proj_mat(&self) -> Matrix4<f32> { self.proj }
     fn view_mat(&self) -> Matrix4<f32> { self.view }

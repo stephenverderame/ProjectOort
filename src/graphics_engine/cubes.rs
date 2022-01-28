@@ -71,7 +71,8 @@ impl Skybox {
         use std::cell::RefCell;
         entity::Entity {
             geometry: Box::new(self),
-            render_passes: vec![shader::RenderPassType::Visual, shader::RenderPassType::transparent_tag()],
+            render_passes: vec![shader::RenderPassType::Visual, shader::RenderPassType::transparent_tag(),
+                shader::RenderPassType::LayeredVisual],
             locations: vec![Rc::new(RefCell::new(cgmath::Matrix4::from_scale(1f64)))],
         }
     }

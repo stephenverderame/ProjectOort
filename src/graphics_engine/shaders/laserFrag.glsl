@@ -1,9 +1,11 @@
 #version 430 core
 
-in vec2 tcoords;
-flat in vec3 color;
+in FragData {
+    vec2 tex_coords;
+    vec3 color;
+} f_in;
 
 out vec4 frag_color;
 void main() {
-    frag_color = vec4(color * 4, 1.0);
+    frag_color = vec4(f_in.color * 4, 1.0);
 }

@@ -1,8 +1,11 @@
 #version 430 core
 #extension GL_ARB_bindless_texture : require
-in vec2 f_tex_coords;
-in vec3 frag_pos;
-in mat3 tbn;
+
+in FragData {
+    vec2 tex_coords;
+    vec3 frag_pos;
+    mat3 tbn;
+} f_in;
 
 out vec4 frag_color;
 
@@ -185,7 +188,7 @@ float pcf(vec3 shadowCoords, sampler2D depth_map, float filter_size_uv, float bi
 }
 
 int getCascadeIndex() {
-    vec4 frag_pos_view = view * vec4(frag_pos, 1.0);
+    vec4 frag_pos_view = view * vec4(f_in.frag_pos, 1.0);
     float depth = abs(frag_pos_view.z);
     for(int i = 0; i < 3; ++i) {
         if (depth < far_planes[i]) return i;
@@ -198,7 +201,7 @@ sampler2D getCascadeTex(int cIdx) {
 }
 
 vec3 getProjCoords(int casIdx) {
-    vec4 light_space = viewproj_mats[casIdx] * vec4(frag_pos, 1.0);
+    vec4 light_space = viewproj_mats[casIdx] * vec4(f_in.frag_pos, 1.0);
     return (light_space.xyz / light_space.w) * 0.5 + 0.5;
 }
 // calculates the shadow for frag_pos
@@ -286,13 +289,13 @@ vec3 fresnelSchlickRoughness(vec3 f0, vec3 view_dir, vec3 norm, float roughness)
 }
 
 vec3 getNormal() {
-    vec3 tangentNormal = texture(normal_map, f_tex_coords).xyz * 2.0 - 1.0;
-    return normalize(tbn * tangentNormal);
+    vec3 tangentNormal = texture(normal_map, f_in.tex_coords).xyz * 2.0 - 1.0;
+    return normalize(f_in.tbn * tangentNormal);
 }
 
 /// `R` - reflection vector
 vec3 lightDirSphere(vec3 R, vec3 light_pos, float radius) {
-    vec3 oldLightDir = light_pos - frag_pos;
+    vec3 oldLightDir = light_pos - f_in.frag_pos;
     vec3 centerToRay = dot(R, oldLightDir) * R - oldLightDir;
 
     vec3 closestPoint = oldLightDir + centerToRay * clamp(radius / length(centerToRay), 0.0, 1.0);
@@ -303,8 +306,8 @@ vec3 lightDirSphere(vec3 R, vec3 light_pos, float radius) {
 
 /// Gets the unnormalized view direction from the closest point on the tube to the frag position
 vec3 lightDirTube(vec3 tubeStart, vec3 tubeEnd, vec3 norm, vec3 R, float radius) {
-    vec3 L0 = tubeStart - frag_pos;
-    vec3 L1 = tubeEnd - frag_pos;
+    vec3 L0 = tubeStart - f_in.frag_pos;
+    vec3 L1 = tubeEnd - f_in.frag_pos;
 
     float distL0 = length(L0);
     float distL1 = length(L1);
@@ -333,7 +336,7 @@ vec3 lightDir(LightData light, vec3 R, vec3 norm) {
         case 1:
             return lightDirTube(light.start, light.end, norm, R, light.radius);
         case 2: //point light
-            return light.start - frag_pos;
+            return light.start - f_in.frag_pos;
         default:
             return vec3(0);
     }
@@ -411,7 +414,7 @@ vec3 directRadiance(vec3 norm, vec3 view_dir, vec3 f0, float roughness,
 /// Applies a fog effect to frag_color by mixing it with a constant fog color 
 /// based on distance of fragment to viewer
 vec3 applyFog(vec3 frag_color) {
-    float depth = abs((view * vec4(frag_pos, 1.0)).z);
+    float depth = abs((view * vec4(f_in.frag_pos, 1.0)).z);
     const vec3 fog_color = vec3(0.4);
     const float fog_density = 0.001;
     float fog_factor = 1.0 / exp(depth * fog_density * depth * fog_density);
@@ -433,14 +436,14 @@ vec3 applyTransparency(vec3 frag_color, vec3 view_dir, vec3 norm) {
 }
 
 void main() {
-    vec3 albedo = texture(albedo_map, f_tex_coords).rgb; // load textures using SRGB so no need to gamma correct
-    vec3 emission = texture(emission_map, f_tex_coords).rgb;
-    float metallic = texture(metallic_map, f_tex_coords).r;
-    float roughness = texture(roughness_map, f_tex_coords).r;
-    vec3 ao = use_ao ? texture(ao_map, f_tex_coords).rgb : vec3(0.7);
+    vec3 albedo = texture(albedo_map, f_in.tex_coords).rgb; // load textures using SRGB so no need to gamma correct
+    vec3 emission = texture(emission_map, f_in.tex_coords).rgb;
+    float metallic = texture(metallic_map, f_in.tex_coords).r;
+    float roughness = texture(roughness_map, f_in.tex_coords).r;
+    vec3 ao = use_ao ? texture(ao_map, f_in.tex_coords).rgb : vec3(0.7);
 
     vec3 norm = normalize(getNormal());
-    vec3 view_dir = normalize(cam_pos - frag_pos);
+    vec3 view_dir = normalize(cam_pos - f_in.frag_pos);
     vec3 ref = reflect(-view_dir, norm);
 
     vec3 prefilter_color = textureLod(prefilter_map, ref, roughness * max_reflection_mips).rgb;

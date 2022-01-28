@@ -24,6 +24,12 @@ enum ShaderType {
     TriIntersectionCompute,
     CollisionDebug,
     Billboard,
+    ParallelPbr,
+    ParallelInstancePbr,
+    ParallelAnimPbr,
+    ParallelLaser,
+    ParallelSky,
+    ParallelEqRect,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -32,8 +38,11 @@ pub enum RenderPassType {
     Visual,
     /// Render objects with depth information only
     Depth,
-    /// Transparency pass of entity with specified pointer
+    /// Transparency pass of entity with specified pointer.
+    /// The transparency pass is a layered pass
     Transparent(*const Entity),
+    /// Render a pass with multiple layers at once
+    LayeredVisual,
 }
 
 impl PartialEq for RenderPassType {
@@ -64,7 +73,7 @@ impl ShaderType {
         use glium::draw_parameters::*;
         match self {
             Pbr | PbrInstancedShader | DepthShader | DepthInstancedShader | Laser 
-            | PbrAnim | DepthAnim => 
+            | PbrAnim | DepthAnim | ParallelInstancePbr | ParallelLaser | ParallelPbr => 
                 glium::DrawParameters {
                     depth: glium::Depth {
                         test: DepthTest::IfLess,
@@ -355,30 +364,44 @@ impl<'a> UniformInfo<'a> {
         use UniformInfo::*;
         use RenderPassType::*;
         match (self, pass) {
-            (PBRInfo(PBRData {instancing, ..}), Visual) | 
-            (PBRInfo(PBRData {instancing, ..}), Transparent(_)) 
-                if *instancing => ShaderType::PbrInstancedShader,
-            (PBRInfo(PBRData {bone_mats: Some(_), ..}), Visual) |
-            (PBRInfo(PBRData {bone_mats: Some(_), ..}), Transparent(_)) => ShaderType::PbrAnim,
-            (PBRInfo(_), Visual) | (PBRInfo(_), Transparent(_)) => ShaderType::Pbr,
-            (PBRInfo(PBRData {instancing, ..}), Depth) if *instancing => 
+            // solid passes
+            (PBRInfo(PBRData {instancing: true, ..}), Visual) => ShaderType::PbrInstancedShader,
+            (PBRInfo(PBRData {instancing: true, ..}), Transparent(_)) |
+                (PBRInfo(PBRData {instancing:true , ..}), LayeredVisual)
+                => ShaderType::ParallelInstancePbr,
+            (PBRInfo(PBRData {bone_mats: Some(_), ..}), Visual) => ShaderType::PbrAnim,
+            (PBRInfo(PBRData {bone_mats: Some(_), ..}), LayeredVisual) |
+                (PBRInfo(PBRData {bone_mats: Some(_), ..}), Transparent(_)) => ShaderType::ParallelAnimPbr,
+            (PBRInfo(_), Visual) => ShaderType::Pbr,
+            (PBRInfo(_), LayeredVisual) | (PBRInfo(_), Transparent(_)) => ShaderType::ParallelPbr,
+            (PBRInfo(PBRData {instancing: true, ..}), Depth) => 
                 ShaderType::DepthInstancedShader,
             (PBRInfo(PBRData {bone_mats: Some(_), ..}), Depth) => 
                 ShaderType::DepthAnim,
             (PBRInfo(_), Depth) => ShaderType::DepthShader,
-            (EquiRectInfo(_), _) => ShaderType::EquiRect,
-            (SkyboxInfo(_), _) => ShaderType::Skybox,
-            (UiInfo(_), _) => ShaderType::UiShader,
-            (SepConvInfo(_), _) => ShaderType::BlurShader,
-            (ExtractBrightInfo(_), _) => ShaderType::BloomShader,
-            (PrefilterHdrEnvInfo(_), _) => ShaderType::PrefilterHdrShader,
-            (GenLutInfo, _) => ShaderType::GenLutShader,
-            (LaserInfo, Visual) | (LaserInfo, Transparent(_)) => ShaderType::Laser,
+            (LaserInfo, Visual) => ShaderType::Laser,
+            (LaserInfo, LayeredVisual) | (LaserInfo, Transparent(_)) => ShaderType::ParallelLaser,
             (LaserInfo, Depth) => ShaderType::DepthShader,
-            (LightCullInfo(_), _) => ShaderType::CullLightsCompute,
-            (TriangleCollisionsInfo, _) => ShaderType::TriIntersectionCompute,
-            (CollisionDebugInfo(_), _) => ShaderType::CollisionDebug,
-            (BillboardInfo(_), _) => ShaderType::Billboard,
+            (CollisionDebugInfo(_), Visual) => ShaderType::CollisionDebug,
+
+            // game objects
+            (EquiRectInfo(_), Visual) => ShaderType::EquiRect,
+            (SkyboxInfo(_), Visual) => ShaderType::Skybox,
+            (EquiRectInfo(_), LayeredVisual) | (EquiRectInfo(_), Transparent(_)) => ShaderType::ParallelEqRect,
+            (SkyboxInfo(_), LayeredVisual) | (SkyboxInfo(_), Transparent(_)) => ShaderType::ParallelSky,
+            (BillboardInfo(_), Visual) => ShaderType::Billboard,
+
+            // tex processors
+            (UiInfo(_), Visual) => ShaderType::UiShader,
+            (SepConvInfo(_), Visual) => ShaderType::BlurShader,
+            (ExtractBrightInfo(_), Visual) => ShaderType::BloomShader,
+            (PrefilterHdrEnvInfo(_), Visual) => ShaderType::PrefilterHdrShader,
+            (GenLutInfo, Visual) => ShaderType::GenLutShader,
+
+            // compute shaders
+            (LightCullInfo(_), Visual) => ShaderType::CullLightsCompute,
+            (TriangleCollisionsInfo, Visual) => ShaderType::TriIntersectionCompute,
+            (typ, pass) => panic!("Unknown shader-pass combination ({:?}, {:?})", typ, pass),
         }
     }
 }
@@ -453,7 +476,7 @@ macro_rules! include_str {
 macro_rules! load_shader_source {
     ($facade:expr, $vertex_file:literal, $fragment_file:literal, $geom_file:literal) => {
         glium::Program::from_source($facade,
-            include_str!($vertex_file), include_str!($fragment_file), include_str!($geom_option))
+            include_str!($vertex_file), include_str!($fragment_file), Some(include_str!($geom_file)))
     };
     ($facade:expr, $vertex_file:literal, $fragment_file:literal) => {
         glium::Program::from_source($facade,
@@ -520,6 +543,23 @@ impl ShaderManager {
             "shaders/depthVert.glsl", "shaders/constantColor.glsl").unwrap();
         let billboard = load_shader_source!(facade,
             "shaders/billboardVert.glsl", "shaders/billboardFrag.glsl").unwrap();
+        let parallel_pbr = load_shader_source!(facade,
+            "shaders/pbrVert.glsl", "shaders/pbrFrag.glsl", "shaders/parallelPbrGeom.glsl").unwrap();
+        let parallel_instance_pbr = load_shader_source!(facade,
+            "shaders/instancePbrVert.glsl", "shaders/pbrFrag.glsl", 
+            "shaders/parallelPbrGeom.glsl").unwrap();
+        let parallel_laser = load_shader_source!(facade,
+            "shaders/laserVert.glsl", "shaders/laserFrag.glsl",
+            "shaders/parallelLaserGeom.glsl").unwrap();
+        let parallel_sky = load_shader_source!(facade,
+            "shaders/skyVert.glsl", "shaders/skyFrag.glsl",
+            "shaders/parallelSkyGeom.glsl").unwrap();
+        let parallel_eq_rect = load_shader_source!(facade,
+            "shaders/skyVert.glsl", "shaders/eqRectFrag.glsl",
+            "shaders/parallelSkyGeom.glsl").unwrap();
+        let parallel_anim_pbr = load_shader_source!(facade,
+            "shaders/pbrAnimVert.glsl", "shaders/pbrFrag.glsl",
+            "shaders/parallelPbrGeom.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -541,6 +581,12 @@ impl ShaderManager {
         shaders.insert(ShaderType::DepthAnim, depth_anim);
         shaders.insert(ShaderType::CollisionDebug, debug);
         shaders.insert(ShaderType::Billboard, billboard);
+        shaders.insert(ShaderType::ParallelPbr, parallel_pbr);
+        shaders.insert(ShaderType::ParallelLaser, parallel_laser);
+        shaders.insert(ShaderType::ParallelInstancePbr, parallel_instance_pbr);
+        shaders.insert(ShaderType::ParallelSky, parallel_sky);
+        shaders.insert(ShaderType::ParallelEqRect, parallel_eq_rect);
+        shaders.insert(ShaderType::ParallelAnimPbr, parallel_anim_pbr);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -566,17 +612,19 @@ impl ShaderManager {
         let params = typ.get_draw_params(pass_tp);
         let shader = self.shaders.get(&typ).unwrap();
         let uniform = match (data, pass_tp) {
-            (LaserInfo, Visual) | (LaserInfo, Transparent(_)) => 
+            (LaserInfo, Visual) | (LaserInfo, Transparent(_)) | (LaserInfo, LayeredVisual) => 
                 UniformType::LaserUniform(glium::uniform! {
                     viewproj: scene_data.unwrap().viewer.viewproj
                 }),
             (SkyboxInfo(SkyboxData {env_map}), Visual) | (SkyboxInfo(SkyboxData {env_map}), Transparent(_))
+            | (SkyboxInfo(SkyboxData {env_map}), LayeredVisual)
             => UniformType::SkyboxUniform(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 skybox: sample_linear_clamp!(env_map),
             }),
             (EquiRectInfo(EqRectData{env_map}), Visual) | (EquiRectInfo(EqRectData{env_map}), Transparent(_))
+            | (EquiRectInfo(EqRectData{env_map}), LayeredVisual)
             => UniformType::EqRectUniform(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
@@ -587,7 +635,10 @@ impl ShaderManager {
                 instancing: _, bone_mats, trans_data}), Visual) |
             (PBRInfo(PBRData { model, 
                 diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map,
-                instancing: _, bone_mats, trans_data}), Transparent(_)) 
+                instancing: _, bone_mats, trans_data}), Transparent(_)) |
+            (PBRInfo(PBRData { model, 
+                diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map,
+                instancing: _, bone_mats, trans_data}), LayeredVisual) 
             => {
                 let sd = scene_data.unwrap();
                 sd.lights.unwrap().bind(0);
@@ -669,7 +720,7 @@ impl ShaderManager {
                 viewproj: scene_data.unwrap().viewer.viewproj,
                 model: model.clone(),
             }),
-            (BillboardInfo(tex), _) => UniformType::BillboardUniform(glium::uniform! {
+            (BillboardInfo(tex), Visual) => UniformType::BillboardUniform(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 tex: sample_mip_repeat!(tex),

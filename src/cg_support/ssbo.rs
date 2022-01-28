@@ -135,7 +135,7 @@ impl<T : Copy> SSBO<T> {
     /// Resizes the buffer to `2 * data_size` elements
     unsafe fn dynamic_resize(&mut self, data_size: usize) {
         self.buffer_count = data_size as u32 * 2;
-        self.del_buffer();
+        //self.del_buffer();
         gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
         gl::BufferData(gl::SHADER_STORAGE_BUFFER, (16 + std::mem::size_of::<T>() as u32 * self.buffer_count) as isize, 
                 0 as *const std::ffi::c_void, gl::DYNAMIC_COPY);
@@ -217,6 +217,7 @@ impl<T : Copy> SSBO<T> {
         unsafe { gl::DeleteBuffers(1, &self.buffer as *const gl::types::GLuint); }
     }
 
+    /// Maps the shader storage buffer onto the CPU memory for reading only
     pub fn map_read(&self) -> MappedBuffer<T> {
         unsafe {
             gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
@@ -227,6 +228,24 @@ impl<T : Copy> SSBO<T> {
                 assert!(false);
             }
             MappedBuffer {
+                gpu_buf: self.buffer,
+                size: self.buffer_count,
+                buf,
+            }
+        }
+    }
+
+    /// Maps the shader storage buffer onto the CPU memory for writing only
+    pub fn map_write(&self) -> MutMappedBuffer<T> {
+        unsafe {
+            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
+            let buf = gl::MapBuffer(gl::SHADER_STORAGE_BUFFER, gl::WRITE_ONLY) as *mut T;
+            assert_no_error!();
+            if buf == 0 as *mut T {
+                assert_no_error!();
+                assert!(false);
+            }
+            MutMappedBuffer {
                 gpu_buf: self.buffer,
                 size: self.buffer_count,
                 buf,
@@ -282,5 +301,95 @@ impl<'a, 'b, T : Copy> std::ops::Deref for MappedBufferSlice<'a, 'b, T> {
 
     fn deref(&self) -> &[T] {
         self.slice
+    }
+}
+
+/// RAII for the pointer returned from a call to glMapBuffer
+pub struct MutMappedBuffer<T : Copy> {
+    gpu_buf: gl::types::GLuint,
+    buf: *mut T,
+    size: u32,
+}
+
+/// RAII for the slice from the mapped buffer pointer
+pub struct MutMappedBufferSlice<'a, 'b, T : Copy> {
+    pub slice: &'a mut [T],
+    _owner: &'b MutMappedBuffer<T>, // reference to owner so we can't outlive it
+}
+
+impl<T : Copy> MutMappedBuffer<T> {
+    pub fn as_slice<'a, 'b>(&'b self) -> MutMappedBufferSlice<'a, 'b, T> {
+        unsafe {
+            MutMappedBufferSlice {
+                slice: std::slice::from_raw_parts_mut(self.buf as *mut T, self.size as usize),
+                _owner: self,
+            }
+        }
+    }
+}
+
+impl<T : Copy> Drop for MutMappedBuffer<T> {
+    fn drop(&mut self) {
+        unsafe {
+            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.gpu_buf);
+            if gl::UnmapBuffer(gl::SHADER_STORAGE_BUFFER) == gl::FALSE {
+                assert_no_error!();
+                assert!(false);
+            }
+        }
+    }
+}
+
+impl<'a, 'b, T : Copy> std::ops::Deref for MutMappedBufferSlice<'a, 'b, T> {
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        self.slice
+    }
+}
+
+impl<'a, 'b, T : Copy> std::ops::DerefMut for MutMappedBufferSlice<'a, 'b, T> {
+
+    fn deref_mut(&mut self) -> &mut [T] {
+        self.slice
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use serial_test::*;
+
+    fn init() -> glium::Display {
+        use glium::*;
+        use glutin::window::{WindowBuilder};
+        use glutin::ContextBuilder;
+        use glutin::platform::windows::EventLoopExtWindows;
+        let e_loop : glutin::event_loop::EventLoop<()> = glutin::event_loop::EventLoop::new_any_thread();
+        let window_builder = WindowBuilder::new().with_visible(false).with_inner_size(glium::glutin::dpi::PhysicalSize::<u32>{
+            width: 128, height: 128,
+        });
+        let wnd_ctx = ContextBuilder::new();//.build_headless(&e_loop, glutin::dpi::PhysicalSize::from((128, 128)));
+        let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
+        gl::load_with(|s| wnd_ctx.gl_window().get_proc_address(s));
+        wnd_ctx
+    }
+
+    #[test]
+    #[serial]
+    fn map_test() {
+        use cgmath::*;
+        let _ = init();
+        unsafe { assert_no_error!() };
+        let ssbo = SSBO::<[[f32; 4]; 4]>::static_alloc_dyn(10, None);
+
+        for (e, i) in ssbo.map_write().as_slice().iter_mut().zip(0 .. 10) {
+            *e = Matrix4::from_scale(i as f32).into();
+        }
+
+        for (e, i) in ssbo.map_read().as_slice().iter().zip(0 .. 10) {
+            let m : Matrix4<f32> = From::from(*e);
+            assert_relative_eq!(m, Matrix4::from_scale(i as f32));
+        }
     }
 }

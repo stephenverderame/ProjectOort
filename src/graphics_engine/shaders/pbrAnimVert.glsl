@@ -8,9 +8,11 @@ layout (location = 5) in vec4 bone_weights;
 
 #define MAX_BONES_PER_VERTEX 4
 
-out mat3 tbn;
-out vec3 frag_pos;
-out vec2 f_tex_coords;
+out FragData {
+    vec2 tex_coords;
+    vec3 frag_pos;
+    mat3 tbn;
+} v_out;
 
 uniform mat4 viewproj;
 uniform mat4 model;
@@ -55,11 +57,11 @@ BoneTransformedData getPositionNormalTangent() {
 
 void main() {
     BoneTransformedData data = getPositionNormalTangent();
-    f_tex_coords = tex_coords;
-    tbn = calcTbn(data.b_normal, data.b_tangent);
-    frag_pos = vec3(model * vec4(data.b_position.xyz, 1.0));
+    v_out.tex_coords = tex_coords;
+    v_out.tbn = calcTbn(data.b_normal, data.b_tangent);
+    v_out.frag_pos = vec3(model * vec4(data.b_position.xyz, 1.0));
     // bone weights should sum to 1, so b_position.w should be 1 anyway
     // manually do this for sanity
 
-    gl_Position = viewproj * vec4(frag_pos, 1.0);
+    gl_Position = viewproj * vec4(v_out.frag_pos, 1.0);
 }

@@ -9,12 +9,15 @@ layout (location = 6) in vec4 instance_model_col3;
 
 uniform mat4 viewproj;
 
-out vec2 tcoords;
-flat out vec3 color;
+out FragData {
+    vec2 tex_coords;
+    vec3 color;
+} v_out;
+
 void main() {
     mat4 model = mat4(instance_model_col0, instance_model_col1, 
         instance_model_col2, instance_model_col3);
     gl_Position = viewproj * model * vec4(pos, 1.0);
-    tcoords = tex_coords;
-    color = vec3(0.5451, 0.0, 0.5451);
+    v_out.tex_coords = tex_coords;
+    v_out.color = vec3(0.5451, 0.0, 0.5451);
 }

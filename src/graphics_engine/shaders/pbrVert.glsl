@@ -4,9 +4,12 @@ layout (location = 1) in vec3 normal;
 layout (location = 2) in vec2 tex_coords;
 layout (location = 3) in vec3 tangent;
 
-out mat3 tbn;
-out vec3 frag_pos;
-out vec2 f_tex_coords;
+
+out FragData {
+    vec2 tex_coords;
+    vec3 frag_pos;
+    mat3 tbn;
+} v_out;
 
 uniform mat4 viewproj;
 uniform mat4 model;
@@ -21,9 +24,9 @@ mat3 calcTbn() {
 }
 
 void main() {
-    f_tex_coords = tex_coords;
-    tbn = calcTbn();
-    frag_pos = vec3(model * vec4(pos, 1.0));
+    v_out.tex_coords = tex_coords;
+    v_out.tbn = calcTbn();
+    v_out.frag_pos = vec3(model * vec4(pos, 1.0));
 
-    gl_Position = viewproj * vec4(frag_pos, 1.0);
+    gl_Position = viewproj * vec4(v_out.frag_pos, 1.0);
 }

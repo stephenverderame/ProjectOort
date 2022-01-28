@@ -8,9 +8,11 @@ layout (location = 5) in vec4 instance_model_col1;
 layout (location = 6) in vec4 instance_model_col2;
 layout (location = 7) in vec4 instance_model_col3;
 
-out mat3 tbn;
-out vec3 frag_pos;
-out vec2 f_tex_coords;
+out FragData {
+    vec2 tex_coords;
+    vec3 frag_pos;
+    mat3 tbn;
+} v_out;
 
 uniform mat4 viewproj;
 
@@ -26,9 +28,9 @@ mat3 calcTbn(mat4 model) {
 void main() {
     mat4 model = mat4(instance_model_col0, instance_model_col1, 
         instance_model_col2, instance_model_col3);
-    f_tex_coords = tex_coords;
-    tbn = calcTbn(model);
-    frag_pos = vec3(model * vec4(pos, 1.0));
+    v_out.tex_coords = tex_coords;
+    v_out.tbn = calcTbn(model);
+    v_out.frag_pos = vec3(model * vec4(pos, 1.0));
 
-    gl_Position = viewproj * vec4(frag_pos, 1.0);
+    gl_Position = viewproj * vec4(v_out.frag_pos, 1.0);
 }

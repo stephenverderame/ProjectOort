@@ -128,8 +128,8 @@ fn main() {
         .with_billboard("assets/particles/smoke_07.png").with_billboard("assets/particles/circle_05.png")));
     
     // skybox must be rendered first, particles must be rendered last
-    main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.borrow().as_entity(), container.as_entity(), asteroid.as_entity(),
-        asteroid_character.borrow().as_entity(), particles.clone()]);
+    main_scene.set_entities(vec![sky_entity/*, user.borrow().as_entity(), laser.borrow().as_entity(), container.as_entity(), asteroid.as_entity(),
+        asteroid_character.borrow().as_entity(), particles.clone()*/]);
     wnd.scene_manager().insert_scene("main", main_scene).change_scene("main");
 
     laser.borrow_mut().new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)).pos(point3(10., 0., 10.)), None);

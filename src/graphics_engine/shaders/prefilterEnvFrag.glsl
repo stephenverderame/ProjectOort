@@ -1,6 +1,8 @@
 #version 430 core
 
-in vec3 tex_coords;
+in FragData {
+    vec3 tex_coords;
+} f_in;
 
 uniform samplerCube env_map;
 uniform float roughness;
@@ -57,7 +59,7 @@ vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
 
 void main()
 {		
-    vec3 N = normalize(tex_coords);    
+    vec3 N = normalize(f_in.tex_coords);    
     vec3 R = N;
     vec3 V = R;
 

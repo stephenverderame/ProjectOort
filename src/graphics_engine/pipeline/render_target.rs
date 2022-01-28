@@ -8,6 +8,8 @@ use shader::PipelineCache;
 use std::rc::Rc;
 use std::cell::RefCell;
 use super::*;
+use crate::cg_support::ssbo;
+use super::super::camera;
 
 /// RenderTarget which renders to an MSAA color and depth buffer
 /// 
@@ -131,6 +133,7 @@ impl RenderTarget for DepthRenderTarget {
 struct CubemapRenderBase {
     view_dist: f32,
     get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>,
+    view_matrices: ssbo::SSBO<[[f32; 4]; 4]>,
 }
 
 impl CubemapRenderBase {
@@ -138,24 +141,24 @@ impl CubemapRenderBase {
     {
         CubemapRenderBase {
             view_dist, get_view_pos,
+            view_matrices: ssbo::SSBO::static_alloc_dyn(6, None),
         }
     }
 
     /// Gets an array of tuples of view target direction, CubeFace, and up vector
-    fn get_target_face_up() 
-        -> [(cgmath::Point3<f32>, glium::texture::CubeLayer, cgmath::Vector3<f32>); 6]
+    fn get_target_up() 
+        -> [(cgmath::Point3<f32>, cgmath::Vector3<f32>); 6]
     {
-        use texture::CubeLayer::*;
         use cgmath::*;
-        [(point3(1., 0., 0.), PositiveX, vec3(0., -1., 0.)), (point3(-1., 0., 0.), NegativeX, vec3(0., -1., 0.)),
-            (point3(0., 1., 0.), PositiveY, vec3(0., 0., 1.)), (point3(0., -1., 0.), NegativeY, vec3(0., 0., -1.)),
-            (point3(0., 0., 1.), PositiveZ, vec3(0., -1., 0.)), (point3(0., 0., -1.), NegativeZ, vec3(0., -1., 0.))]
+        [(point3(1., 0., 0.), vec3(0., -1., 0.)), (point3(-1., 0., 0.), vec3(0., -1., 0.)),
+            (point3(0., 1., 0.), vec3(0., 0., 1.)), (point3(0., -1., 0.), vec3(0., 0., -1.)),
+            (point3(0., 0., 1.), vec3(0., -1., 0.)), (point3(0., 0., -1.), vec3(0., -1., 0.))]
     }
 
     /// Repeatedly calls `func` for each face of the cubemap
     /// 
     /// `func` - callable to render a single face of a cubemap. Passed a cube face and camera
-    fn draw(&self, func: &mut dyn FnMut(texture::CubeLayer, &dyn Viewer)) {
+    fn bind_views(&self) -> camera::StaticCamera {
         use super::super::camera::*;
         use cgmath::*;
         let mut cam = PerspectiveCamera {
@@ -167,13 +170,17 @@ impl CubemapRenderBase {
             far: self.view_dist,
             up: cgmath::vec3(0., 1., 0.),
         };
-        let target_faces = Self::get_target_face_up();
-        for (target, face, up) in target_faces {
+        let target_faces = Self::get_target_up();
+        for ((target, up), mat_dst) in target_faces.iter()
+            .zip(self.view_matrices.map_write().as_slice().iter_mut()) 
+        {
             let target : (f32, f32, f32) = (target.to_vec() + cam.cam.to_vec()).into();
             cam.target = std::convert::From::from(target);
-            cam.up = up;
-            func(face, &cam);
+            cam.up = *up;
+            *mat_dst = (cam.proj_mat() * cam.view_mat()).into();
         }
+        self.view_matrices.bind(5);
+        StaticCamera::from(&cam)
     }
 }
 
@@ -184,11 +191,12 @@ impl CubemapRenderBase {
 /// F16 RGB cubemap
 pub struct CubemapRenderTarget {
     cubemap: CubemapRenderBase,
-    cbo_tex: texture::Cubemap,
-    depth_buffer: framebuffer::DepthRenderBuffer,
+    cbo_tex: Box<texture::Cubemap>,
+    depth_buffer: Box<texture::DepthCubemap>,
     _size: u32,
     pass_type: RenderPassType,
     get_trans_id: Option<Box<dyn Fn() -> u32>>,
+    fbo: framebuffer::SimpleFrameBuffer<'static>,
 }
 
 impl CubemapRenderTarget {
@@ -202,15 +210,26 @@ impl CubemapRenderTarget {
         get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>, facade: &F) 
         -> CubemapRenderTarget 
     {
+        let depth_buffer = Box::new(texture::DepthCubemap::empty_with_format(facade,
+            texture::DepthFormat::I24, texture::MipmapsOption::NoMipmap,
+            size).unwrap());
+        let cbo_tex = Box::new(texture::Cubemap::empty_with_format(facade, 
+            texture::UncompressedFloatFormat::F16F16F16,
+            texture::MipmapsOption::NoMipmap, size).unwrap());
+        let color_ptr = &*cbo_tex as *const texture::Cubemap;
+        let depth_ptr = &*depth_buffer as *const texture::DepthCubemap;
+        let fbo = unsafe {
+            framebuffer::SimpleFrameBuffer::with_depth_buffer(facade, 
+                (*color_ptr).main_level(), (*depth_ptr).main_level())
+            .unwrap()
+        };
         CubemapRenderTarget {
             _size: size, 
             cubemap: CubemapRenderBase::new(view_dist, get_view_pos),
-            depth_buffer: glium::framebuffer::DepthRenderBuffer::new(facade, 
-                glium::texture::DepthFormat::F32, size, size).unwrap(),
-            cbo_tex: texture::Cubemap::empty_with_format(facade, texture::UncompressedFloatFormat::F16F16F16,
-                texture::MipmapsOption::NoMipmap, size).unwrap(),
-            pass_type: RenderPassType::Visual,
+            cbo_tex, depth_buffer,
+            pass_type: RenderPassType::LayeredVisual,
             get_trans_id: None,
+            fbo
         }
     }
 
@@ -235,16 +254,9 @@ impl RenderTarget for CubemapRenderTarget {
         func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
-        self.cubemap.draw(&mut |face, cam| {
-            let mut fbo = {
-                let ctx = super::super::get_active_ctx();
-                let ctx = ctx.ctx.borrow();
-                glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(&*ctx, 
-                self.cbo_tex.main_level().image(face), self.depth_buffer.to_depth_attachment()).unwrap()
-            };
-            fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
-            func(&mut fbo, cam, self.pass_type, cache, &pipeline_inputs);
-        });
+        let cam_base = self.cubemap.bind_views();
+        self.fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
+        func(&mut self.fbo, &cam_base, self.pass_type, cache, &pipeline_inputs);
         let tex = TextureType::TexCube(Ref(&self.cbo_tex));
         if let Some(get_id) = &self.get_trans_id {
             Some(TextureType::WithArg(
@@ -291,18 +303,17 @@ impl RenderTarget for MipCubemapRenderTarget {
     {
         let ctx = super::super::get_active_ctx();
         let cbo_tex = texture::Cubemap::empty_with_format(&*ctx.ctx.borrow(), texture::UncompressedFloatFormat::F16F16F16,
-        texture::MipmapsOption::AutoGeneratedMipmaps, self.size).unwrap();
+            texture::MipmapsOption::AutoGeneratedMipmapsMax(self.mip_levels - 1), self.size).unwrap();
+        let depth_tex = texture::DepthCubemap::empty_with_format(&*ctx.ctx.borrow(),
+            texture::DepthFormat::I24, 
+            texture::MipmapsOption::AutoGeneratedMipmapsMax(self.mip_levels - 1), self.size).unwrap();
+        let cam_base = self.cubemap.bind_views();
         for mip_level in 0 .. self.mip_levels {
-            let mip_pow = 0.5f32.powi(mip_level as i32);
-            let mipped_size = ((self.size as f32) * mip_pow) as u32;
-            self.cubemap.draw(&mut |face, cam| {
-                let rbo = framebuffer::DepthRenderBuffer::new(&*ctx.ctx.borrow(), texture::DepthFormat::I24, mipped_size, mipped_size).unwrap();
-                let mut fbo = glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(&*ctx.ctx.borrow(), 
-                    cbo_tex.mipmap(mip_level).unwrap().image(face), 
-                    rbo.to_depth_attachment()).unwrap();
-                fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
-                func(&mut fbo, cam, RenderPassType::Visual, cache, &pipeline_inputs);
-            });
+            //let mip_pow = 0.5f32.powi(mip_level as i32);
+            //let mipped_size = ((self.size as f32) * mip_pow) as u32;
+            let mut fbo = framebuffer::SimpleFrameBuffer::with_depth_buffer(&*ctx.ctx.borrow(), 
+                cbo_tex.mipmap(mip_level).unwrap(), depth_tex.mipmap(mip_level).unwrap()).unwrap();
+            func(&mut fbo, &cam_base, RenderPassType::LayeredVisual, cache, &pipeline_inputs);
         }
         Some(TextureType::TexCube(Own(cbo_tex)))
     }
