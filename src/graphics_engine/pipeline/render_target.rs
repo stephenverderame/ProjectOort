@@ -72,10 +72,12 @@ impl RenderTarget for MsaaRenderTarget {
 /// If a custom view getter is specified, then returns the depth texture with 
 /// the used viewer's viewproj matrix
 pub struct DepthRenderTarget {
-    width: u32, height: u32,
     viewer: Option<Rc<RefCell<dyn Viewer>>>,
     getter: Option<Box<dyn Fn(&dyn Viewer) -> Box<dyn Viewer>>>,
-    render_transparency: bool,
+    depth_tex: Box<texture::DepthTexture2d>,
+    main_fbo: framebuffer::SimpleFrameBuffer<'static>,
+    trans_fbo: Option<(framebuffer::SimpleFrameBuffer<'static>,
+        Box<texture::DepthTexture2d>, Box<texture::Texture2d>)>,
 }
 
 impl DepthRenderTarget {
@@ -90,16 +92,21 @@ impl DepthRenderTarget {
         view_getter: Option<Box<dyn Fn(&dyn Viewer) -> Box<dyn Viewer>>>,
         transparency: bool) -> DepthRenderTarget
     {
+        let (main_fbo, depth_tex) = DepthRenderTarget::get_fbo_rbo(width, height);
+        let trans_fbo = if transparency {
+            Some(DepthRenderTarget::get_tex_fbo_rbo(width, height))
+        } else { None };
         DepthRenderTarget {
-            width, height, viewer, getter: view_getter, 
-            render_transparency: transparency
+            viewer, getter: view_getter, 
+            main_fbo, depth_tex,
+            trans_fbo
         }
     }
 
-    fn get_fbo_rbo<'b>(&self) -> (framebuffer::SimpleFrameBuffer<'b>, Box<texture::DepthTexture2d>) {
+    fn get_fbo_rbo<'b>(width: u32, height: u32) -> (framebuffer::SimpleFrameBuffer<'b>, Box<texture::DepthTexture2d>) {
         let ctx = super::super::get_active_ctx();
         let rbo = Box::new(texture::DepthTexture2d::empty_with_format(&*ctx.ctx.borrow(), texture::DepthFormat::F32, 
-            texture::MipmapsOption::NoMipmap, self.width, self.height).unwrap());
+            texture::MipmapsOption::NoMipmap, width, height).unwrap());
         let rbo_ptr = &*rbo as *const texture::DepthTexture2d;
         unsafe {
             let ctx = ctx.ctx.borrow();
@@ -107,15 +114,15 @@ impl DepthRenderTarget {
         }
     }
 
-    fn get_tex_fbo_rbo<'b>(&self) -> (framebuffer::SimpleFrameBuffer<'b>, 
+    fn get_tex_fbo_rbo<'b>(width: u32, height: u32) -> (framebuffer::SimpleFrameBuffer<'b>, 
         Box<texture::DepthTexture2d>, Box<texture::Texture2d>)
     {
         let ctx = super::super::get_active_ctx();
         let rbo = Box::new(texture::DepthTexture2d::empty_with_format(&*ctx.ctx.borrow(), texture::DepthFormat::F32, 
-            texture::MipmapsOption::NoMipmap, self.width, self.height).unwrap());
+            texture::MipmapsOption::NoMipmap, width, height).unwrap());
         let tex = Box::new(texture::Texture2d::empty_with_format(&*ctx.ctx.borrow(), 
             texture::UncompressedFloatFormat::F16,
-            texture::MipmapsOption::NoMipmap, self.width, self.height).unwrap());
+            texture::MipmapsOption::NoMipmap, width, height).unwrap());
         let tex_ptr = &*tex as *const texture::Texture2d;
         let rbo_ptr = &*rbo as *const texture::DepthTexture2d;
         unsafe {
@@ -132,23 +139,20 @@ impl RenderTarget for DepthRenderTarget {
         func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType> 
     {
-        let (mut fbo, rbo) = self.get_fbo_rbo();
         let maybe_view = self.viewer.as_ref().map(|x| x.borrow());
         let maybe_processed_view = self.getter.as_ref().map(|f| f(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer)));
         let viewer = maybe_processed_view.as_ref().map(|x| &**x).unwrap_or(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer));
         let vp : [[f32; 4]; 4] = (viewer.proj_mat() * viewer.view_mat()).into();
-        func(&mut fbo, viewer, shader::RenderPassType::Depth, cache, &pipeline_inputs);
-        //let tex = TextureType::Depth2d(Ref(&*self.rbo));
-        let mut tex = TextureType::Depth2d(Own(*rbo));
-        if self.render_transparency {
-            let (mut fbo, rbo, t) = self.get_tex_fbo_rbo();
-            func(&mut fbo, viewer, shader::RenderPassType::TransparentDepth, cache, &pipeline_inputs);
+        func(&mut self.main_fbo, viewer, shader::RenderPassType::Depth, cache, &pipeline_inputs);
+        let mut tex = TextureType::Depth2d(Ref(&*self.depth_tex));
+        if let Some((ref mut fbo, depth, facs)) = self.trans_fbo.as_mut() {
+            func(fbo, viewer, shader::RenderPassType::TransparentDepth, cache, &pipeline_inputs);
             tex = TextureType::Multi(vec![Box::new(tex), 
-                Box::new(TextureType::Depth2d(Own(*rbo))), 
-                Box::new(TextureType::Tex2d(Own(*t)))]);
+                Box::new(TextureType::Depth2d(Ref(&*depth))), 
+                Box::new(TextureType::Tex2d(Ref(&*facs)))]);
         }
         if maybe_processed_view.is_some() {
-            Some(TextureType::WithArg(Box::new(/*TextureType::Bindless(rbo.resident().unwrap())*/tex), StageArgs::CascadeArgs(vp, viewer.view_dist().1)))
+            Some(TextureType::WithArg(Box::new(tex), StageArgs::CascadeArgs(vp, viewer.view_dist().1)))
         } else {
             Some(tex)
         }

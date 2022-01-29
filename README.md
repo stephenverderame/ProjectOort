@@ -176,11 +176,13 @@ There's still much more besides this and I am writing this so I know how to pick
 
 ### Graphics
 
-- [ ] Conditional Pipeline Stages
+- [x] Conditional Pipeline Stages
 
     Some pipeline stages don't need to be done every frame. Ie, relevant stages for invisibility (see below)
 
-- [ ] Pseudo-Invisibility through refraction
+    Implemented, but done very simply so a more sophisticated mechanism for this could be something to do in the future.
+
+- [x] Pseudo-Invisibility through refraction
 
     Initial ideas are to render a cubemap around an object that may have transparency and compute refraction vectors to sample said cubemap.
     Problem with this is if multiple transparent objects overlap each other. Could solve this by ordering transparent objects by camera depth
@@ -192,6 +194,9 @@ There's still much more besides this and I am writing this so I know how to pick
     to use multi-out framebuffers to get a depth texture for opaque objects, and a depth texture for each translucent object along with each
     object's translucency factor. Another idea was to just render a depth texture, and transparency factor texture. Problem with this is if
     a translucent object occludes an opaque object. Possible solution to this could be solved by using a fragment shader to store depth information manually.
+
+    Implemented by rendering an opaque and a transparent depth texture and computing the shadow factor as `(1.0 - invFac) * transparentShadow + opaqueShadow`. This works well for transparent objects that don't overlap. Artifacts can occur if we have a very transparent object occlude a partially transparent object since the `invFac` stored in the color texture belongs to the 
+    nearest transparent object.
 
 - [ ] Better Lasers
 
