@@ -153,7 +153,8 @@ const vec2 poissonDisk[64] = {
 // `searchWidth` - the blocker search radius in UV coordinates
 // `depth_map` - depth map to use
 // returns (avgBlockerDist, # blockers)
-vec2 findBlockerDist(vec3 shadowCoords, float searchWidth, sampler2D depth_map, float bias) {
+vec2 findBlockerDist(vec3 shadowCoords, float searchWidth, sampler2D depth_map, float bias,
+    sampler2D trans_depth_map) {
     int blockers = 0;
     float avgBlockerDistance = 0;
     const int blocker_search_samples = 64;
@@ -161,7 +162,7 @@ vec2 findBlockerDist(vec3 shadowCoords, float searchWidth, sampler2D depth_map, 
     for(int i = 0; i < blocker_search_samples; ++i) {
         vec2 rand_offset = poissonDisk[i] * searchWidth;
         vec2 pos = shadowCoords.xy + rand_offset;
-        float sample_depth = texture(depth_map, pos).r;
+        float sample_depth = min(texture(depth_map, pos).r, texture(trans_depth_map, pos).r);
         if (sample_depth < shadowCoords.z - bias) {
             ++blockers;
             avgBlockerDistance += sample_depth;
@@ -174,26 +175,29 @@ vec2 findBlockerDist(vec3 shadowCoords, float searchWidth, sampler2D depth_map, 
 // does so by randomly sampling positions within `filter_size`
 // `shadowCoords` - fragment position in light space uv coordinates
 // `filter_size` - size of the pcf kernel radius
-// returns the average shadow "boolean". 1 is fully in shadow, 0 is not in shadow and
-// the average transparency factor
-vec2 pcf(vec3 shadowCoords, sampler2D depth_map, float filter_size_uv, float bias, 
+// returns the average shadow "boolean". 1 is fully in shadow, 0 is not in shadow for
+// opaque and transparent objects and the average transparency factor
+vec3 pcf(vec3 shadowCoords, sampler2D depth_map, float filter_size_uv, float bias, 
     sampler2D trans_fac_map, sampler2D trans_depth_map) {
     const int pcf_samples = 64;
 
     float sum = 0;
+    float transSum = 0;
     float transFac = 0;
     for(int i = 0; i < pcf_samples; ++i) {
         vec2 offset = poissonDisk[i] * filter_size_uv;
         vec2 pos = shadowCoords.xy + offset;
         float depth = texture(depth_map, pos).r;
+        float transDepth = texture(trans_depth_map, pos).r;
         sum += shadowCoords.z - bias > depth ? 1.0 : 0.0;
-        float trans_depth = texture(trans_depth_map, pos).r;
-        if (abs(trans_depth - depth) < bias) {
-            transFac += texture(trans_fac_map, pos).r;
+        if (shadowCoords.z - bias > transDepth) {
+            if (transFac < 0.0001)
+                transFac += texture(trans_fac_map, pos).r;
+            ++transSum;
         }
     }
 
-    return vec2(sum / pcf_samples, transFac / pcf_samples);
+    return vec3(sum / pcf_samples, transSum / pcf_samples, transFac);
 }
 
 int getCascadeIndex() {
@@ -211,26 +215,28 @@ vec3 getProjCoords(int casIdx) {
 }
 // calculates the shadow for frag_pos
 // 1 represents fully in shadow and 0 represents fully out of shadow
-vec2 calcShadowFrom(vec3 norm) {
+// gets the (opaque shadow fac, transparent shadow fac, transparent fac)
+vec3 calcShadowFrom(vec3 norm) {
     int cascIdx = getCascadeIndex();
-    if (cascIdx == -1) return vec2(0, 0);
+    if (cascIdx == -1) return vec3(0);
     vec3 projCoords = getProjCoords(cascIdx);
     sampler2D depth_map = cascadeDepthMaps[cascIdx];
+    sampler2D trans_depth_map = cascadeTransMaps[cascIdx];
 
     vec3 lightDir = normalize(dir_light_dir);
     float bias = max(0.05 * (1.0 - dot(norm, lightDir)), 0.005) * (1.0 / (far_planes[cascIdx] * 0.1));
 
     float adj_light_size = light_size_uv;// / far_planes[0] * far_planes[cascIdx];
     float searchWidth = pcssSearchWidth(adj_light_size, projCoords.z) / far_planes[cascIdx] * far_planes[0];
-    vec2 blockers = findBlockerDist(projCoords, searchWidth, depth_map, bias);
-    if (blockers.y < 1.0) return vec2(0, 0);
+    vec2 blockers = findBlockerDist(projCoords, searchWidth, depth_map, bias, trans_depth_map);
+    if (blockers.y < 1.0) return vec3(0);
     float avgBlockerDist = blockers.x; //uv coordinates
 
     float penumbraWidth = (projCoords.z - avgBlockerDist) * adj_light_size / avgBlockerDist;
     float pcfRadius = penumbraWidth * dir_light_near / projCoords.z;
 
     return pcf(projCoords, depth_map, pcfRadius, bias, 
-        cascadeTransFacs[cascIdx], cascadeTransMaps[cascIdx]);
+        cascadeTransFacs[cascIdx], trans_depth_map);
     
     //return projCoords.z - bias > texture(depth_map, projCoords.xy).r ? 1.0 : 0.0;
 
@@ -239,10 +245,11 @@ vec2 calcShadowFrom(vec3 norm) {
 
 float calcShadow(vec3 norm) {
 
-    vec2 s = calcShadowFrom(norm);
-    float shadow = s.x;
-    float blendFac = s.y;
-    return (1.0 - blendFac) * shadow;
+    vec3 s = calcShadowFrom(norm);
+    float opaqueShadow = s.x;
+    float transShadow = s.y;
+    float blendFac = s.z;
+    return min((1.0 - blendFac) * transShadow + opaqueShadow, 1.0);
 }
 
 /// Approximates amount of surface microfacets are aligned to the halfway vector
