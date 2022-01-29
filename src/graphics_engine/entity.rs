@@ -64,9 +64,7 @@ impl AbstractEntity for Entity {
         let base_bool = self.render_passes.iter().any(|x| *x == pass);
         if base_bool {
             match pass {
-                shader::RenderPassType::Depth => self.geometry.transparency().map(|x| x < 0.5).unwrap_or(true),
-                shader::RenderPassType::TransparentDepth => 
-                    self.geometry.transparency().map(|x| x >= 0.5).unwrap_or(false),
+                shader::RenderPassType::Depth => self.geometry.transparency().map(|x| x < 0.99).unwrap_or(true),
                 _ => base_bool,
             }
         } else { base_bool }
@@ -95,9 +93,7 @@ impl AbstractEntity for ModelEntity {
         let base_bool = self.render_passes.iter().any(|x| *x == pass);
         if base_bool {
             match pass {
-                shader::RenderPassType::Depth => self.geometry.transparency().map(|x| x < 0.5).unwrap_or(true),
-                shader::RenderPassType::TransparentDepth => 
-                    self.geometry.transparency().map(|x| x >= 0.5).unwrap_or(false),
+                shader::RenderPassType::Depth => self.geometry.transparency().map(|x| x < 0.99).unwrap_or(true),
                 _ => base_bool,
             }
         } else { base_bool }

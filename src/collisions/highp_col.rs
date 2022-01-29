@@ -127,7 +127,7 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
         let work_groups_y = ((b_len + b_len % TriangleTriangleGPU::WORK_GROUP_SIZE) / 
             TriangleTriangleGPU::WORK_GROUP_SIZE).max(1);
 
-        let mut output : ssbo::SSBO<[u32; 4]> 
+        let output : ssbo::SSBO<[u32; 4]> 
             = ssbo::SSBO::static_empty(a_len + b_len);
         output.zero_bytes();
         

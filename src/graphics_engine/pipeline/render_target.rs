@@ -2,7 +2,6 @@ use glium::Surface;
 use super::shader;
 use super::super::drawable::*;
 use glium::*;
-use glium::framebuffer::ToDepthAttachment;
 use shader::RenderPassType;
 use shader::PipelineCache;
 use std::rc::Rc;
@@ -208,8 +207,6 @@ impl CubemapRenderBase {
             *mat_dst = (cam.proj_mat() * cam.view_mat()).into();
         }
         self.view_matrices.bind(5);
-        let tst : Matrix4<f32> = From::from(self.view_matrices.map_read().as_slice()[5]);
-        assert_relative_eq!(tst, cam.proj_mat() * cam.view_mat());
         //println!("{:?}", cam.proj_mat() * cam.view_mat());
         StaticCamera::from(&cam)
     }
@@ -223,7 +220,7 @@ impl CubemapRenderBase {
 pub struct CubemapRenderTarget {
     cubemap: CubemapRenderBase,
     cbo_tex: Box<texture::Cubemap>,
-    depth_buffer: Box<texture::DepthCubemap>,
+    _depth_buffer: Box<texture::DepthCubemap>,
     _size: u32,
     pass_type: RenderPassType,
     get_trans_id: Option<Box<dyn Fn() -> u32>>,
@@ -241,14 +238,14 @@ impl CubemapRenderTarget {
         get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>, facade: &F) 
         -> CubemapRenderTarget 
     {
-        let depth_buffer = Box::new(texture::DepthCubemap::empty_with_format(facade,
+        let _depth_buffer = Box::new(texture::DepthCubemap::empty_with_format(facade,
             texture::DepthFormat::I24, texture::MipmapsOption::NoMipmap,
             size).unwrap());
         let cbo_tex = Box::new(texture::Cubemap::empty_with_format(facade, 
             texture::UncompressedFloatFormat::F16F16F16,
             texture::MipmapsOption::NoMipmap, size).unwrap());
         let color_ptr = &*cbo_tex as *const texture::Cubemap;
-        let depth_ptr = &*depth_buffer as *const texture::DepthCubemap;
+        let depth_ptr = &*_depth_buffer as *const texture::DepthCubemap;
         let fbo = unsafe {
             framebuffer::SimpleFrameBuffer::with_depth_buffer(facade, 
                 (*color_ptr).main_level(), (*depth_ptr).main_level())
@@ -257,7 +254,7 @@ impl CubemapRenderTarget {
         CubemapRenderTarget {
             _size: size, 
             cubemap: CubemapRenderBase::new(view_dist, get_view_pos),
-            cbo_tex, depth_buffer,
+            cbo_tex, _depth_buffer,
             pass_type: RenderPassType::LayeredVisual,
             get_trans_id: None,
             fbo

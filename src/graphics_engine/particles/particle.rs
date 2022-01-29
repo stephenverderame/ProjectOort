@@ -31,21 +31,26 @@ impl Particle {
         }
     }
 
+    #[inline(always)]
     pub fn vel(mut self, vel: Vector3<f64>) -> Self {
         self.vel = vel;
         self
     }
 
+    #[allow(dead_code)]
+    #[inline(always)]
     pub fn rot_vel(mut self, rot_vel: Quaternion<f64>) -> Self {
         self.rot_vel = rot_vel;
         self
     }
 
+    #[inline(always)]
     pub fn lifetime(mut self, life: std::time::Duration) -> Self {
         self.lifetime = life;
         self
     }
 
+    #[inline(always)]
     pub fn color(mut self, color: Vector4<f32>) -> Self {
         self.color = color;
         self

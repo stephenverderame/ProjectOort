@@ -6,7 +6,6 @@ use std::cell::RefCell;
 use crate::collisions;
 use crate::graphics_engine::shader;
 use crate::physics::*;
-use crate::cg_support::Transformation;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ObjectType {
@@ -186,11 +185,6 @@ impl GameObject {
     #[inline(always)]
     pub fn bodies_ref(&mut self) -> Vec<&mut RigidBody<ObjectType>> {
         self.instances.iter_mut().collect()
-    }
-
-    #[inline(always)]
-    pub fn bodies(&mut self) -> &mut Vec<RigidBody<ObjectType>> {
-        &mut self.instances
     }
 
     /// Retains all instances (both visual and rigid body) whose transformation pointer satisfies the given

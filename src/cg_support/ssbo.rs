@@ -214,10 +214,6 @@ impl<T : Copy> SSBO<T> {
         v
     }
 
-    fn del_buffer(&self) {
-        unsafe { gl::DeleteBuffers(1, &self.buffer as *const gl::types::GLuint); }
-    }
-
     /// Maps the shader storage buffer onto the CPU memory for reading only
     pub fn map_read(&self) -> MappedBuffer<T> {
         unsafe {

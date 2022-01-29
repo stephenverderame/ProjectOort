@@ -168,25 +168,32 @@ vec2 findBlockerDist(vec3 shadowCoords, float searchWidth, sampler2D depth_map, 
         }
     }
 
-    return vec2(avgBlockerDistance / float(blockers), blockers);
+    return vec2(avgBlockerDistance / float(blockers), float(blockers));
 }
 // Performs pcf on the depth map around `shadowCoords`
 // does so by randomly sampling positions within `filter_size`
 // `shadowCoords` - fragment position in light space uv coordinates
 // `filter_size` - size of the pcf kernel radius
-// returns the average shadow "boolean". 1 is fully in shadow, 0 is not in shadow
-float pcf(vec3 shadowCoords, sampler2D depth_map, float filter_size_uv, float bias) {
+// returns the average shadow "boolean". 1 is fully in shadow, 0 is not in shadow and
+// the average transparency factor
+vec2 pcf(vec3 shadowCoords, sampler2D depth_map, float filter_size_uv, float bias, 
+    sampler2D trans_fac_map, sampler2D trans_depth_map) {
     const int pcf_samples = 64;
 
     float sum = 0;
+    float transFac = 0;
     for(int i = 0; i < pcf_samples; ++i) {
         vec2 offset = poissonDisk[i] * filter_size_uv;
         vec2 pos = shadowCoords.xy + offset;
         float depth = texture(depth_map, pos).r;
         sum += shadowCoords.z - bias > depth ? 1.0 : 0.0;
+        float trans_depth = texture(trans_depth_map, pos).r;
+        if (abs(trans_depth - depth) < bias) {
+            transFac += texture(trans_fac_map, pos).r;
+        }
     }
 
-    return sum / pcf_samples;
+    return vec2(sum / pcf_samples, transFac / pcf_samples);
 }
 
 int getCascadeIndex() {
@@ -198,35 +205,32 @@ int getCascadeIndex() {
     return -1;
 }
 
-sampler2D getCascadeTex(int cIdx, bool transparent) {
-    if (transparent)
-        return cascadeTransMaps[cIdx];
-    else
-        return cascadeDepthMaps[cIdx];
-}
-
 vec3 getProjCoords(int casIdx) {
     vec4 light_space = viewproj_mats[casIdx] * vec4(f_in.frag_pos, 1.0);
     return (light_space.xyz / light_space.w) * 0.5 + 0.5;
 }
 // calculates the shadow for frag_pos
 // 1 represents fully in shadow and 0 represents fully out of shadow
-float calcShadowFrom(vec3 norm, int cascIdx, vec3 projCoords, sampler2D depth_map) {
-    //if (projCoords.z > 1) return 0;
+vec2 calcShadowFrom(vec3 norm) {
+    int cascIdx = getCascadeIndex();
+    if (cascIdx == -1) return vec2(0, 0);
+    vec3 projCoords = getProjCoords(cascIdx);
+    sampler2D depth_map = cascadeDepthMaps[cascIdx];
+
     vec3 lightDir = normalize(dir_light_dir);
     float bias = max(0.05 * (1.0 - dot(norm, lightDir)), 0.005) * (1.0 / (far_planes[cascIdx] * 0.1));
 
     float adj_light_size = light_size_uv;// / far_planes[0] * far_planes[cascIdx];
     float searchWidth = pcssSearchWidth(adj_light_size, projCoords.z) / far_planes[cascIdx] * far_planes[0];
     vec2 blockers = findBlockerDist(projCoords, searchWidth, depth_map, bias);
-    if (blockers.y < 1.0) return 0;
+    if (blockers.y < 1.0) return vec2(0, 0);
     float avgBlockerDist = blockers.x; //uv coordinates
-    //if (projCoords.z > 1.0) return 0;
 
     float penumbraWidth = (projCoords.z - avgBlockerDist) * adj_light_size / avgBlockerDist;
     float pcfRadius = penumbraWidth * dir_light_near / projCoords.z;
 
-    return pcf(projCoords, depth_map, pcfRadius, bias);
+    return pcf(projCoords, depth_map, pcfRadius, bias, 
+        cascadeTransFacs[cascIdx], cascadeTransMaps[cascIdx]);
     
     //return projCoords.z - bias > texture(depth_map, projCoords.xy).r ? 1.0 : 0.0;
 
@@ -234,16 +238,11 @@ float calcShadowFrom(vec3 norm, int cascIdx, vec3 projCoords, sampler2D depth_ma
 }
 
 float calcShadow(vec3 norm) {
-    int cascIdx = getCascadeIndex();
-    if (cascIdx == -1) return 0;
-    vec3 lightDir = normalize(dir_light_dir);
-    float bias = max(0.05 * (1.0 - dot(norm, lightDir)), 0.005) * (1.0 / (far_planes[cascIdx] * 0.1));
 
-    vec3 projCoords = getProjCoords(cascIdx);
-    float opaque = calcShadowFrom(norm, cascIdx, projCoords, getCascadeTex(cascIdx, false));
-    float trans = projCoords.z - bias > texture(cascadeTransMaps[cascIdx], projCoords.xy).r ? 1.0 : 0.0;
-    float blendFac = texture(cascadeTransFacs[cascIdx], projCoords.xy).r;
-    return (1.0 - blendFac) * (opaque + trans);
+    vec2 s = calcShadowFrom(norm);
+    float shadow = s.x;
+    float blendFac = s.y;
+    return (1.0 - blendFac) * shadow;
 }
 
 /// Approximates amount of surface microfacets are aligned to the halfway vector
