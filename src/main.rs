@@ -57,7 +57,7 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
         surface
     }, |disp| disp.finish()));
     let depth_render = Box::new(render_target::DepthRenderTarget::new(render_width, render_height, 
-        None, None));
+        None, None, false));
     let cull_lights = Box::new(texture_processor::CullLightProcessor::new(render_width, render_height, 16));
     let to_cache = Box::new(texture_processor::ToCacheProcessor::new());
 
@@ -71,24 +71,33 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
 
     let user_clone = user.clone();
     let render_cascade_1 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 30., 2048) }))));
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 30., 2048) })), true));
 
     let user_clone = user.clone();
     let render_cascade_2 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 30., 80., 2048) }))));
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 30., 80., 2048) })), true));
 
     let user_clone = user.clone();
     let render_cascade_3 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 80., 400., 2048) }))));
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 80., 400., 2048) })), true));
+
+    let user_clone = user.clone();
     pipeline::RenderPass::new(vec![depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency], 
         vec![cull_lights, eb, blur, compose, to_cache, trans_to_cache], 
         pipeline::Pipeline::new(vec![0], vec![
             (0, (6, 0)), // light culling
             (6, (2, 0)), (6, (3, 0)), (6, (4, 0)), // cull -> render cascades
             (2, (10, 0)), (3, (10, 1)), (4, (10, 2)), // cascade to cache
-            (10, (5, 0)), (5, (11, 0)), (11, (1, 0)), // translucency, and store in cache
+            (10, (1, 0)), (10, (5, 0)), (5, (11, 0)), (11, (1, 0)), // translucency, and store in cache
             (1, (7, 0)), (7, (8, 0)), (8, (9, 1)), (1, (9, 0)) // main pass w/ bloom
-        ]))
+        ])
+    ).with_active_pred(Box::new(move |stage| {
+        match stage {
+            5 | 11 if *user_clone.borrow().trans_fac() > f32::EPSILON => true,
+            5 | 11 => false,
+            _ => true,
+        }
+    }))
 }
 
 
@@ -153,6 +162,7 @@ fn main() {
 
     let mut draw_cb = |dt : std::time::Duration, mut scene : std::cell::RefMut<scene::Scene>| {
 
+        *user.borrow().trans_fac() = controller.borrow_mut().compute_transparency_fac();
         dead_lasers.borrow_mut().clear();
         {
             let mut u = user.borrow_mut();

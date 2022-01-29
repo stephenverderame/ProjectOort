@@ -414,37 +414,50 @@ impl ToCacheProcessor {
     fn cascade_maps_to_cache<'b>(input: Vec<&'b TextureType>, cache: &mut PipelineCache<'b>) {
         use std::mem::MaybeUninit;
         let mut depth_texs = Vec::<&'b glium::texture::DepthTexture2d>::new();
-            let mut mats: [MaybeUninit<[[f32; 4]; 4]>; 5] = unsafe { MaybeUninit::uninit().assume_init() };
-            let mut fars: [MaybeUninit<f32>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
-            for (tex, i) in input.into_iter().zip(0..3) {
-                match tex {
-                    TextureType::WithArg(b, StageArgs::CascadeArgs(mat, far)) => {
-                        match &**b {
-                            TextureType::Depth2d(tex) => {                            
-                                //depth_texs[i].write(glium::texture::TextureHandle::new(tex, &sb));
-                                depth_texs.push(tex.to_ref());
-                                mats[i].write(*mat);
-                                fars[i].write(*far);
-                            },
-                            _ => panic!("Unimplemented"),
+        let mut trans_depths = Vec::new();
+        let mut mats: [MaybeUninit<[[f32; 4]; 4]>; 5] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut fars: [MaybeUninit<f32>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
+        for (tex, i) in input.into_iter().zip(0..3) {
+            match tex {
+                TextureType::WithArg(b, StageArgs::CascadeArgs(mat, far)) => {
+                    mats[i].write(*mat);
+                    fars[i].write(*far);
+                    match &**b {
+                        TextureType::Depth2d(tex) => {                            
+                            //depth_texs[i].write(glium::texture::TextureHandle::new(tex, &sb));
+                            depth_texs.push(tex.to_ref());
+                        },
+                        TextureType::Multi(texes) if texes.len() == 3 => {
+                            match (&*texes[0], &*texes[1], &*texes[2]) {
+                                (TextureType::Depth2d(opaque_depth), TextureType::Depth2d(trans_depth), TextureType::Tex2d(trans_fac)) => {
+                                    depth_texs.push(opaque_depth.to_ref());
+                                    trans_depths.push((trans_depth.to_ref(), trans_fac.to_ref()));
+                                },
+                                _ => panic!("Unexpected input"),
+                            }
                         }
-                    },
-                    _ => panic!("Unimplemented"),
-                }
+                        _ => panic!("Unimplemented"),
+                    }
+                },
+                _ => panic!("Unimplemented"),
             }
-            fars[3].write(1f32);
-            mats[3].write(cgmath::Matrix4::<f32>::from_scale(1f32).into());
-            mats[4].write(cgmath::Matrix4::<f32>::from_scale(1f32).into());
-            unsafe {
-                let ctx = super::super::get_active_ctx();
-                cache.cascade_ubo = glium::uniforms::UniformBuffer::persistent(&*ctx.ctx.borrow(), shader::CascadeUniform {
-                    //depth_maps: std::mem::transmute::<_, [glium::texture::TextureHandle<'b>; 5]>(depth_texs),
-                    far_planes: std::mem::transmute::<_, [f32; 4]>(fars),
-                    viewproj_mats: std::mem::transmute::<_, [[[f32; 4]; 4]; 5]>(mats),
+        }
+        fars[3].write(1f32);
+        mats[3].write(cgmath::Matrix4::<f32>::from_scale(1f32).into());
+        mats[4].write(cgmath::Matrix4::<f32>::from_scale(1f32).into());
+        cache.cascade_maps = Some(depth_texs);
+        if !trans_depths.is_empty() { 
+            cache.trans_cascade_maps = Some(trans_depths);
+        }
+        unsafe {
+            let ctx = super::super::get_active_ctx();
+            cache.cascade_ubo = glium::uniforms::UniformBuffer::persistent(&*ctx.ctx.borrow(), shader::CascadeUniform {
+                //depth_maps: std::mem::transmute::<_, [glium::texture::TextureHandle<'b>; 5]>(depth_texs),
+                far_planes: std::mem::transmute::<_, [f32; 4]>(fars),
+                viewproj_mats: std::mem::transmute::<_, [[[f32; 4]; 4]; 5]>(mats),
 
-                }).ok();
-                cache.cascade_maps = Some(depth_texs);
-            }
+            }).ok();
+        }
     }
 }
 
@@ -467,6 +480,7 @@ impl TextureProcessor for ToCacheProcessor {
                 for i in &input {
                     if let TextureType::WithArg(b, StageArgs::CascadeArgs(..)) = i {
                         if let TextureType::Depth2d(_) = &**b {}
+                        else if let TextureType::Multi(_) = &** b {}
                         else { is_cascade = false; break; }
                     } else { is_cascade = false; break; }
                 }

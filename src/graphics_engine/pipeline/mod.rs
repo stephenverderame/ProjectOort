@@ -42,6 +42,7 @@ pub enum TextureType<'a> {
     #[allow(dead_code)]
     Bindless(texture::ResidentTexture),
     WithArg(Box<TextureType<'a>>, StageArgs),
+    Multi(Vec<Box<TextureType<'a>>>),
 }
 
 /// A RenderTarget is something that can be rendered to and produces a texture

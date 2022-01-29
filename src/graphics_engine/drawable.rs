@@ -150,6 +150,10 @@ pub trait Drawable {
     /// drawable may choose what to do
     fn render_args<'a>(&'a mut self, positions: &[[[f32; 4]; 4]]) 
         -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>;
+
+    /// Gets the transparency of the Drawable from `0` indicating opaque to `1` indicating transparent
+    /// or `None` if the drawable is opaque
+    fn transparency(&self) -> Option<f32>;
 }
 
 /// Something that encapsulates control of a view of the scene

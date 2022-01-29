@@ -38,4 +38,6 @@ impl Drawable for Rect3D {
         vec![(info, VertexHolder::new(VertexSourceData::Single(From::from(&self.vertices))), 
             From::from(&self.indices))]
     }
+
+    fn transparency(&self) -> Option<f32> { None }
 }

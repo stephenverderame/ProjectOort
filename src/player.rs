@@ -22,7 +22,7 @@ pub struct Player {
     entity: Rc<RefCell<entity::Entity>>,
     pub aspect: f32,
     body: physics::RigidBody<object::ObjectType>,
-    pub inv_fac: Option<f32>,
+    pub inv_fac: Rc<RefCell<f32>>,
 }
 
 impl Player {
@@ -38,7 +38,7 @@ impl Player {
         let mut cam = Node::new(Some(point3(0., 15., -25.)), None, None, None);
         cam.set_parent(root_node.clone());
         let mut model = model.with_transparency(0.99, 0);
-        *model.trans_fac() = 1.0;
+        let inv_fac = model.trans_fac();
         Player {
             cam: cam,
             aspect: view_aspect,
@@ -46,12 +46,13 @@ impl Player {
                 geometry: Box::new(model),
                 locations: vec![root_node.clone()],
                 render_passes: vec![shader::RenderPassType::Visual, shader::RenderPassType::Depth, 
-                    shader::RenderPassType::transparent_tag()],
+                    shader::RenderPassType::transparent_tag(), shader::RenderPassType::TransparentDepth],
+                order: entity::RenderOrder::Unordered,
             })),
             body: physics::RigidBody::new(root_node.clone(), Some(
                 collisions::CollisionObject::new(root_node, c_str, collisions::TreeStopCriteria::default())),
                 physics::BodyType::Dynamic, object::ObjectType::Ship),
-            inv_fac: None,
+            inv_fac
         }
     }
 
@@ -106,6 +107,11 @@ impl Player {
     pub fn root(&self) -> &Rc<RefCell<Node>>
     {
         &self.body.transform
+    }
+
+    #[inline]
+    pub fn trans_fac(&self) -> std::cell::RefMut<f32> {
+        self.inv_fac.borrow_mut()
     }
 
 

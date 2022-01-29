@@ -46,25 +46,38 @@ impl Scene {
         shader: &shader::ShaderManager) 
     {
         use crate::cg_support::Transformation;
+        use entity::*;
         use cgmath::*;
-        //let mut map = BTreeMap::new();
+        let mut map = BTreeMap::new();
+        let mut firsts = Vec::new();
+        let mut lasts = Vec::new();
         let view_mat = viewer.view_mat().into_transform();
         for entity in &self.entities {
             if entity.as_ptr() as *const entity::Entity != obj && 
                 entity.borrow().should_render(shader::RenderPassType::Transparent(obj)) 
             {
-                /*let cam_z = (view_mat * entity.borrow().transformations()[0].borrow().as_transform())
-                    .transform_point(point3(0., 0., 0.)).z;
-                map.insert(-((cam_z * 10f64.powi(8) + 0.5) as i64), entity.clone());*/
-                let mut entity = entity.borrow_mut();
-                entity::render_entity(&mut *entity, fbo, scene_data, cache, shader)
+                // NOTE: I think we just need to order the transparent viewpoints, not the 
+                // objects when doing a transparency pass
+                match entity.borrow().render_order() {
+                    RenderOrder::Unordered => {
+                        let cam_z = (view_mat * entity.borrow().transformations()[0].borrow().as_transform())
+                            .transform_point(point3(0., 0., 0.)).z;
+                        let mut fixpoint_depth = -((cam_z * 10f64.powi(8) + 0.5) as i64);
+                        while map.get(&fixpoint_depth).is_some() { fixpoint_depth -= 1; }
+                        map.insert(fixpoint_depth, entity.clone());
+                    },
+                    RenderOrder::First => firsts.push(entity.clone()),
+                    RenderOrder::Last => lasts.push(entity.clone()),
+                }
             }
         }
 
-        /*for (_, entity) in map {
+        for entity in firsts.into_iter()
+            .chain(map.into_iter().map(|(_, entity)| entity)).chain(lasts.into_iter()) 
+        {
             let mut entity = entity.borrow_mut();
             entity::render_entity(&mut *entity, fbo, scene_data, cache, shader)
-        }*/
+        }
     }
 
     fn render_entities(&self, viewer: &dyn Viewer, scene_data: &shader::SceneData, 
@@ -74,13 +87,14 @@ impl Scene {
     {
         match pass {
             shader::RenderPassType::Transparent(ptr) => self.render_transparency(ptr, viewer, scene_data, cache, fbo, shader),
-            typ => 
+            typ => {
                 for entity in &self.entities {
                     if entity.borrow().should_render(typ) {
                         let mut entity = entity.borrow_mut();
                         entity::render_entity(&mut *entity, fbo, scene_data, cache, shader);
                     }
-                },
+                }
+            },
         }
     }
 

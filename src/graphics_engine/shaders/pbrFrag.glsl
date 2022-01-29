@@ -66,6 +66,8 @@ layout(std140, binding = 2) uniform CascadeUniform {
 };
 
 uniform sampler2D cascadeDepthMaps[3];
+uniform sampler2D cascadeTransMaps[3];
+uniform sampler2D cascadeTransFacs[3];
 uniform mat4 view;
 
 const float PI = 3.14159265359;
@@ -196,8 +198,11 @@ int getCascadeIndex() {
     return -1;
 }
 
-sampler2D getCascadeTex(int cIdx) {
-    return cascadeDepthMaps[cIdx];
+sampler2D getCascadeTex(int cIdx, bool transparent) {
+    if (transparent)
+        return cascadeTransMaps[cIdx];
+    else
+        return cascadeDepthMaps[cIdx];
 }
 
 vec3 getProjCoords(int casIdx) {
@@ -206,12 +211,8 @@ vec3 getProjCoords(int casIdx) {
 }
 // calculates the shadow for frag_pos
 // 1 represents fully in shadow and 0 represents fully out of shadow
-float calcShadow(vec3 norm) {
-    int cascIdx = getCascadeIndex();
-    if (cascIdx == -1) return 0;
-    vec3 projCoords = getProjCoords(cascIdx);
+float calcShadowFrom(vec3 norm, int cascIdx, vec3 projCoords, sampler2D depth_map) {
     //if (projCoords.z > 1) return 0;
-    sampler2D depth_map = getCascadeTex(cascIdx);
     vec3 lightDir = normalize(dir_light_dir);
     float bias = max(0.05 * (1.0 - dot(norm, lightDir)), 0.005) * (1.0 / (far_planes[cascIdx] * 0.1));
 
@@ -230,6 +231,19 @@ float calcShadow(vec3 norm) {
     //return projCoords.z - bias > texture(depth_map, projCoords.xy).r ? 1.0 : 0.0;
 
 
+}
+
+float calcShadow(vec3 norm) {
+    int cascIdx = getCascadeIndex();
+    if (cascIdx == -1) return 0;
+    vec3 lightDir = normalize(dir_light_dir);
+    float bias = max(0.05 * (1.0 - dot(norm, lightDir)), 0.005) * (1.0 / (far_planes[cascIdx] * 0.1));
+
+    vec3 projCoords = getProjCoords(cascIdx);
+    float opaque = calcShadowFrom(norm, cascIdx, projCoords, getCascadeTex(cascIdx, false));
+    float trans = projCoords.z - bias > texture(cascadeTransMaps[cascIdx], projCoords.xy).r ? 1.0 : 0.0;
+    float blendFac = texture(cascadeTransFacs[cascIdx], projCoords.xy).r;
+    return (1.0 - blendFac) * (opaque + trans);
 }
 
 /// Approximates amount of surface microfacets are aligned to the halfway vector

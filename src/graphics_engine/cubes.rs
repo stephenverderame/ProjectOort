@@ -74,6 +74,7 @@ impl Skybox {
             render_passes: vec![shader::RenderPassType::Visual, shader::RenderPassType::transparent_tag(),
                 shader::RenderPassType::LayeredVisual],
             locations: vec![Rc::new(RefCell::new(cgmath::Matrix4::from_scale(1f64)))],
+            order: entity::RenderOrder::First,
         }
     }
 }
@@ -96,6 +97,8 @@ impl Drawable for Skybox {
         };
         vec![(args, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo))]
     }
+
+    fn transparency(&self) -> Option<f32> { None }
 }
 
 pub fn gen_cubemap_from_sphere<F : glium::backend::Facade>(tex_path: &str, cubemap_size: u32, 
@@ -158,4 +161,6 @@ impl Drawable for DebugCube {
         }
         v
     }
+
+    fn transparency(&self) -> Option<f32> { None }
 }

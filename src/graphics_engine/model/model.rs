@@ -148,10 +148,15 @@ impl Model {
     }
 
     /// Enables model to have refractive transparency
+    /// 
+    /// `refraction_idx`
+    /// 
+    /// `object_id` - the unique id for each transparent object
     pub fn with_transparency(mut self, refraction_idx: f32, object_id: u32) -> Self {
+        use std::cell::RefCell;
         self.transparency = Some(shader::TransparencyData {
             refraction_idx,
-            trans_fac: 0.,
+            trans_fac: Rc::new(RefCell::new(0.)),
             object_id,
         });
         self
@@ -162,8 +167,8 @@ impl Model {
     /// `1` indicates fully transparent
     /// 
     /// Requires that this model has transparency which is enabled by `with_transparency()`
-    pub fn trans_fac(&mut self) -> &mut f32 {
-        &mut self.transparency.as_mut().unwrap().trans_fac
+    pub fn trans_fac(&mut self) -> Rc<std::cell::RefCell<f32>> {
+        self.transparency.as_ref().unwrap().trans_fac.clone()
     }
 
     /// Render this model once, animating if there is one
@@ -224,5 +229,9 @@ impl Drawable for Model {
         } else {
             self.render_instanced(positions)
         }
+    }
+
+    fn transparency(&self) -> Option<f32> { 
+        self.transparency.as_ref().map(|x| *x.trans_fac.borrow())
     }
 }

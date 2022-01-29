@@ -5,6 +5,17 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use super::shader;
 
+/// Relative render order of an entity
+#[derive(Copy, Clone, Hash)]
+pub enum RenderOrder {
+    /// Render this entity first, in the order they are specified
+    First,
+    /// Render this entity last, in the order they are specified
+    Last,
+    /// Entity is independent of render order
+    Unordered,
+}
+
 /// An entity is a drawable combined with positional data
 /// An entity can be in many positions at once
 pub trait AbstractEntity {
@@ -16,6 +27,8 @@ pub trait AbstractEntity {
 
     /// Determines if the entity should be drawn during `pass`
     fn should_render(&self, pass: shader::RenderPassType) -> bool;
+
+    fn render_order(&self) -> RenderOrder;
 }
 
 /// An entity with any drawable
@@ -23,6 +36,7 @@ pub struct Entity {
     pub geometry: Box<dyn Drawable>,
     pub locations: Vec<Rc<RefCell<dyn Transformation>>>,
     pub render_passes: Vec<shader::RenderPassType>,
+    pub order: RenderOrder,
 }
 
 impl std::ops::Deref for Entity {
@@ -47,7 +61,19 @@ impl AbstractEntity for Entity {
         &mut *self.geometry
     }
     fn should_render(&self, pass: shader::RenderPassType) -> bool {
-        self.render_passes.iter().any(|x| *x == pass)
+        let base_bool = self.render_passes.iter().any(|x| *x == pass);
+        if base_bool {
+            match pass {
+                shader::RenderPassType::Depth => self.geometry.transparency().map(|x| x < 0.5).unwrap_or(true),
+                shader::RenderPassType::TransparentDepth => 
+                    self.geometry.transparency().map(|x| x >= 0.5).unwrap_or(false),
+                _ => base_bool,
+            }
+        } else { base_bool }
+
+    }
+    fn render_order(&self) -> RenderOrder {
+        self.order
     }
 }
 /// An entity whose drawable is an externaly loaded model
@@ -55,6 +81,7 @@ pub struct ModelEntity {
     pub geometry: Box<model::Model>,
     pub locations: Vec<Rc<RefCell<dyn Transformation>>>,
     pub render_passes: Vec<shader::RenderPassType>,
+    pub order: RenderOrder,
 }
 
 impl AbstractEntity for ModelEntity {
@@ -65,8 +92,21 @@ impl AbstractEntity for ModelEntity {
         &mut *self.geometry
     }
     fn should_render(&self, pass: shader::RenderPassType) -> bool {
-        self.render_passes.iter().any(|x| *x == pass)
+        let base_bool = self.render_passes.iter().any(|x| *x == pass);
+        if base_bool {
+            match pass {
+                shader::RenderPassType::Depth => self.geometry.transparency().map(|x| x < 0.5).unwrap_or(true),
+                shader::RenderPassType::TransparentDepth => 
+                    self.geometry.transparency().map(|x| x >= 0.5).unwrap_or(false),
+                _ => base_bool,
+            }
+        } else { base_bool }
+
     }
+    fn render_order(&self) -> RenderOrder {
+        self.order
+    }
+
 }
 
 /// Renders the entity to the given surface

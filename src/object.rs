@@ -35,6 +35,7 @@ impl AnimGameObject {
                 locations: vec![transform],
                 render_passes: vec![shader::RenderPassType::Visual, 
                     shader::RenderPassType::transparent_tag()],
+                order: RenderOrder::Unordered,
             })),
         }
     }
@@ -96,6 +97,7 @@ impl GameObject {
                 render_passes: vec![shader::RenderPassType::Visual,
                     shader::RenderPassType::transparent_tag(),
                     shader::RenderPassType::LayeredVisual],
+                order: RenderOrder::Unordered,
             })),
             collision_prototype: None,
             bod_type: BodyType::Dynamic,

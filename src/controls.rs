@@ -13,6 +13,10 @@ pub struct PlayerControls {
     pub roll: f64,
     pub fire: bool,
     mouse_capture: bool,
+    visible: bool,
+    vis_transition_start: std::time::Instant,
+    inv_fac: f32,
+    inv_trans_fac_start: f32,
 }
 
 impl PlayerControls {
@@ -21,6 +25,9 @@ impl PlayerControls {
             movement: Movement::Stopped,
             mouse_capture: false,
             pitch: 0., roll: 0., fire: false,
+            visible: true,
+            vis_transition_start: std::time::Instant::now(),
+            inv_fac: 0., inv_trans_fac_start: 0.,
         }
     }
     /// Changes the mouse capture mode and returns the new value
@@ -29,6 +36,17 @@ impl PlayerControls {
         wnd.set_cursor_grab(rev).unwrap();
         wnd.set_cursor_visible(mouse_capture);
         rev
+    }
+
+    /// Get the player's transparency factor from `0.0` (opaque) to `1.0` (fully refractive)
+    /// and updates it if it is transitioning
+    pub fn compute_transparency_fac(&mut self) -> f32 {
+        let goal_fac = if self.visible { 0.0 } else { 1.0 };
+        if (self.inv_fac - goal_fac).abs() > f32::EPSILON {
+            let dt = (std::time::Instant::now().duration_since(self.vis_transition_start).as_secs_f32() / 3.).min(1.);
+            self.inv_fac = dt * (goal_fac - self.inv_trans_fac_start) + self.inv_trans_fac_start;
+        }
+        self.inv_fac
     }
 
     pub fn on_input(&mut self, ev: DeviceEvent) {
@@ -41,6 +59,11 @@ impl PlayerControls {
                     (VirtualKeyCode::W, ElementState::Released) => self.movement = Movement::Stopped,
                     (VirtualKeyCode::S, ElementState::Pressed) => self.movement = Movement::Backwards,
                     (VirtualKeyCode::S, ElementState::Released) => self.movement = Movement::Stopped,
+                    (VirtualKeyCode::T, ElementState::Pressed) => {
+                        self.inv_trans_fac_start = self.inv_fac;
+                        self.vis_transition_start = std::time::Instant::now();
+                        self.visible = !self.visible;
+                    },
                     (VirtualKeyCode::Escape, ElementState::Pressed) => 
                         self.mouse_capture = PlayerControls::change_mouse_mode(self.mouse_capture, &*ctx.ctx.borrow().gl_window().window()),
                     _ => (),

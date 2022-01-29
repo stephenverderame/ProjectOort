@@ -1,7 +1,7 @@
 use super::Emitter;
 use std::collections::VecDeque;
 use super::super::drawable::{Drawable, VertexHolder};
-use super::super::entity::AbstractEntity;
+use super::super::entity::{AbstractEntity, RenderOrder};
 use super::super::shader;
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -87,6 +87,8 @@ impl Drawable for ParticleSystem {
         }
         v
     }
+
+    fn transparency(&self) -> Option<f32> { None }
 }
 
 impl AbstractEntity for ParticleSystem {
@@ -98,5 +100,8 @@ impl AbstractEntity for ParticleSystem {
     }
     fn should_render(&self, pass: shader::RenderPassType) -> bool {
         pass == shader::RenderPassType::Visual
+    }
+    fn render_order(&self) -> RenderOrder {
+        RenderOrder::Last
     }
 }
