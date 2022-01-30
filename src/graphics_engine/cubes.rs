@@ -164,3 +164,38 @@ impl Drawable for DebugCube {
 
     fn transparency(&self) -> Option<f32> { None }
 }
+
+pub struct Volumetric {
+    vbo: glium::VertexBuffer<Vertex>,
+    ebo: glium::IndexBuffer<u16>,
+    vol: glium::texture::Texture3d,
+}
+
+impl Volumetric {
+    /// Constructs a new cloud volume
+    pub fn cloud<F : glium::backend::Facade>(tex_size: u32, facade: &F) -> Self {
+        use super::textures;
+        Self {
+            vbo: glium::VertexBuffer::new(facade, &CUBE_VERTS).unwrap(),
+            ebo: glium::IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &CUBE_INDICES).unwrap(),
+            vol: textures::gen_cloud_noise_vol(tex_size, tex_size, tex_size, facade),
+        }
+    }
+}
+
+impl Drawable for Volumetric {
+    fn render_args<'a>(&'a mut self, pos: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
+    {
+        let mut out = Vec::new();
+        for p in pos {
+            let arg = shader::UniformInfo::CloudInfo(shader::CloudData {
+                model: *p,
+                volume: &self.vol,
+            });
+            out.push((arg, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo)));
+        }
+        out
+    }
+
+    fn transparency(&self) -> Option<f32> { None }
+}

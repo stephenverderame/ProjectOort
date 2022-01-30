@@ -77,6 +77,48 @@ impl AbstractEntity for Entity {
         self.order
     }
 }
+pub struct EntityBuilder {
+    drawable: Box<dyn Drawable>,
+    locations: Vec<Rc<RefCell<dyn Transformation>>>,
+    render_passes: Vec<shader::RenderPassType>,
+    order: RenderOrder,
+}
+
+impl EntityBuilder {
+    pub fn new<D : Drawable + 'static>(drawable: D) -> Self {
+        Self {
+            drawable: Box::new(drawable),
+            locations: Vec::new(),
+            render_passes: Vec::new(),
+            order: RenderOrder::Unordered,
+        }
+    }
+
+    pub fn at(mut self, pos: crate::cg_support::node::Node) -> Self {
+        self.locations.push(Rc::new(RefCell::new(pos)));
+        self
+    }
+
+    pub fn with_pass(mut self, pass: shader::RenderPassType) -> Self {
+        self.render_passes.push(pass);
+        self
+    }
+
+    pub fn render_order(mut self, order: RenderOrder) -> Self {
+        self.order = order;
+        self
+    }
+
+    pub fn build(self) -> Entity {
+        Entity {
+            geometry: self.drawable,
+            locations: self.locations,
+            render_passes: self.render_passes,
+            order: self.order,
+        }
+    }
+}
+
 /// An entity whose drawable is an externaly loaded model
 pub struct ModelEntity {
     pub geometry: Box<model::Model>,

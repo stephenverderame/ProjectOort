@@ -33,6 +33,7 @@ enum ShaderType {
     ParallelSky,
     ParallelEqRect,
     ParallelPrefilter,
+    Cloud,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -103,6 +104,17 @@ impl ShaderType {
                     .. Default::default()
                 },
             Billboard =>
+                glium::DrawParameters {
+                    depth: glium::Depth {
+                        test: DepthTest::IfLess,
+                        write: false,
+                        .. Default::default()
+                    },
+                    blend: glium::Blend::alpha_blending(),
+                    backface_culling: glium::BackfaceCullingMode::CullClockwise,
+                    .. Default::default()
+                },
+            Cloud =>
                 glium::DrawParameters {
                     depth: glium::Depth {
                         test: DepthTest::IfLess,
@@ -261,6 +273,11 @@ pub struct LightCullData<'a> {
     pub scr_width: u32,
     pub scr_height: u32,
 }
+/// Data for cloud rendering
+pub struct CloudData<'a> {
+    pub volume: &'a glium::texture::Texture3d,
+    pub model: [[f32; 4]; 4],
+}
 #[derive(Clone, Copy)]
 pub struct CascadeUniform {
     pub far_planes: [f32; 4],
@@ -343,6 +360,7 @@ pub enum UniformInfo<'a> {
     LightCullInfo(LightCullData<'a>),
     CollisionDebugInfo([[f32; 4]; 4]),
     BillboardInfo(&'a glium::texture::SrgbTexture2d),
+    CloudInfo(CloudData<'a>),
 }
 
 impl<'a> std::fmt::Debug for UniformInfo<'a> {
@@ -362,6 +380,7 @@ impl<'a> std::fmt::Debug for UniformInfo<'a> {
             LightCullInfo(_) => "Compute light cull",
             CollisionDebugInfo(_) => "Collision debug",
             BillboardInfo(_) => "Billboard",
+            CloudInfo(_) => "Cloud",
         };
         f.write_str(name)
     }
@@ -393,6 +412,7 @@ impl<'a> UniformInfo<'a> {
             (LaserInfo, LayeredVisual) | (LaserInfo, Transparent(_)) => ShaderType::ParallelLaser,
             (LaserInfo, Depth) => ShaderType::DepthShader,
             (CollisionDebugInfo(_), Visual) => ShaderType::CollisionDebug,
+            (CloudInfo(_), Visual) => ShaderType::Cloud,
 
             // game objects
             (EquiRectInfo(_), Visual) => ShaderType::EquiRect,
@@ -452,6 +472,8 @@ pub enum UniformType<'a> {
     DepthUniform(UniformsStorage<'a, f32, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     BillboardUniform(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], 
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    CloudUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
+        UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -468,6 +490,14 @@ macro_rules! sample_linear_clamp {
         $tex_name.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
         .minify_filter(glium::uniforms::MinifySamplerFilter::Linear)
         .wrap_function(glium::uniforms::SamplerWrapFunction::Clamp)
+    }
+}
+
+macro_rules! sample_linear_b_clamp {
+    ($tex_name:expr) => {
+        $tex_name.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
+        .minify_filter(glium::uniforms::MinifySamplerFilter::Linear)
+        .wrap_function(glium::uniforms::SamplerWrapFunction::BorderClamp)
     }
 }
 
@@ -583,6 +613,8 @@ impl ShaderManager {
         let parallel_prefilter = load_shader_source!(facade,
             "shaders/skyVert.glsl", "shaders/prefilterEnvFrag.glsl",
             "shaders/parallelSkyGeom.glsl").unwrap();
+        let cloud_shader = load_shader_source!(facade,
+            "shaders/cloudVert.glsl", "shaders/cloudFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -611,6 +643,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::ParallelEqRect, parallel_eq_rect);
         shaders.insert(ShaderType::ParallelAnimPbr, parallel_anim_pbr);
         shaders.insert(ShaderType::ParallelPrefilter, parallel_prefilter);
+        shaders.insert(ShaderType::Cloud, cloud_shader);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -770,6 +803,13 @@ impl ShaderManager {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 tex: sample_mip_repeat!(tex),
+            }),
+            (CloudInfo(CloudData{volume, model}), Visual) => UniformType::CloudUniform(glium::uniform! {
+                viewproj: scene_data.unwrap().viewer.viewproj,
+                model: *model,
+                light_dir: scene_data.unwrap().light_pos.unwrap_or([1f32, 0., 0.]),
+                cam_pos: scene_data.unwrap().viewer.cam_pos,
+                volume: sample_linear_b_clamp!(volume),
             }),
             (data, pass) => 
                 panic!("Invalid shader/shader data combination with shader (Args: `{:?}` '{:?}') during pass '{:?}'", data, typ, pass),

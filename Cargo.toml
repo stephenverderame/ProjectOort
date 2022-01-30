@@ -19,6 +19,7 @@ assimp = "*"
 assimp-sys = "*"
 arr_macro = "*"
 itertools = "*"
+noise = "*"
 
 [dev-dependencies]
 assertables = "*"

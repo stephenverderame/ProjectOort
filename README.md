@@ -126,6 +126,22 @@ is used to determine whether an object is the same as another. An `ONode` holds 
 
 * Transformation Hierarchy with position, anchor, scale, and rotation.
 
+* Invisibility Effect
+
+    (See below)
+
+* Volumetric Ray-Marched Dust/Nebulas (WIP) [^11]
+
+    The general gist is to generate a 3D volume texture via Perline Noise. We then compute rays in a Vertex Shader by computing
+    the direction between the vertex and camera. In the Fragment shader, the 3D texture is sampled along these rays in discrete
+    intervals. The sample roughly correlates to the opacity of the volume at the given point.
+
+    Further Things to Take a Look At:
+    * [PBR Atmosphere Frosbite](https://media.contentapi.ea.com/content/dam/eacom/frostbite/files/s2016-pbs-frostbite-sky-clouds-new.pdf)
+    * [https://shaderbits.com/blog/creating-volumetric-ray-marcher](https://shaderbits.com/blog/creating-volumetric-ray-marcher)
+    * [Siggraph 2014 Volumetric Fog](https://bartwronski.files.wordpress.com/2014/08/bwronski_volumetric_fog_siggraph2014.pdf)
+    * [Possible Resource List](https://gist.github.com/pixelsnafu/e3904c49cbd8ff52cb53d95ceda3980e)
+
 ### Collisions
 
 * 3-Phase collision detection system using bounding spheres, bounding boxes, and finally triangle intersection tests
@@ -198,6 +214,8 @@ There's still much more besides this and I am writing this so I know how to pick
     Implemented by rendering an opaque and a transparent depth texture and computing the shadow factor as `(1.0 - invFac) * transparentShadow + opaqueShadow`. This works well for transparent objects that don't overlap. Artifacts can occur if we have a very transparent object occlude a partially transparent object since the `invFac` stored in the color texture belongs to the 
     nearest transparent object.
 
+- [ ] Good Dust Cloud Effect (WIP)
+
 - [ ] Better Lasers
 
     At the very least, could probably use a noise texture to provide color variation. I also think the geometry shader could be used to 
@@ -242,3 +260,4 @@ There's still much more besides this and I am writing this so I know how to pick
 [^8]: [Ericson's Realtime Collision Detection](https://realtimecollisiondetection.net/)
 [^9]: [A Fast Triangle-Triangle Intersection Test](https://web.stanford.edu/class/cs277/resources/papers/Moller1997b.pdf)
 [^10]: [Opengl-tutorial Billboards](http://www.opengl-tutorial.org/intermediate-tutorials/billboards-particles/billboards/)
+[^11]: [David Peicho Raymarching Cloud Demo](https://davidpeicho.github.io/about/)

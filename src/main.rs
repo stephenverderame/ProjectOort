@@ -121,6 +121,10 @@ fn main() {
     let mut skybox = cubes::Skybox::cvt_from_sphere("assets/Milkyway/Milkyway_BG.jpg", 2048, &*wnd.shaders, &*wnd.ctx());
     let ibl = scene::gen_ibl_from_hdr("assets/Milkyway/Milkyway_Light.hdr", &mut skybox, &*wnd.shaders, &*wnd.ctx());
     let sky_entity = Rc::new(RefCell::new(skybox.to_entity()));
+    let cloud = entity::EntityBuilder::new(cubes::Volumetric::cloud(128, &*wnd.ctx()))
+        .at(node::Node::default().pos(point3(3., 3., 3.)).u_scale(10.)).with_pass(shader::RenderPassType::Visual)
+        .render_order(entity::RenderOrder::Last).build();
+    let cloud = Rc::new(RefCell::new(cloud));
 
     gen_asteroid_field(&mut asteroid);
 
@@ -139,7 +143,7 @@ fn main() {
     
     // skybox must be rendered first, particles must be rendered last
     main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.borrow().as_entity(), container.as_entity(), asteroid.as_entity(),
-        asteroid_character.borrow().as_entity(), particles.clone()]);
+        asteroid_character.borrow().as_entity(), particles.clone(), cloud]);
     wnd.scene_manager().insert_scene("main", main_scene).change_scene("main");
 
     laser.borrow_mut().new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)).pos(point3(10., 0., 10.)), None);

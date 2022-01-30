@@ -101,3 +101,38 @@ pub fn load_cubemap<F>(file: &str, facade: &F)
     }
     cubemap
 }
+
+pub fn gen_cloud_noise_vol<F : glium::backend::Facade>(width: u32, height: u32, 
+    depth: u32, facade: &F) -> glium::texture::Texture3d 
+{
+    use noise::{NoiseFn, Perlin};
+    use cgmath::*;
+    let mut data = Vec::new();
+    let voxels_per_slice = width * height;
+    let perlin = Perlin::new();
+    let scale = 0.1f64;
+    let halves = [width as f64 * 0.5, height as f64 * 0.5,
+        depth as f64 * 0.5];
+    for idx in 0 .. width * height * depth {
+        let x = (idx % width) as f64;
+        let y = ((idx % voxels_per_slice) as f64 / width as f64).floor();
+        let z = (idx as f64 / voxels_per_slice as f64).floor();
+
+        let pt = cgmath::vec3((x - halves[0]) / width as f64,
+            (y - halves[1]) / height as f64,
+            (z - halves[2]) / depth as f64);
+
+        let dist = (1.0 - pt.magnitude()).max(0.0).min(1.0);
+
+        let noise = perlin.get([x * scale, y * scale, z * scale]);
+        let noise = (noise + 1.0) * 0.5;
+
+        data.push((noise * dist * dist * 255.).round() as u8);
+    }
+    let img = glium::texture::RawImage3d {
+        data: std::borrow::Cow::Owned(data),
+        width, height, depth,
+        format: glium::texture::ClientFormat::U8
+    };
+    glium::texture::Texture3d::new(facade, img).unwrap()
+}
