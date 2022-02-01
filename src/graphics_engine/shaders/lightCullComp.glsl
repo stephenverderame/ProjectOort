@@ -97,7 +97,8 @@ void calcFrustrumPlanes(ivec2 tileId, ivec2 tileNum) {
 bool isLightInFrustrum(uint lightIndex) {
     vec4 position = vec4((lights[lightIndex].start + lights[lightIndex].end).xyz / 2.0, 1.0);
     // simply take the midpoint
-    float radius = length(lights[lightIndex].start.xyz - position.xyz) + 8.0;
+    float radius = length(lights[lightIndex].start.xyz - position.xyz) + 
+        lights[lightIndex].radius * lights[lightIndex].luminance;
 
     // We check if the light exists in our frustum
     float dist = 0.0;

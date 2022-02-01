@@ -130,9 +130,9 @@ is used to determine whether an object is the same as another. An `ONode` holds 
 
     (See below)
 
-* Volumetric Ray-Marched Dust/Nebulas (WIP) [^11]
+* Volumetric Ray-Marched Dust/Nebulas (WIP) [^11] [^12] [^13]
 
-    The general gist is to generate a 3D volume texture via Perline Noise. We then compute rays in a Vertex Shader by computing
+    The general gist is to generate a 3D volume texture via Perlin Noise with fractal brownian motion. We then compute rays in a Vertex Shader by computing
     the direction between the vertex and camera. In the Fragment shader, the 3D texture is sampled along these rays in discrete
     intervals. The sample roughly correlates to the opacity of the volume at the given point.
 
@@ -141,6 +141,8 @@ is used to determine whether an object is the same as another. An `ONode` holds 
     * [https://shaderbits.com/blog/creating-volumetric-ray-marcher](https://shaderbits.com/blog/creating-volumetric-ray-marcher)
     * [Siggraph 2014 Volumetric Fog](https://bartwronski.files.wordpress.com/2014/08/bwronski_volumetric_fog_siggraph2014.pdf)
     * [Possible Resource List](https://gist.github.com/pixelsnafu/e3904c49cbd8ff52cb53d95ceda3980e)
+    * [Another paper](https://lup.lub.lu.se/luur/download?func=downloadFile&recordOId=8893256&fileOId=8893258)
+    * [Siggraph 2011 Volumetric Rendering Tutorial](http://patapom.com/topics/Revision2013/Revision%202013%20-%20Real-time%20Volumetric%20Rendering%20Course%20Notes.pdf)
 
 ### Collisions
 
@@ -177,11 +179,19 @@ forces and acceleration.
 ---
 ## Images
 
+**NOTE**: Gifs have been compressed and their framerate reduced.
+
 ![Laser Demo](images/laser_smash.gif)
 
 ![Shadow Demo](images/shadows.gif)
 
 ![Collision Demo](images/collisions.gif)
+
+![Invisibility Demo](images/invisibility.gif)
+
+![Dust 1](images/dust1.png)
+
+![Dust 2](images/dust2.png)
 
 ---
 
@@ -216,15 +226,22 @@ There's still much more besides this and I am writing this so I know how to pick
 
 - [ ] Good Dust Cloud Effect (WIP)
 
+    Need to add FBM and better shape generation. I initially wanted this to be used for a dust effect when something hits an asteroid.
+    Realistically, a ray-marched volumetric is probably not the best thing to use for this given the real-time constraint.
+    I think I can get a pretty decent effect by finding some good dust textures and using billboards with an artistically tuned
+    particle system. In passing for doing volumetric rendering, I came across the technique "volumetric billboards" which
+    might be something to look into.
+
 - [ ] Better Lasers
 
     At the very least, could probably use a noise texture to provide color variation. I also think the geometry shader could be used to 
     decrease uniformity. [Maybe like this](https://developer.download.nvidia.com/SDK/10/direct3d/Source/Lightning/doc/lightning_doc.pdf)
     Could also use a particle system
 
-- [ ] (Optimization) Geometry shader for Billboards, rendering cascade maps in parallel, and rendering cubemaps in parallel
+- [x] (Optimization) Geometry shader for Billboards, rendering cascade maps in parallel, and rendering cubemaps in parallel
 
-    May want to profile this
+    May want to profile this. Currently used for rendering cubemaps in parallel only. It honestly was not as much of a performance
+    change as I was hoping for (qualatatively).
 
 - [ ] (Bug) Artifacts with PCSS and CSM. 
 
@@ -261,3 +278,5 @@ There's still much more besides this and I am writing this so I know how to pick
 [^9]: [A Fast Triangle-Triangle Intersection Test](https://web.stanford.edu/class/cs277/resources/papers/Moller1997b.pdf)
 [^10]: [Opengl-tutorial Billboards](http://www.opengl-tutorial.org/intermediate-tutorials/billboards-particles/billboards/)
 [^11]: [David Peicho Raymarching Cloud Demo](https://davidpeicho.github.io/about/)
+[^12]: [Physically Based Sky, Atmosphere, and Cloud Rendering in Frostbite](https://media.contentapi.ea.com/content/dam/eacom/frostbite/files/s2016-pbs-frostbite-sky-clouds-new.pdf)
+[^13]: [Siggraph 2011 Volumetric Rendering Course](http://patapom.com/topics/Revision2013/Revision%202013%20-%20Real-time%20Volumetric%20Rendering%20Course%20Notes.pdf)

@@ -13,7 +13,8 @@ uniform vec3 cam_pos;
 
 void main() {
     vec4 camPosLocal = inverse(model) * vec4(cam_pos, 1.0);
-    ray.dir = pos - camPosLocal.xyz;
-    ray.origin = camPosLocal.xyz + vec3(0.5);
+    vec3 pos = (pos + vec3(1.0)) * 0.5;
+    ray.dir = normalize(pos - camPosLocal.xyz);
+    ray.origin = camPosLocal.xyz;// + vec3(0.5);
     gl_Position = viewproj * model * vec4(pos, 1.0);
 }

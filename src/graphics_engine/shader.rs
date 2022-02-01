@@ -34,6 +34,7 @@ enum ShaderType {
     ParallelEqRect,
     ParallelPrefilter,
     Cloud,
+    CloudDepth,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -114,7 +115,7 @@ impl ShaderType {
                     backface_culling: glium::BackfaceCullingMode::CullClockwise,
                     .. Default::default()
                 },
-            Cloud =>
+            Cloud => 
                 glium::DrawParameters {
                     depth: glium::Depth {
                         test: DepthTest::IfLess,
@@ -122,7 +123,17 @@ impl ShaderType {
                         .. Default::default()
                     },
                     blend: glium::Blend::alpha_blending(),
-                    backface_culling: glium::BackfaceCullingMode::CullClockwise,
+                    backface_culling: glium::BackfaceCullingMode::CullCounterClockwise,
+                    .. Default::default()
+                },
+            CloudDepth => 
+                glium::DrawParameters {
+                    depth: glium::Depth {
+                        test: DepthTest::IfLess,
+                        write: true,
+                        .. Default::default()
+                    },
+                    backface_culling: glium::BackfaceCullingMode::CullCounterClockwise,
                     .. Default::default()
                 },
             _ => glium::DrawParameters::default(),
@@ -413,6 +424,7 @@ impl<'a> UniformInfo<'a> {
             (LaserInfo, Depth) => ShaderType::DepthShader,
             (CollisionDebugInfo(_), Visual) => ShaderType::CollisionDebug,
             (CloudInfo(_), Visual) => ShaderType::Cloud,
+            (CloudInfo(_), Depth) => ShaderType::CloudDepth,
 
             // game objects
             (EquiRectInfo(_), Visual) => ShaderType::EquiRect,
@@ -474,6 +486,8 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     CloudUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
+    CloudDepthUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
+        UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -492,6 +506,15 @@ macro_rules! sample_linear_clamp {
         .wrap_function(glium::uniforms::SamplerWrapFunction::Clamp)
     }
 }
+
+/*
+macro_rules! sample_linear_repeat {
+    ($tex_name:expr) => {
+        $tex_name.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
+        .minify_filter(glium::uniforms::MinifySamplerFilter::Linear)
+        .wrap_function(glium::uniforms::SamplerWrapFunction::Repeat)
+    }
+}*/
 
 macro_rules! sample_linear_b_clamp {
     ($tex_name:expr) => {
@@ -615,6 +638,8 @@ impl ShaderManager {
             "shaders/parallelSkyGeom.glsl").unwrap();
         let cloud_shader = load_shader_source!(facade,
             "shaders/cloudVert.glsl", "shaders/cloudFrag.glsl").unwrap();
+        let cloud_depth = load_shader_source!(facade,
+            "shaders/cloudVert.glsl", "shaders/cloudDepthFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -644,6 +669,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::ParallelAnimPbr, parallel_anim_pbr);
         shaders.insert(ShaderType::ParallelPrefilter, parallel_prefilter);
         shaders.insert(ShaderType::Cloud, cloud_shader);
+        shaders.insert(ShaderType::CloudDepth, cloud_depth);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -809,6 +835,13 @@ impl ShaderManager {
                 model: *model,
                 light_dir: scene_data.unwrap().light_pos.unwrap_or([1f32, 0., 0.]),
                 cam_pos: scene_data.unwrap().viewer.cam_pos,
+                volume: sample_linear_b_clamp!(volume),
+            }),
+            (CloudInfo(CloudData{volume, model}), Depth) => UniformType::CloudDepthUniform(glium::uniform! {
+                viewproj: scene_data.unwrap().viewer.viewproj,
+                model: *model,
+                view: scene_data.unwrap().viewer.view,
+                cam_pos: scene_data.unwrap().light_pos.unwrap(),
                 volume: sample_linear_b_clamp!(volume),
             }),
             (data, pass) => 

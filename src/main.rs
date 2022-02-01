@@ -122,7 +122,9 @@ fn main() {
     let ibl = scene::gen_ibl_from_hdr("assets/Milkyway/Milkyway_Light.hdr", &mut skybox, &*wnd.shaders, &*wnd.ctx());
     let sky_entity = Rc::new(RefCell::new(skybox.to_entity()));
     let cloud = entity::EntityBuilder::new(cubes::Volumetric::cloud(128, &*wnd.ctx()))
-        .at(node::Node::default().pos(point3(3., 3., 3.)).u_scale(10.)).with_pass(shader::RenderPassType::Visual)
+        .at(node::Node::default().pos(point3(15., 5., 5.)).u_scale(15.))
+        .with_pass(shader::RenderPassType::Visual)
+        .with_pass(shader::RenderPassType::Depth)
         .render_order(entity::RenderOrder::Last).build();
     let cloud = Rc::new(RefCell::new(cloud));
 
@@ -138,7 +140,7 @@ fn main() {
     let container = object::GameObject::new(model::Model::new("assets/BlackMarble/floor.obj", &*wnd.ctx()), object::ObjectType::Any) 
         .at_pos(node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None)).with_depth();
     let particles = Rc::new(RefCell::new(
-        particles::ParticleSystem::new().with_emitter(particles::dust_emitter(&*wnd.ctx(), point3(0., 0., 0.)), 0)
+        particles::ParticleSystem::new()//.with_emitter(particles::dust_emitter(&*wnd.ctx(), point3(0., 0., 0.)), 0)
         .with_billboard("assets/particles/smoke_07.png").with_billboard("assets/particles/circle_05.png")));
     
     // skybox must be rendered first, particles must be rendered last
