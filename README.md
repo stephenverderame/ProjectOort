@@ -143,6 +143,7 @@ is used to determine whether an object is the same as another. An `ONode` holds 
     * [Possible Resource List](https://gist.github.com/pixelsnafu/e3904c49cbd8ff52cb53d95ceda3980e)
     * [Another paper](https://lup.lub.lu.se/luur/download?func=downloadFile&recordOId=8893256&fileOId=8893258)
     * [Siggraph 2011 Volumetric Rendering Tutorial](http://patapom.com/topics/Revision2013/Revision%202013%20-%20Real-time%20Volumetric%20Rendering%20Course%20Notes.pdf)
+    * [Horizon Zero Dawn](http://killzone.dl.playstation.net/killzone/horizonzerodawn/presentations/Siggraph15_Schneider_Real-Time_Volumetric_Cloudscapes_of_Horizon_Zero_Dawn.pdf)
 
 ### Collisions
 

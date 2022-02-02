@@ -9,15 +9,39 @@ in Ray {
 const uint march_steps = 100;
 uniform sampler3D volume;
 uniform vec3 light_dir;
+uniform mat4 model;
+uniform mat4 viewproj;
+uniform int tile_num_x;
+
 const float EPS = 0.00001;
-const vec3 scattering_coeff = 25 * vec3(0.25, 0.5, 1.0);
+const vec3 scattering_coeff = 15 * vec3(0.25, 0.5, 1.0);
 const vec3 absorb_coeff = 0 * vec3(0.75, 0.5, 0.0);
 const vec3 extinction_coeff = scattering_coeff + absorb_coeff;
-const float mie_approx_g = 0.10;
+const float mie_approx_g = 0.50;
 const float mie_approx_k = 1.55 * mie_approx_g - 0.55 
     * mie_approx_g * mie_approx_g * mie_approx_g;
 const float PI = 3.14159265358979323846264338327950288;
-const vec3 light_lum = vec3(4.0);
+const vec3 light_lum = vec3(1.0);
+const uint MAX_LIGHTS_PER_TILE = 1024;
+
+struct LightData {
+    vec3 start;
+    float radius;
+    vec3 end;
+    float luminance;
+    vec3 color; 
+    uint light_mode;
+};
+
+layout(std430, binding = 0) readonly buffer LightBuffer {
+    uint light_num;
+    LightData lights[];
+};
+
+layout(std430, binding = 1) readonly buffer VisibleLightIndices {
+    // flattened 2D array of work_groups x visible_lights
+    int indices[];
+} visibleLightBuffer;
 
 // in local space, so we know our ray will intersect with -1 to 1 box
 // compute ray intersections to get the near and far t values
@@ -75,8 +99,7 @@ vec3 inScattering(vec3 pt, float stepDelta) {
     return phase * exp(-acc_extinction);
 }*/
 
-vec3 shadowTransmittance(vec3 pt, uint stepNum) {
-    vec3 lightDir = normalize(light_dir);
+vec3 shadowTransmittance(vec3 pt, uint stepNum, vec3 lightDir) {
     bool miss;
     vec2 near_far = getNearFarT(-lightDir, pt, miss);
     // near should be < 0, far should be > 0
@@ -90,25 +113,79 @@ vec3 shadowTransmittance(vec3 pt, uint stepNum) {
     return shadow;
 }
 
+vec3 inScattering(vec3 pt, uint volShadowSteps, float near) {
+    // should do this foreach light
+    vec3 ld = normalize(light_dir);
+    vec3 lightSum = shadowTransmittance(pt, volShadowSteps, ld) 
+        * miePhaseFunction(ld, ray.dir) * light_lum;// * visibilityFromLight(via shadow mapping)
+    
+    // NEEDS Work
+    // Artifacts with Forward+ tiles and volumetrics
+    // also this causes an SO when we get too close to volumetric
+    vec4 clipSpacePt = viewproj * model * vec4(ray.origin + ray.dir * near, 1.0);
+    clipSpacePt /= clipSpacePt.w;
+    ivec2 location = ivec2(clipSpacePt.xy);
+    ivec2 tileId = location / ivec2(16, 16);
+    uint workGroupIndex = tileId.y * tile_num_x + tileId.x;
+    uint offset = workGroupIndex * MAX_LIGHTS_PER_TILE;
+
+
+    for(int i = 0; i < MAX_LIGHTS_PER_TILE && visibleLightBuffer.indices[offset + i] != -1; ++i) {
+
+        LightData light = lights[visibleLightBuffer.indices[offset + i]];
+
+        vec3 avg_light_pos = (light.start + light.end) / 2.0;
+        
+        vec3 light_dir = (inverse(model) * vec4(avg_light_pos, 1.0)).xyz - pt;
+        float dist = max(length(light_dir), 0.00001);
+
+        float attenuation = 1.0 / (dist * dist + 0.3);
+        vec3 light_radiance = light.color * attenuation;
+
+        light_dir = normalize(light_dir);
+        lightSum += light_radiance * shadowTransmittance(pt, volShadowSteps, light_dir) 
+            * light_radiance * miePhaseFunction(light_dir, ray.dir);
+        
+    }
+    return lightSum;
+}
+
 vec4 rayMarch2(vec3 rayOrigin, vec2 near_far) {
+    #define FROSTBITE_METHOD
     float delta = (near_far.y - max(near_far.x, 0.0)) / float(march_steps);
-    vec3 extinction = vec3(1.0);
-    vec3 scatter = vec3(0.0);
+    vec3 int_transmittance = vec3(1.0);
+    vec3 int_scatter = vec3(0.0);
     vec3 lightDir = normalize(light_dir);
     float acc_alpha = 0.0;
     for (uint i = 0; i < march_steps; ++i) {
         vec3 samplePt = rayOrigin + ray.dir * delta * float(i);
         float d = densityAt(samplePt);
+        #ifdef FROSTBITE_METHOD
+            vec3 scattering = d * scattering_coeff;
+            vec3 extinction = d * extinction_coeff;
+            vec3 clampedExtinction = max(extinction, vec3(0.0000001));
+            // original paper used extinction below
+            vec3 transmittance = exp(-clampedExtinction * delta);
 
-        vec3 scatter_val = scattering_coeff * d;
-        vec3 extinction_val = extinction_coeff * d;
+            vec3 luminance = inScattering(samplePt, 32, near_far.x) * scattering;
+            vec3 int_scatt = (luminance - luminance * transmittance) / clampedExtinction;
 
-        extinction *= exp(-extinction_val * delta);
-        vec3 lightColor = shadowTransmittance(samplePt, 32);// * light_lum;
-        vec3 ambient = vec3(0.0); // ambient * phase ambient
-        vec3 stepScattering = scatter_val * delta * 
-            (miePhaseFunction(lightDir, ray.dir) * lightColor + ambient);
-        scatter += extinction * stepScattering;
+            int_scatter += int_transmittance * int_scatt;
+            int_transmittance *= transmittance;
+        #endif
+
+        #ifdef SIGGRAPH_COURSE_METHOD
+            vec3 scatter_val = scattering_coeff * d;
+            vec3 extinction_val = extinction_coeff * d;
+
+            extinction *= exp(-extinction_val * delta);
+            vec3 lightColor = shadowTransmittance(samplePt, 32);// * light_lum;
+            vec3 ambient = vec3(0.0); // ambient * phase ambient
+            vec3 stepScattering = scatter_val * delta * 
+                (miePhaseFunction(lightDir, ray.dir) * lightColor + ambient);
+            scatter += extinction * stepScattering;
+        #endif
+
         /*scattered += shadow * transmittance * d 
             * scattering_coeff * delta * light_lum;
         transmittance *= exp(-d * extinction_coeff * delta);*/
@@ -119,11 +196,23 @@ vec4 rayMarch2(vec3 rayOrigin, vec2 near_far) {
         scattered += transmittance * int_S;
         transmittance *= exp_delta;*/
 
+        #ifdef SHADERTOY_METHOD
+            // Should be same implementation as Frostbite, except they don't use a phase function?
+            vec3 luminance = inScattering(samplePt, 32);
+            vec3 S = /*L * Lattenuation */ luminance * d * scattering_coeff;
+            vec3 sampleExtinction = max(vec3(0.0000000001), d * extinction_coeff);
+            vec3 Sint = (S - S * exp(-sampleExtinction * delta)) / sampleExtinction;
+            int_scatter += int_transmittance * Sint;
+
+            // Evaluate transmittance to view independentely
+            int_transmittance *= exp(-sampleExtinction * delta);
+        #endif
+
         acc_alpha += (1.0 - acc_alpha) * d * 0.1;
         
     }
 
-    return vec4(scatter, acc_alpha);
+    return vec4(int_scatter, acc_alpha);
 }
 
 

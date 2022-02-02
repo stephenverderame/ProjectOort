@@ -484,8 +484,8 @@ pub enum UniformType<'a> {
     DepthUniform(UniformsStorage<'a, f32, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     BillboardUniform(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], 
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    CloudUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
-        UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
+    CloudUniform(UniformsStorage<'a, i32, UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
+        UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>),
     CloudDepthUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
         UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
     
@@ -836,6 +836,7 @@ impl ShaderManager {
                 light_dir: scene_data.unwrap().light_pos.unwrap_or([1f32, 0., 0.]),
                 cam_pos: scene_data.unwrap().viewer.cam_pos,
                 volume: sample_linear_b_clamp!(volume),
+                tile_num_x: cache.as_ref().map(|x| x.tiles_x).unwrap().unwrap() as i32,
             }),
             (CloudInfo(CloudData{volume, model}), Depth) => UniformType::CloudDepthUniform(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,

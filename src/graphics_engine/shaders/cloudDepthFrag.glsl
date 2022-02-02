@@ -53,7 +53,7 @@ void main() {
         if (alpha > alpha_threshold) break;
     }
     if (alpha > alpha_threshold) {
-        vec3 pt = ray.origin + ray.dir * (max(near_far.x, 0.0) + near_far.y) / 2.0;
+        vec3 pt = ray.origin + ray.dir * max(near_far.x, 0.0); //(max(near_far.x, 0.0) + near_far.y) / 2.0;
         vec4 clipSpacePt = viewproj * model * vec4(pt, 1.0);
         clipSpacePt /= clipSpacePt.w;
         float near = gl_DepthRange.near;
