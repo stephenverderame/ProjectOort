@@ -133,7 +133,7 @@ impl ShaderType {
                         write: true,
                         .. Default::default()
                     },
-                    backface_culling: glium::BackfaceCullingMode::CullCounterClockwise,
+                    backface_culling: glium::BackfaceCullingMode::CullClockwise,
                     .. Default::default()
                 },
             _ => glium::DrawParameters::default(),

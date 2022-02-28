@@ -26,6 +26,7 @@ impl ParticleSystem {
     /// Adds a new emitter to this system, using the drawable at index `idx`
     /// Requires this system has `drawables.len() > idx`
     #[inline(always)]
+    #[allow(dead_code)]
     pub fn with_emitter(mut self, emitter: Box<dyn Emitter>, drawable_idx: usize) -> Self {
         self.emitters.push_back((emitter, drawable_idx));
         self

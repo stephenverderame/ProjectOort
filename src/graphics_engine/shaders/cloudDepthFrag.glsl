@@ -34,7 +34,7 @@ vec2 getNearFarT(vec3 dir, vec3 origin, out bool miss) {
 
 float densityAt(vec3 pt) {
     float density = texture(volume, pt).r;
-    return smoothstep(0.12, 0.35, density);
+    return smoothstep(0.05, 0.85, density);
 }
 
 void main() {
@@ -44,7 +44,7 @@ void main() {
     vec3 origin = ray.origin + max(near_far.x, 0.0) * ray.dir;
     float delta = (near_far.y - max(near_far.x, 0.0)) / float(march_steps);
     float alpha = 0.0;
-    const float alpha_threshold = 0.7;
+    const float alpha_threshold = 0.1;
     for (int i = 0; i < march_steps; ++i) {
         vec3 pt = origin + ray.dir * delta * float(i);
         float d = densityAt(pt);
@@ -53,7 +53,8 @@ void main() {
         if (alpha > alpha_threshold) break;
     }
     if (alpha > alpha_threshold) {
-        vec3 pt = ray.origin + ray.dir * max(near_far.x, 0.0); //(max(near_far.x, 0.0) + near_far.y) / 2.0;
+        //bool use_near = int(gl_FragCoord.x * 1000) % 2 == 0;
+        vec3 pt = ray.origin + ray.dir * max(near_far.x, 0.0);//(use_near ? max(near_far.x, 0.0) : near_far.y); //(max(near_far.x, 0.0) + near_far.y) / 2.0;
         vec4 clipSpacePt = viewproj * model * vec4(pt, 1.0);
         clipSpacePt /= clipSpacePt.w;
         float near = gl_DepthRange.near;

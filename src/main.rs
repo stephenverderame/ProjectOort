@@ -128,7 +128,7 @@ fn main() {
         .render_order(entity::RenderOrder::Last).build();
     let cloud = Rc::new(RefCell::new(cloud));
 
-    //gen_asteroid_field(&mut asteroid);
+    gen_asteroid_field(&mut asteroid);
 
     let mut main_scene = scene::Scene::new(get_main_render_pass(render_width, render_height, user.clone(), &*wnd.ctx()),
         user.clone());

@@ -6,7 +6,7 @@ in Ray {
     vec3 dir;
 } ray;
 
-const uint march_steps = 100;
+const uint march_steps = 32;
 uniform sampler3D volume;
 uniform vec3 light_dir;
 uniform mat4 model;
@@ -63,7 +63,7 @@ vec2 getNearFarT(vec3 dir, vec3 origin, out bool miss) {
 }
 float densityAt(vec3 pt) {
     float density = texture(volume, pt).r;
-    return smoothstep(0.12, 0.35, density);
+    return smoothstep(0.05, 0.85, density);
 }
 
 float miePhaseFunction(vec3 lightDir, vec3 rayDir) {
@@ -124,27 +124,29 @@ vec3 inScattering(vec3 pt, uint volShadowSteps, float near) {
     // also this causes an SO when we get too close to volumetric
     vec4 clipSpacePt = viewproj * model * vec4(ray.origin + ray.dir * near, 1.0);
     clipSpacePt /= clipSpacePt.w;
-    ivec2 location = ivec2(clipSpacePt.xy);
+    ivec2 location = ivec2(gl_FragCoord.xy);
     ivec2 tileId = location / ivec2(16, 16);
     uint workGroupIndex = tileId.y * tile_num_x + tileId.x;
     uint offset = workGroupIndex * MAX_LIGHTS_PER_TILE;
 
 
-    for(int i = 0; i < MAX_LIGHTS_PER_TILE && visibleLightBuffer.indices[offset + i] != -1; ++i) {
+    for(int i = 0; i < light_num/*MAX_LIGHTS_PER_TILE && visibleLightBuffer.indices[offset + i] != -1*/; ++i) {
 
-        LightData light = lights[visibleLightBuffer.indices[offset + i]];
+        LightData light = lights[i/*visibleLightBuffer.indices[offset + i]*/];
 
         vec3 avg_light_pos = (light.start + light.end) / 2.0;
         
         vec3 light_dir = (inverse(model) * vec4(avg_light_pos, 1.0)).xyz - pt;
         float dist = max(length(light_dir), 0.00001);
 
-        float attenuation = 1.0 / (dist * dist + 0.3);
-        vec3 light_radiance = light.color * attenuation;
+        if (dist < 2) {
+            float attenuation = 1.0 / (dist * dist + 0.3);
+            vec3 light_radiance = light.color * attenuation;
 
-        light_dir = normalize(light_dir);
-        lightSum += light_radiance * shadowTransmittance(pt, volShadowSteps, light_dir) 
-            * light_radiance * miePhaseFunction(light_dir, ray.dir);
+            light_dir = normalize(light_dir);
+            lightSum += light_radiance * shadowTransmittance(pt, volShadowSteps, light_dir) 
+                * light_radiance * miePhaseFunction(light_dir, ray.dir);
+        }
         
     }
     return lightSum;

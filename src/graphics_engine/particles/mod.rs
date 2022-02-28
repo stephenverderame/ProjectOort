@@ -24,6 +24,7 @@ pub trait Emitter {
     fn instance_data(&self) -> glium::vertex::VerticesSource;
 }
 
+/*
 pub fn dust_emitter<F : glium::backend::Facade>(facade: &F, pos: cgmath::Point3<f64>) -> Box<dyn Emitter> {
     use std::time::Instant;
     use cgmath::*;
@@ -53,7 +54,7 @@ pub fn dust_emitter<F : glium::backend::Facade>(facade: &F, pos: cgmath::Point3<
         }
     },
     |_| None))
-}
+}*/
 
 /// Constructs a simple particle emitting billboard particles
 /// 
