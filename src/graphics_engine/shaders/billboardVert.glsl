@@ -11,6 +11,11 @@ uniform mat4 proj;
 out vec4 color;
 out vec2 tcoords;
 
+out vec4 particle_pos_cam;
+out vec4 frag_pos_cam;
+out vec2 screen_coords;
+out float radius;
+
 mat3 rotateAxisAngle(vec3 axis, float angle)
 {
     axis = normalize(axis);
@@ -34,5 +39,11 @@ void main() {
     vec3 cam_up = rot * vi[1].xyz;
     vec3 pos_worldspace = instance_pos_rot.xyz + cam_right * pos.x * instance_scale.x
         + cam_up * pos.y * instance_scale.y;
-    gl_Position = proj * view * vec4(pos_worldspace, 1.0);
+
+    particle_pos_cam = view * vec4(instance_pos_rot.xyz, 1.0);
+    frag_pos_cam = view * vec4(pos_worldspace, 1.0);
+    gl_Position = proj * frag_pos_cam;
+    vec3 ndc = gl_Position.xyz / gl_Position.w; //perspective division (-1 to 1 range)
+    screen_coords = ndc.xy * 0.5 + 0.5; //convert to 0 to 1 range
+    radius = max(length(cam_right), length(cam_up)) * max(instance_scale.x, instance_scale.y);
 }

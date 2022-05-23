@@ -108,7 +108,7 @@ impl Scene {
         let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
         let mut pass = self.pass.take().unwrap();
         pass.run_pass(&*self.viewer.borrow(), shader, sd.clone(),
-        &mut |fbo, viewer, typ, cache, _| {
+        &mut |fbo, viewer, typ, cache, _, _| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
             {
                 let mut sdm = sd.borrow_mut();
@@ -159,7 +159,7 @@ pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, bg_skybox: &
     let mut rt = render_target::MipCubemapRenderTarget::new(128, mip_levels, 10., Box::new(pos_func));
     let iterations = Cell::new(0);
     let mut cache = shader::PipelineCache::default();
-    let res = rt.draw(&cam, None, &mut cache, &mut |fbo, viewer, _, cache, _| {
+    let res = rt.draw(&cam, None, &mut cache, &mut |fbo, viewer, _, cache, _, _| {
         let its = iterations.get();
         let mip_level = its;
         bg_skybox.set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));

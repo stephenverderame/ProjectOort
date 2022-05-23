@@ -95,7 +95,7 @@ impl RenderPass {
     /// Then runs the render target through the process pipeline until it procudes a texture
     pub fn run_pass(&mut self, viewer: &dyn Viewer, shader: &shader::ShaderManager, sdata: std::rc::Rc<std::cell::RefCell<shader::SceneData>>,
         render_func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, 
-            shader::RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) -> Option<TextureType>
+            shader::RenderPassType, &PipelineCache, TargetType, &Option<Vec<&TextureType>>)) -> Option<TextureType>
     {
         let mut saved_textures = Vec::<TextureType>::new();
         let mut registers = HashMap::<u16, Vec<usize>>::new();

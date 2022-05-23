@@ -63,9 +63,13 @@ pub fn dust_emitter<F : glium::backend::Facade>(facade: &F, pos: cgmath::Point3<
 /// 
 /// `path` - texture path for particle
 /// 
+/// `particle_num` - number of particles
+/// 
 /// `are_lights` - true if all particles are light sources
 /// 
 /// `particle_gen` - generator for new particles
+/// 
+/// `particle_step` - callback function each time particles are drawn
 pub fn simple_emitter<G, S, F>(pos: cgmath::Point3<f64>, are_lights: bool, particle_num: u32,
     emitter_lifetime: Option<std::time::Duration>, facade: &F, particle_gen: G,
     mut particle_step: Option<S>) -> Box<dyn Emitter>
@@ -107,7 +111,8 @@ pub fn simple_emitter<G, S, F>(pos: cgmath::Point3<f64>, are_lights: bool, parti
 }
 use cgmath::*;
 
-pub fn laser_hit_emitter<F : glium::backend::Facade>(body_pos: Point3<f64>, body_normal: Vector3<f64>, laser_velocity: Vector3<f64>, facade: &F) 
+pub fn laser_hit_emitter<F : glium::backend::Facade>(body_pos: Point3<f64>, 
+    body_normal: Vector3<f64>, laser_velocity: Vector3<f64>, facade: &F) 
     -> Box<dyn Emitter>
 {
     use rand::Rng;
@@ -133,4 +138,32 @@ pub fn laser_hit_emitter<F : glium::backend::Facade>(body_pos: Point3<f64>, body
         Some(|particle : &mut Particle, dt| {
             particle.vel.y -= 0.2 * dt;
         }))
+}
+
+pub fn asteroid_hit_emitter<F : glium::backend::Facade>(body_pos: Point3<f64>, body_normal: Vector3<f64>, 
+    relative_velocity: Vector3<f64>, facade: &F)
+    -> Box<dyn Emitter>
+{
+    use rand::Rng;
+    let d = body_normal.dot(body_pos.to_vec());
+    let z = (d - body_normal.x) / body_normal.z; // z coord of point with x = 1, y = 0 on the plane
+    let v = vec3(1., 0., z) - body_pos.to_vec(); // line on the plane
+    //let mut rnd = rand::thread_rng();
+    simple_emitter(body_pos, false, 20, Some(std::time::Duration::from_millis(8)), facade,
+        move |origin| {
+            let mut rnd = rand::thread_rng();
+            let mag = relative_velocity.magnitude() / 10.;
+            let phi = rnd.gen_range(0. .. std::f64::consts::PI / 5.);
+            let theta = rnd.gen_range(0. .. 2. * std::f64::consts::PI);
+            let z = body_normal.cross(v);
+            let vel = v.normalize() * f64::cos(theta) * f64::sin(phi) + body_normal.normalize() * f64::sin(theta) * f64::cos(phi) +
+                z.normalize() * f64::cos(phi);
+            // randomly select a vector on a unit sphere with the normal as the zenith
+            Particle::new(origin.pos, node::Node::default().pos(origin.pos).u_scale(rnd.gen_range(0.6 .. 1.2)))
+                .color(vec4(0.421875, 0.2265625, 0.046875, 0.5))
+                .lifetime(Duration::from_millis(rnd.gen_range(300 .. 1000)))
+                .vel(vel.normalize() * mag)
+        },
+        Some(|_ : &mut Particle, _| ())
+    )
 }

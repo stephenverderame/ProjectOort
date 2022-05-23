@@ -45,6 +45,14 @@ pub enum TextureType<'a> {
     Multi(Vec<Box<TextureType<'a>>>),
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum TargetType {
+    MsaaTarget,
+    CubemapTarget,
+    MipcubeTarget,
+    DepthTarget,
+}
+
 /// A RenderTarget is something that can be rendered to and produces a texture
 pub trait RenderTarget {
     /// Draws to the render target by passing a framebuffer to `func`. Must be called before `read()`.
@@ -60,7 +68,10 @@ pub trait RenderTarget {
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>,
         cache: &mut PipelineCache,
         func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType,
-        &PipelineCache, &Option<Vec<&TextureType>>)) -> Option<TextureType>;
+        &PipelineCache, TargetType, &Option<Vec<&TextureType>>)) -> Option<TextureType>;
+
+    /// Gets the type of this RenderTarget
+    fn type_of(&self) -> TargetType;
 }
 
 /// A TextureProcessor transforms input textures into an output texture. It is basically

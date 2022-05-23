@@ -68,6 +68,7 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
         .with_trans_getter(Box::new(|| 0))
         .with_pass(shader::RenderPassType::Transparent(user.borrow().as_entity().as_ptr() as *const entity::Entity)));
     let trans_to_cache = Box::new(texture_processor::ToCacheProcessor::new());
+    let cam_depth_to_cache = Box::new(texture_processor::ToCacheProcessor::new());
 
     let user_clone = user.clone();
     let render_cascade_1 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
@@ -83,12 +84,12 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
 
     let user_clone = user.clone();
     pipeline::RenderPass::new(vec![depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency], 
-        vec![cull_lights, eb, blur, compose, to_cache, trans_to_cache], 
+        vec![cull_lights, eb, blur, compose, to_cache, trans_to_cache, cam_depth_to_cache], 
         pipeline::Pipeline::new(vec![0], vec![
-            (0, (6, 0)), // light culling
+            (0, (6, 0)), (0, (12, 0)), (12, (1, 0)), // depth map to light culling and main render
             (6, (2, 0)), (6, (3, 0)), (6, (4, 0)), // cull -> render cascades
             (2, (10, 0)), (3, (10, 1)), (4, (10, 2)), // cascade to cache
-            (10, (1, 0)), (10, (5, 0)), (5, (11, 0)), (11, (1, 0)), // translucency, and store in cache
+            (10, (1, 0)), (10, (5, 0)), (5, (11, 0)), (11, (1, 1)), // translucency, and store in cache
             (1, (7, 0)), (7, (8, 0)), (8, (9, 1)), (1, (9, 0)) // main pass w/ bloom
         ])
     ).with_active_pred(Box::new(move |stage| {
@@ -141,7 +142,7 @@ fn main() {
         .at_pos(node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None)).with_depth();
     let particles = Rc::new(RefCell::new(
         particles::ParticleSystem::new()//.with_emitter(particles::dust_emitter(&*wnd.ctx(), point3(0., 0., 0.)), 0)
-        .with_billboard("assets/particles/smoke_07.png").with_billboard("assets/particles/circle_05.png")));
+        .with_billboard("assets/particles/smoke_01.png", 0.4).with_billboard("assets/particles/circle_05.png", 0.4)));
     
     // skybox must be rendered first, particles must be rendered last
     main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.borrow().as_entity(), container.as_entity(), asteroid.as_entity(),
@@ -154,7 +155,7 @@ fn main() {
 
     let dead_lasers = RefCell::new(Vec::new());
     let mut sim = physics::Simulation::<object::ObjectType>::new(point3(0., 0., 0.), 200.)
-    .with_on_hit(|a, _, hit| {
+    .with_on_hit(|a, b, hit| {
         if a.metadata == object::ObjectType::Laser {
             let ctx = graphics_engine::get_active_ctx();
             let facade = ctx.ctx.borrow();
@@ -163,7 +164,18 @@ fn main() {
             );
             dead_lasers.borrow_mut().push(a.transform.clone());
             false
-        } else { true }
+        } else if b.metadata == object::ObjectType::Asteroid {
+            let relative_vel = a.velocity - b.velocity;
+            if relative_vel.magnitude() > 1. {
+                let ctx = graphics_engine::get_active_ctx();
+                let facade = ctx.ctx.borrow();
+                particles.borrow_mut().new_emitter(
+                    particles::asteroid_hit_emitter(hit.pos_norm_b.0, hit.pos_norm_b.1, relative_vel, &*facade), 0
+                );
+            }
+            true
+        }
+        else { true }
     });
 
     let mut draw_cb = |dt : std::time::Duration, mut scene : std::cell::RefMut<scene::Scene>| {

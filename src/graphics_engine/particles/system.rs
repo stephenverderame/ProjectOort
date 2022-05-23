@@ -48,11 +48,13 @@ impl ParticleSystem {
     }
 
     /// Adds a billboard drawable at the next available index
-    pub fn with_billboard(mut self, path: &str) -> Self {
+    /// 
+    /// `density` - participating medium density in spherical billboard
+    pub fn with_billboard(mut self, path: &str, density: f32) -> Self {
         let ctx = super::super::get_active_ctx();
         let ctx = ctx.ctx.borrow();
         self.drawables.push(Box::new(super::super::billboard::Rect3D::new(
-            super::super::textures::load_texture_srgb(path, &*ctx), &*ctx
+            super::super::textures::load_texture_srgb(path, &*ctx), density, &*ctx
         )));
         self
     }

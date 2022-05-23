@@ -465,16 +465,21 @@ impl TextureProcessor for ToCacheProcessor {
     fn process<'b>(&mut self, input: Option<Vec<&'b TextureType>>, _: &shader::ShaderManager, 
         cache: &mut PipelineCache<'b>, _: Option<&shader::SceneData>) -> Option<TextureType>
     {
-        if input.is_none() { return None }
+        if input.is_none() { None }
         else {
             let input = input.unwrap();
             if input.len() == 1 {
-                if let TextureType::WithArg(b, StageArgs::ObjectArgs(i)) = input[0] {
-                    if let TextureType::TexCube(cbo) = &**b {
-                        cache.obj_cubemaps.insert(*i, cbo.to_ref());
-                        return None
-                    }
+                match input[0] {
+                    TextureType::WithArg(b, StageArgs::ObjectArgs(i)) => {
+                        if let TextureType::TexCube(cbo) = &**b {
+                            cache.obj_cubemaps.insert(*i, cbo.to_ref());
+                        }
+                    },
+                    TextureType::Depth2d(tex) => 
+                        cache.cam_depth = Some(tex.to_ref()),
+                    _ => (),
                 }
+                None
             } else {
                 let mut is_cascade = true;
                 for i in &input {
@@ -486,10 +491,11 @@ impl TextureProcessor for ToCacheProcessor {
                 }
                 if is_cascade {
                     ToCacheProcessor::cascade_maps_to_cache(input, cache);
-                    return None
+                    None
+                } else {
+                    panic!("Unrecognized cache input")
                 }
             }
         }
-        panic!("Unrecognized cache input")
     }
 }

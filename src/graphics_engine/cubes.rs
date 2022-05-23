@@ -123,7 +123,7 @@ pub fn gen_cubemap_from_sphere<F : glium::backend::Facade>(tex_path: &str, cubem
         ibl_maps: None,
     }));
     let cbo = gen_sky_pass.run_pass(&cam, shader_manager, sd.clone(), 
-    &mut |fbo, viewer, _, cache, _| {
+    &mut |fbo, viewer, _, cache, _, _| {
         {
             sd.borrow_mut().viewer = viewer_data_from(viewer);
         }

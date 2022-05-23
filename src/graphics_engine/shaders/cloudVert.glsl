@@ -8,8 +8,8 @@ out Ray {
 } ray;
 
 uniform mat4 model;
-uniform mat4 viewproj;
 uniform vec3 cam_pos;
+uniform mat4 viewproj;
 
 void main() {
     vec4 camPosLocal = inverse(model) * vec4(cam_pos, 1.0);
@@ -17,4 +17,5 @@ void main() {
     ray.dir = normalize(pos - camPosLocal.xyz);
     ray.origin = camPosLocal.xyz;// + vec3(0.5);
     gl_Position = viewproj * model * vec4(pos, 1.0);
+
 }

@@ -48,10 +48,10 @@ impl MsaaRenderTarget {
 
 impl RenderTarget for MsaaRenderTarget {
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
-        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache,&Option<Vec<&TextureType>>)) 
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, TargetType, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
-        func(&mut self.fbo, viewer, RenderPassType::Visual, cache, &pipeline_inputs);
+        func(&mut self.fbo, viewer, RenderPassType::Visual, cache, TargetType::MsaaTarget, &pipeline_inputs);
         let dst_target = glium::BlitTarget {
             left: 0,
             bottom: 0,
@@ -61,6 +61,10 @@ impl RenderTarget for MsaaRenderTarget {
         self.fbo.blit_whole_color_to(&self.out_fbo, 
             &dst_target, glium::uniforms::MagnifySamplerFilter::Linear);
         Some(TextureType::Tex2d(Ref(&self.out_tex)))
+    }
+
+    fn type_of(&self) -> TargetType {
+        TargetType::MsaaTarget
     }
 }
 
@@ -136,17 +140,18 @@ impl DepthRenderTarget {
 
 impl RenderTarget for DepthRenderTarget {
     fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
-        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, 
+            TargetType, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType> 
     {
         let maybe_view = self.viewer.as_ref().map(|x| x.borrow());
         let maybe_processed_view = self.getter.as_ref().map(|f| f(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer)));
         let viewer = maybe_processed_view.as_ref().map(|x| &**x).unwrap_or(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer));
         let vp : [[f32; 4]; 4] = (viewer.proj_mat() * viewer.view_mat()).into();
-        func(&mut self.main_fbo, viewer, shader::RenderPassType::Depth, cache, &pipeline_inputs);
+        func(&mut self.main_fbo, viewer, shader::RenderPassType::Depth, cache, TargetType::DepthTarget, &pipeline_inputs);
         let mut tex = TextureType::Depth2d(Ref(&*self.depth_tex));
         if let Some((ref mut fbo, depth, facs)) = self.trans_fbo.as_mut() {
-            func(fbo, viewer, shader::RenderPassType::TransparentDepth, cache, &pipeline_inputs);
+            func(fbo, viewer, shader::RenderPassType::TransparentDepth, cache, TargetType::DepthTarget, &pipeline_inputs);
             tex = TextureType::Multi(vec![Box::new(tex), 
                 Box::new(TextureType::Depth2d(Ref(&*depth))), 
                 Box::new(TextureType::Tex2d(Ref(&*facs)))]);
@@ -157,6 +162,10 @@ impl RenderTarget for DepthRenderTarget {
             Some(tex)
         }
        
+    }
+
+    fn type_of(&self) -> TargetType {
+        TargetType::DepthTarget
     }
 }
 
@@ -283,17 +292,22 @@ impl CubemapRenderTarget {
 
 impl RenderTarget for CubemapRenderTarget {
     fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
-        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, 
+            RenderPassType, &PipelineCache, TargetType, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
         let cam_base = self.cubemap.bind_views();
         self.fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
-        func(&mut self.fbo, &cam_base, self.pass_type, cache, &pipeline_inputs);
+        func(&mut self.fbo, &cam_base, self.pass_type, cache, TargetType::CubemapTarget, &pipeline_inputs);
         let tex = TextureType::TexCube(Ref(&self.cbo_tex));
         if let Some(get_id) = &self.get_trans_id {
             Some(TextureType::WithArg(
                 Box::new(tex), StageArgs::ObjectArgs(get_id())))
         } else { Some(tex) }
+    }
+
+    fn type_of(&self) -> TargetType {
+        TargetType::CubemapTarget
     }
 
 }
@@ -330,7 +344,8 @@ impl MipCubemapRenderTarget {
 
 impl RenderTarget for MipCubemapRenderTarget {
     fn draw(&mut self, _: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
-        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType, &PipelineCache, &Option<Vec<&TextureType>>)) 
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, 
+            &dyn Viewer, RenderPassType, &PipelineCache, TargetType, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType>
     {
         let ctx = super::super::get_active_ctx();
@@ -345,9 +360,13 @@ impl RenderTarget for MipCubemapRenderTarget {
             //let mipped_size = ((self.size as f32) * mip_pow) as u32;
             let mut fbo = framebuffer::SimpleFrameBuffer::with_depth_buffer(&*ctx.ctx.borrow(), 
                 cbo_tex.mipmap(mip_level).unwrap(), depth_tex.mipmap(mip_level).unwrap()).unwrap();
-            func(&mut fbo, &cam_base, RenderPassType::LayeredVisual, cache, &pipeline_inputs);
+            func(&mut fbo, &cam_base, RenderPassType::LayeredVisual, cache, TargetType::MipcubeTarget, &pipeline_inputs);
         }
         Some(TextureType::TexCube(Own(cbo_tex)))
+    }
+
+    fn type_of(&self) -> TargetType {
+        TargetType::MipcubeTarget
     }
 
 }

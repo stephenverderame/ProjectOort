@@ -163,6 +163,12 @@ impl CollisionObject {
         let max_scale = transform.scale.x.abs().max(transform.scale.y.abs().max(transform.scale.z.abs()));
         (transform.mat().transform_point(pt), radius * max_scale)
     }
+
+    /// Gets the estimated volume of this collision object
+    #[inline(always)]
+    pub fn aabb_volume(&self) -> f64 {
+        self.mesh.borrow().aabb_volume()
+    }
 }
 
 impl std::hash::Hash for CollisionObject {

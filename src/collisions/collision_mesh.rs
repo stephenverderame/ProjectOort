@@ -106,6 +106,15 @@ impl CollisionMesh {
         }
         (our_v, other_v)
     }
+
+    /// Gets the volume of the bounding box that encloses the entire tree
+    pub fn aabb_volume(&self) -> f64 {
+        let mut vol = 0.;
+        for mesh in &self.sub_meshes {
+            vol += mesh.bounding_box().vol()
+        }
+        vol
+    }
 }
 
 #[cfg(test)]

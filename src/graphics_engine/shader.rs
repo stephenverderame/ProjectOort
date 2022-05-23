@@ -106,22 +106,12 @@ impl ShaderType {
                 },
             Billboard =>
                 glium::DrawParameters {
-                    depth: glium::Depth {
-                        test: DepthTest::IfLess,
-                        write: false,
-                        .. Default::default()
-                    },
                     blend: glium::Blend::alpha_blending(),
                     backface_culling: glium::BackfaceCullingMode::CullClockwise,
                     .. Default::default()
                 },
             Cloud => 
                 glium::DrawParameters {
-                    depth: glium::Depth {
-                        test: DepthTest::IfLess,
-                        write: false,
-                        .. Default::default()
-                    },
                     blend: glium::Blend::alpha_blending(),
                     backface_culling: glium::BackfaceCullingMode::CullCounterClockwise,
                     .. Default::default()
@@ -342,6 +332,7 @@ pub struct PipelineCache<'a> {
     pub cascade_maps: Option<Vec<&'a glium::texture::DepthTexture2d>>,
     pub trans_cascade_maps: Option<Vec<(&'a glium::texture::DepthTexture2d, &'a glium::texture::Texture2d)>>,
     pub obj_cubemaps: HashMap<u32, &'a glium::texture::Cubemap>,
+    pub cam_depth: Option<&'a glium::texture::DepthTexture2d>,
 }
 
 impl<'a> std::default::Default for PipelineCache<'a> {
@@ -352,6 +343,7 @@ impl<'a> std::default::Default for PipelineCache<'a> {
             cascade_maps: None,
             obj_cubemaps: HashMap::new(),
             trans_cascade_maps: None,
+            cam_depth: None,
         }
     }
 }
@@ -370,7 +362,7 @@ pub enum UniformInfo<'a> {
     TriangleCollisionsInfo,
     LightCullInfo(LightCullData<'a>),
     CollisionDebugInfo([[f32; 4]; 4]),
-    BillboardInfo(&'a glium::texture::SrgbTexture2d),
+    BillboardInfo(&'a glium::texture::SrgbTexture2d, f32),
     CloudInfo(CloudData<'a>),
 }
 
@@ -390,7 +382,7 @@ impl<'a> std::fmt::Debug for UniformInfo<'a> {
             TriangleCollisionsInfo => "Compute triangle",
             LightCullInfo(_) => "Compute light cull",
             CollisionDebugInfo(_) => "Collision debug",
-            BillboardInfo(_) => "Billboard",
+            BillboardInfo(_, _) => "Billboard",
             CloudInfo(_) => "Cloud",
         };
         f.write_str(name)
@@ -431,7 +423,7 @@ impl<'a> UniformInfo<'a> {
             (SkyboxInfo(_), Visual) => ShaderType::Skybox,
             (EquiRectInfo(_), LayeredVisual) | (EquiRectInfo(_), Transparent(_)) => ShaderType::ParallelEqRect,
             (SkyboxInfo(_), LayeredVisual) | (SkyboxInfo(_), Transparent(_)) => ShaderType::ParallelSky,
-            (BillboardInfo(_), Visual) => ShaderType::Billboard,
+            (BillboardInfo(_, _), Visual) => ShaderType::Billboard,
 
             // tex processors
             (UiInfo(_), Visual) => ShaderType::UiShader,
@@ -482,10 +474,12 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
     BrdfLutUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
     DepthUniform(UniformsStorage<'a, f32, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    BillboardUniform(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], 
-        UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    CloudUniform(UniformsStorage<'a, i32, UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
-        UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>),
+    BillboardUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
+        UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
+    CloudUniform(UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], 
+        UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, i32, 
+        UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
+        UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
     CloudDepthUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
         UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
     
@@ -825,10 +819,12 @@ impl ShaderManager {
                 model: model.clone(),
                 inv_fac: 0.,
             }),
-            (BillboardInfo(tex), Visual) => UniformType::BillboardUniform(glium::uniform! {
+            (BillboardInfo(tex, density), Visual) => UniformType::BillboardUniform(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 tex: sample_mip_repeat!(tex),
+                cam_depth: sample_linear_clamp!(cache.unwrap().cam_depth.unwrap()),
+                particle_density: *density,
             }),
             (CloudInfo(CloudData{volume, model}), Visual) => UniformType::CloudUniform(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
@@ -837,6 +833,9 @@ impl ShaderManager {
                 cam_pos: scene_data.unwrap().viewer.cam_pos,
                 volume: sample_linear_b_clamp!(volume),
                 tile_num_x: cache.as_ref().map(|x| x.tiles_x).unwrap().unwrap() as i32,
+                view: scene_data.unwrap().viewer.view,
+                proj: scene_data.unwrap().viewer.proj,
+                cam_depth: sample_linear_clamp!(cache.unwrap().cam_depth.unwrap()),
             }),
             (CloudInfo(CloudData{volume, model}), Depth) => UniformType::CloudDepthUniform(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,

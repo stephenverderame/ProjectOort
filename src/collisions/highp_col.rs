@@ -2,7 +2,9 @@ use super::bvh::Triangle;
 
 /// Encapsulates collision information
 pub struct HitData {
+    /// The point of collision and the impact normal on the first collider's mesh
     pub pos_norm_a: (Point3<f64>, Vector3<f64>),
+    /// The point of collision (and the normal computed from it) on the second collider's mesh
     pub pos_norm_b: (Point3<f64>, Vector3<f64>),
 }
 

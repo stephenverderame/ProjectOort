@@ -8,9 +8,12 @@ in Ray {
 
 const uint march_steps = 32;
 uniform sampler3D volume;
+uniform sampler2D cam_depth;
 uniform vec3 light_dir;
 uniform mat4 model;
 uniform mat4 viewproj;
+uniform mat4 view;
+uniform mat4 proj;
 uniform int tile_num_x;
 
 const float EPS = 0.00001;
@@ -23,6 +26,9 @@ const float mie_approx_k = 1.55 * mie_approx_g - 0.55
 const float PI = 3.14159265358979323846264338327950288;
 const vec3 light_lum = vec3(1.0);
 const uint MAX_LIGHTS_PER_TILE = 1024;
+// TODO: Probably should be a uniform
+const float cam_near_plane = 0.1;
+const float cam_far_plane = 1000.0;
 
 struct LightData {
     vec3 start;
@@ -152,6 +158,28 @@ vec3 inScattering(vec3 pt, uint volShadowSteps, float near) {
     return lightSum;
 }
 
+float linearize_depth(float depth) {
+    float near = cam_near_plane;
+    float far = cam_far_plane;
+    float z = depth * 2.0 - 1.0; // to [-1, 1]
+    return (2.0 * near * far) / (far + near - z * (far - near));
+}
+
+/// Returns `true` if `sample_pt` is occluded by an opaque object from the perspective
+/// of the player. `false` otherwise
+bool is_occluded(vec3 sample_pt) {
+    vec4 sample_view_space = view * model * vec4(sample_pt, 1.0);
+    vec4 frag_pos = proj * sample_view_space;
+
+    vec2 ndc = frag_pos.xy / frag_pos.w;
+    vec2 screen_coords = ndc * 0.5 + 0.5; //convert to 0 to 1 range
+
+    float depth = texture(cam_depth, screen_coords).r;
+
+    return depth < sample_view_space.z;
+
+}
+
 vec4 rayMarch2(vec3 rayOrigin, vec2 near_far) {
     #define FROSTBITE_METHOD
     float delta = (near_far.y - max(near_far.x, 0.0)) / float(march_steps);
@@ -161,6 +189,7 @@ vec4 rayMarch2(vec3 rayOrigin, vec2 near_far) {
     float acc_alpha = 0.0;
     for (uint i = 0; i < march_steps; ++i) {
         vec3 samplePt = rayOrigin + ray.dir * delta * float(i);
+        if (is_occluded(samplePt)) break;
         float d = densityAt(samplePt);
         #ifdef FROSTBITE_METHOD
             vec3 scattering = d * scattering_coeff;

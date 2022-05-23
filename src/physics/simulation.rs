@@ -6,6 +6,8 @@ use collisions::*;
 use std::cell::Cell;
 
 /// Data to resolve a collision
+/// Sum of all collision resolving forces for a single object
+/// Allows a single object to collide with multiple other objects
 #[derive(Clone)]
 struct CollisionResolution {
     vel: Vector3<f64>,

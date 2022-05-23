@@ -19,14 +19,20 @@ pub struct Rect3D {
     vertices: glium::VertexBuffer<Vertex>,
     indices: glium::IndexBuffer<u32>,
     tex: glium::texture::SrgbTexture2d,
+    spherical_density: f32,
 }
 
 impl Rect3D {
-    pub fn new<F : backend::Facade>(tex: glium::texture::SrgbTexture2d, facade: &F) -> Self {
+    /// Constructs a new billboard
+    /// 
+    /// `spherical_density` - the particle density for a spherical billboard
+    pub fn new<F : backend::Facade>(tex: glium::texture::SrgbTexture2d, 
+        spherical_density: f32, facade: &F) -> Self 
+    {
         Self {
             vertices: vertex::VertexBuffer::immutable(facade, &RECT_VERTS).unwrap(),
             indices: index::IndexBuffer::immutable(facade, index::PrimitiveType::TrianglesList, &RECT_INDICES).unwrap(),
-            tex,
+            tex, spherical_density,
         }
     }
 }
@@ -34,7 +40,7 @@ impl Rect3D {
 impl Drawable for Rect3D {
     fn render_args<'a>(&'a mut self, _: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
-        let info = shader::UniformInfo::BillboardInfo(&self.tex);
+        let info = shader::UniformInfo::BillboardInfo(&self.tex, self.spherical_density);
         vec![(info, VertexHolder::new(VertexSourceData::Single(From::from(&self.vertices))), 
             From::from(&self.indices))]
     }
