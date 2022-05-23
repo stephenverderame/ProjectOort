@@ -125,7 +125,6 @@ fn main() {
     let cloud = entity::EntityBuilder::new(cubes::Volumetric::cloud(128, &*wnd.ctx()))
         .at(node::Node::default().pos(point3(15., 5., 5.)).u_scale(15.))
         .with_pass(shader::RenderPassType::Visual)
-        .with_pass(shader::RenderPassType::Depth)
         .render_order(entity::RenderOrder::Last).build();
     let cloud = Rc::new(RefCell::new(cloud));
 

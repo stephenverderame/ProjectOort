@@ -34,7 +34,7 @@ enum ShaderType {
     ParallelEqRect,
     ParallelPrefilter,
     Cloud,
-    CloudDepth,
+    //CloudDepth,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -114,16 +114,6 @@ impl ShaderType {
                 glium::DrawParameters {
                     blend: glium::Blend::alpha_blending(),
                     backface_culling: glium::BackfaceCullingMode::CullCounterClockwise,
-                    .. Default::default()
-                },
-            CloudDepth => 
-                glium::DrawParameters {
-                    depth: glium::Depth {
-                        test: DepthTest::IfLess,
-                        write: true,
-                        .. Default::default()
-                    },
-                    backface_culling: glium::BackfaceCullingMode::CullClockwise,
                     .. Default::default()
                 },
             _ => glium::DrawParameters::default(),
@@ -416,7 +406,7 @@ impl<'a> UniformInfo<'a> {
             (LaserInfo, Depth) => ShaderType::DepthShader,
             (CollisionDebugInfo(_), Visual) => ShaderType::CollisionDebug,
             (CloudInfo(_), Visual) => ShaderType::Cloud,
-            (CloudInfo(_), Depth) => ShaderType::CloudDepth,
+            //(CloudInfo(_), Depth) => ShaderType::CloudDepth,
 
             // game objects
             (EquiRectInfo(_), Visual) => ShaderType::EquiRect,
@@ -480,8 +470,6 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, i32, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
-    CloudDepthUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
-        UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -632,8 +620,6 @@ impl ShaderManager {
             "shaders/parallelSkyGeom.glsl").unwrap();
         let cloud_shader = load_shader_source!(facade,
             "shaders/cloudVert.glsl", "shaders/cloudFrag.glsl").unwrap();
-        let cloud_depth = load_shader_source!(facade,
-            "shaders/cloudVert.glsl", "shaders/cloudDepthFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -663,7 +649,6 @@ impl ShaderManager {
         shaders.insert(ShaderType::ParallelAnimPbr, parallel_anim_pbr);
         shaders.insert(ShaderType::ParallelPrefilter, parallel_prefilter);
         shaders.insert(ShaderType::Cloud, cloud_shader);
-        shaders.insert(ShaderType::CloudDepth, cloud_depth);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -836,13 +821,6 @@ impl ShaderManager {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 cam_depth: sample_linear_clamp!(cache.unwrap().cam_depth.unwrap()),
-            }),
-            (CloudInfo(CloudData{volume, model}), Depth) => UniformType::CloudDepthUniform(glium::uniform! {
-                viewproj: scene_data.unwrap().viewer.viewproj,
-                model: *model,
-                view: scene_data.unwrap().viewer.view,
-                cam_pos: scene_data.unwrap().light_pos.unwrap(),
-                volume: sample_linear_b_clamp!(volume),
             }),
             (data, pass) => 
                 panic!("Invalid shader/shader data combination with shader (Args: `{:?}` '{:?}') during pass '{:?}'", data, typ, pass),

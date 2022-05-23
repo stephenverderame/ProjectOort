@@ -174,9 +174,9 @@ bool is_occluded(vec3 sample_pt) {
     vec2 ndc = frag_pos.xy / frag_pos.w;
     vec2 screen_coords = ndc * 0.5 + 0.5; //convert to 0 to 1 range
 
-    float depth = texture(cam_depth, screen_coords).r;
+    float depth = linearize_depth(texture(cam_depth, screen_coords).r);
 
-    return depth < sample_view_space.z;
+    return depth < -sample_view_space.z;
 
 }
 
