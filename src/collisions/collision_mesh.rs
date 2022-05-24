@@ -146,7 +146,7 @@ mod test {
     fn bvh_collisions() {
         let method = highp_col::HighPNone {};
         let plane_mesh = CollisionMesh::new("assets/Ships/StarSparrow01.obj", TreeStopCriteria::default());
-        assert_eq!(plane_mesh.collision(&Matrix4::from_scale(1.), 
+       assert_eq!(plane_mesh.collision(&Matrix4::from_scale(1.), 
             &plane_mesh, &Matrix4::from_translation(vec3(3., 4., 1.)), &method).is_some(), false);
         assert_eq!(plane_mesh.collision(&Matrix4::from_scale(1.), 
             &plane_mesh, &Matrix4::from_translation(vec3(3., 3., 1.)), &method).is_some(), true);

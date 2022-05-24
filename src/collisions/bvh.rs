@@ -189,7 +189,7 @@ impl<T : BaseFloat> BVHNode<T> {
     /// we should descend `other` during a collision query
     #[inline(always)]
     fn should_descend<F : BaseFloat>(&self, other: &BVHNode<F>) -> bool {
-        !self.is_leaf() && self.volume.vol() > other.volume.vol()
+        !self.is_leaf() && (self.volume.vol() > other.volume.vol() || other.is_leaf())
     }
 
     /// Descends the collision heirarchy, descending into the largest
@@ -210,11 +210,11 @@ impl<T : BaseFloat> BVHNode<T> {
             if a.is_leaf() && b.is_leaf() {
                 on_both_leaf(a, b);
             } else if a.should_descend(b) {
-                a.right.as_ref().map(|x| stack.push_front((&*x, b)));
-                a.left.as_ref().map(|x| stack.push_front((&*x, b)));
+                a.right.as_ref().map(|x| stack.push_front((&*x, b))).unwrap();
+                a.left.as_ref().map(|x| stack.push_front((&*x, b))).unwrap();
             } else {
-                b.right.as_ref().map(|x| stack.push_front((a, &*x)));
-                b.left.as_ref().map(|x| stack.push_front((a, &*x)));
+                b.right.as_ref().map(|x| stack.push_front((a, &*x))).unwrap();
+                b.left.as_ref().map(|x| stack.push_front((a, &*x))).unwrap();
             }
         }
     }

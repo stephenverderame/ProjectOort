@@ -356,8 +356,9 @@ impl<'a, 'b, T : Copy> std::ops::DerefMut for MutMappedBufferSlice<'a, 'b, T> {
 mod test {
     use super::*;
     use serial_test::*;
+    use crate::shader;
 
-    fn init() -> glium::Display {
+    fn init() -> (shader::ShaderManager, glium::Display) {
         use glium::*;
         use glutin::window::{WindowBuilder};
         use glutin::ContextBuilder;
@@ -369,14 +370,14 @@ mod test {
         let wnd_ctx = ContextBuilder::new();//.build_headless(&e_loop, glutin::dpi::PhysicalSize::from((128, 128)));
         let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
         gl::load_with(|s| wnd_ctx.gl_window().get_proc_address(s));
-        wnd_ctx
+        (shader::ShaderManager::init(&wnd_ctx), wnd_ctx)
     }
 
     #[test]
     #[serial]
     fn map_test() {
         use cgmath::*;
-        let _ = init();
+        let (_a, _b) = init();
         unsafe { assert_no_error!() };
         let ssbo = SSBO::<[[f32; 4]; 4]>::static_alloc_dyn(10, None);
 
