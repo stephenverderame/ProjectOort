@@ -23,15 +23,20 @@ pub struct RigidBody<T> {
     pub col_type: CollisionMethod,
     pub metadata: T,
     pub mass: f64,
+    inertial_tensor: Matrix3<f64>,
 }
 
 impl<T> RigidBody<T> {
     pub fn new(transform: Rc<RefCell<node::Node>>, collider: Option<collisions::CollisionObject>,
         body_type: BodyType, metadata: T) -> Self
     {
+        let mass = collider.as_ref().map(|collider| collider.aabb_volume()).unwrap_or(0.);
         Self {
             transform,
-            mass: collider.as_ref().map(|collider| collider.aabb_volume()).unwrap_or(0.),
+            mass,
+            inertial_tensor: collider.as_ref()
+                .map(|collider| Self::calc_inertial_tensor(collider))
+                .unwrap_or(Matrix3::from_scale(1.0)),
             collider,
             velocity: vec3(0., 0., 0.),
             rot_vel: vec3(0., 0., 0.),
@@ -65,5 +70,36 @@ impl<T> RigidBody<T> {
     pub fn with_density(mut self, density: f64) -> Self {
         self.density(density);
         self
+    }
+
+    /// Gets the moment of inertia tensor
+    pub fn moment_inertia(&self) -> Matrix3<f64> {
+        self.mass * self.inertial_tensor
+    }
+
+    /// Computes the "unit" inertial tensor 
+    /// (must be multiplied by mass prior to usage)
+    fn calc_inertial_tensor(collider: &collisions::CollisionObject) -> Matrix3<f64> {
+        let mut ixx = 0.;
+        let mut iyy = 0.;
+        let mut izz = 0.;
+        let mut ixy = 0.;
+        let mut ixz = 0.;
+        let mut iyz = 0.;
+        collider.forall_verts(|pt| {
+            let pt : Point3<f64> = pt.pos.cast().unwrap();
+            ixx += pt.y * pt.y + pt.z * pt.z;
+            iyy += pt.x * pt.x + pt.z * pt.z;
+            izz += pt.x * pt.x + pt.y * pt.y;
+            ixy += pt.x * pt.y;
+            ixz += pt.x * pt.z;
+            iyz += pt.y * pt.z;
+        });
+        // column major
+        Matrix3::new(
+            ixx, -ixy, -ixz,
+            -ixy, iyy, -iyz,
+            -ixz, -iyz, izz
+        )
     }
 }

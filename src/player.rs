@@ -62,16 +62,13 @@ impl Player {
         {
             let model : cgmath::Matrix4<f64> = std::convert::From::from(&*self.body.transform.borrow());
             let forward = model.transform_vector(cgmath::vec3(0., 0., 1.));
-            self.body.velocity = 
+            self.body.velocity += 
                 match input.movement {
-                    controls::Movement::Forward => forward * 30f64,
-                    controls::Movement::Backwards => forward * -10f64,
+                    controls::Movement::Forward => forward,
+                    controls::Movement::Backwards => -forward,
                     _ => vec3(0., 0., 0.),
                 };
-            let rot = self.body.transform.borrow().orientation;
-            let delta_rot : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(input.pitch), 
-                Deg::<f64>(0.), Deg::<f64>(input.roll)).into();
-            self.body.transform.borrow_mut().orientation = rot * delta_rot;
+            self.body.rot_vel = vec3(input.pitch, 0., input.roll) / 10000.;
         }
         &mut self.body
         

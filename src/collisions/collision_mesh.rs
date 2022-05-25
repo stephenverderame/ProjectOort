@@ -115,6 +115,13 @@ impl CollisionMesh {
         }
         vol
     }
+
+    /// Iterates over all the vertices of this mesh
+    pub fn forall_verts<F : FnMut(&CollisionVertex<f32>)>(&self, func: &mut F) {
+        for mesh in &self.sub_meshes {
+            mesh.forall_verts(func)
+        }
+    }
 }
 
 #[cfg(test)]

@@ -339,4 +339,11 @@ impl<T : BaseFloat> OBBTree<T> {
         self.root.get_colliding_boxes(self_transform, &other.root, other_transform)
     }
 
+    /// Iterates over all the vertices of this bvh
+    pub fn forall_verts<F : FnMut(&CollisionVertex<T>)>(&self, func: &mut F) {
+        for v in &self._vertices.as_ref().vertices {
+            func(v)
+        }
+    }
+
 }

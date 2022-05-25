@@ -25,23 +25,32 @@ impl CollisionResolution {
     }
 
     fn add_collision<T>(&mut self, norm: Vector3<f64>, pt: Point3<f64>, 
-        body: &RigidBody<T>, colliding_body: &RigidBody<T>, dt_sec: f64) 
+        body: &RigidBody<T>, colliding_body: &RigidBody<T>) 
     {
         // Assumes eleastic collisions
         let relative_vel = body.velocity - colliding_body.velocity;
         let v = relative_vel.dot(norm) * norm;
         if colliding_body.center().dot(v) / v.dot(v) > body.center().dot(v) / v.dot(v) {
             //self.vel -= v;
-            let m_eff = 1.0 / (1.0 / body.mass + 1.0 / colliding_body.mass);
-            let impact_speed = norm.dot(body.velocity - colliding_body.velocity);
-            let impulse = 1.52 * m_eff * impact_speed;
-            // (1 + coeff of resitution) * effective mass * impact speed
-            self.vel -= impulse / body.mass * norm;
+            let body_inertia = body.moment_inertia();
+            let colliding_inertia = colliding_body.moment_inertia();
+            let body_lever = pt - body.center();
+            let colliding_lever = pt - colliding_body.center();
 
-            let force = impulse / dt_sec * norm;
-            let lever = pt - body.center();
-            let torque = force.cross(lever);
-            self.rot += torque / body.mass;
+            let m_eff = 1.0 / body.mass + 1.0 / colliding_body.mass;
+            let impact_speed = norm.dot(body.velocity - colliding_body.velocity);
+            let impact_angular_speed = body_lever.cross(norm).dot(body.rot_vel) - 
+                colliding_lever.cross(norm).dot(colliding_body.rot_vel);
+            let body_angular_denom_term = body_lever.cross(norm)
+                .dot(body_inertia.invert().unwrap() * body_lever.cross(norm));
+            let colliding_angular_denom_term = colliding_lever.cross(norm)
+                .dot(colliding_inertia.invert().unwrap() * colliding_lever.cross(norm));
+            let impulse = 1.52 * (impact_speed + impact_angular_speed) / 
+                (m_eff + body_angular_denom_term + colliding_angular_denom_term);
+            // (1 + coeff of resitution) * effective mass * impact speed
+            // impulse = kg * m/s = Ns
+            self.vel -= impulse / body.mass * norm;
+            self.rot += body_inertia.invert().unwrap() * (impulse * norm).cross(body_lever);
         }
         if body.velocity.magnitude() < 0.001 && colliding_body.velocity.magnitude() < 0.001 {
             // two objects spawned in a collission
@@ -73,15 +82,23 @@ fn insert_into_octree<T>(tree: &mut collisions::CollisionTree, objs: &[&mut Rigi
     }
 }
 
+/// Converts an angular velocity to a rotation that can be applied to a body
+/// orientation which will undergo a rotation of that angular velocity for `dt` seconds
+/// 
+/// `rot_vel` - direction is the axis of rotation and magnitude is the velocity in radians per second
 fn rot_vel_to_quat(rot_vel: Vector3<f64>, dt: f64) -> Quaternion<f64> {
-    let ha = rot_vel * dt * 0.5;
-    let mag = ha.magnitude();
+    let ha = rot_vel * 0.5 * 7000. * dt;
+    let mag = rot_vel.magnitude();
     if mag > 1.0 {
         let ha = ha * f64::sin(mag) / mag;
         Quaternion::new(f64::cos(mag), ha.x, ha.y, ha.z)
     } else {
         Quaternion::new(1.0, ha.x, ha.y, ha.z)
     }.normalize()
+    /*let mag = rot_vel.magnitude();
+    let imag_part = rot_vel * f64::sin(mag / 2.) / mag;
+    Quaternion::new(f64::cos(mag / 2.), imag_part.x, imag_part.y, imag_part.z).normalize()*/
+
 }
 
 /// Calculates velocity and updates position and orientation of each dynamic body
@@ -107,13 +124,13 @@ fn resolve_forces<T>(objects: &mut [&mut RigidBody<T>], resolvers: Vec<Collision
         .filter(|(resolver, _)| resolver.is_collide) 
     {
         let obj = &mut objects[body_idx];
+        obj.velocity += resolver.vel;
         if obj.body_type == BodyType::Controlled {
-            obj.transform.borrow_mut().pos += resolver.vel * dt;
             let rot = obj.transform.borrow().orientation;
-            obj.transform.borrow_mut().orientation = rot * rot_vel_to_quat(resolver.rot / obj.mass * -0.05, dt);
+            obj.transform.borrow_mut().orientation = rot * rot_vel_to_quat(resolver.rot / 2., dt);
+            obj.rot_vel += resolver.rot / 100.;
         } else {
-            obj.velocity += resolver.vel;
-            obj.rot_vel += resolver.rot / obj.mass;
+            obj.rot_vel += resolver.rot;
         }
 
     }
@@ -175,7 +192,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     /// `body` and `resolver` are the body and resolver for the rigid body whose contact point and normal
     /// is stored in `pos_norm_a`
     fn add_collision(&self, resolver: &mut CollisionResolution, body: &RigidBody<T>, 
-        other_body: &RigidBody<T>, data: HitData, dt_sec: f64)
+        other_body: &RigidBody<T>, data: HitData)
     {
         let mut func = self.on_hit.take();
         if let Some(cb) = func.as_mut() {
@@ -186,19 +203,21 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         if let Some(cb) = test_func.as_ref() {
             if cb(body, other_body, &data) {
                 resolver.add_collision(data.pos_norm_b.1, data.pos_norm_b.0, 
-                    body, other_body, dt_sec);
+                    body, other_body);
             }
         }
         else {
             resolver.add_collision(data.pos_norm_b.1, data.pos_norm_b.0, 
-                body, other_body, dt_sec);
+                body, other_body);
         }
         self.do_resolve.set(test_func);
     }
 
     /// Gets a vector equal in length to `objects` where corresponding elements represent the change in position/rotation
     /// needed to resolve each object of collisions
-    fn get_resolving_forces(&self, objects: &[&mut RigidBody<T>], dt_sec: f64) -> Vec<CollisionResolution> {
+    /// 
+    /// Each CollisionResolution struct handles the collision for a single rigid body
+    fn get_resolving_forces(&self, objects: &[&mut RigidBody<T>]) -> Vec<CollisionResolution> {
         let mut resolvers = Vec::<CollisionResolution>::new();
         resolvers.resize(objects.len(), CollisionResolution::identity());
         let mut tested_collisions = HashMap::new();
@@ -215,7 +234,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
                 {
                     // if we already tested the collision, no need to retest it or execute the collision callback again
                     // just do the collision resolution on this body now
-                    resolvers[body_idx].add_collision(*norm, *pos, body, &other_body, dt_sec);
+                    resolvers[body_idx].add_collision(*norm, *pos, body, &other_body);
                 }
                 else {
                     match other.collision(&collider, method) {
@@ -223,7 +242,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
                             self.add_collision(&mut resolvers[body_idx], body, other_body, HitData {
                                 pos_norm_a: pos_norm_b,
                                 pos_norm_b: pos_norm_a,
-                            }, dt_sec);
+                            });
                             temp_map.insert((collider.clone(), other.clone()), pos_norm_b);
                         },
                         Some(Hit::NoData) => {
@@ -243,7 +262,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         let dt_sec = dt.as_secs_f64();
         insert_into_octree(&mut self.obj_tree, objects);
         apply_forces(objects, dt_sec);
-        let resolvers = self.get_resolving_forces(objects, dt_sec);
+        let resolvers = self.get_resolving_forces(objects);
         resolve_forces(objects, resolvers, dt_sec);
         update_octree(objects);
     }

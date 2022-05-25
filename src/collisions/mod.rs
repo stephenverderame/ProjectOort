@@ -169,6 +169,12 @@ impl CollisionObject {
     pub fn aabb_volume(&self) -> f64 {
         self.mesh.borrow().aabb_volume()
     }
+
+    /// Calls `func` on all vertices of this mesh
+    #[inline(always)]
+    pub fn forall_verts<F : FnMut(&bvh::CollisionVertex<f32>)>(&self, mut func: F) {
+        self.mesh.borrow().forall_verts(&mut func)
+    }
 }
 
 impl std::hash::Hash for CollisionObject {

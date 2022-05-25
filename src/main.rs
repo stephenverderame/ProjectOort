@@ -24,7 +24,7 @@ fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, la
         let mut transform = user.root().borrow().clone();
         transform.scale = cgmath::vec3(0.3, 0.3, 1.);
         transform.pos += user.forward() * 10.;
-        lasers.new_instance(transform, Some(user.forward() * 40f64));
+        lasers.new_instance(transform, Some(user.forward() * 120f64));
     }
 }
 
@@ -150,7 +150,7 @@ fn main() {
 
     laser.borrow_mut().new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)).pos(point3(10., 0., 10.)), None);
     laser.borrow_mut().new_instance(node::Node::default().pos(point3(-120., 120., 0.)), None);
-    //laser.borrow_mut().body(0).rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(0.), Deg::<f64>(45. * 0.05), Deg::<f64>(0.)).into();
+    laser.borrow_mut().body(0).rot_vel = vec3(0., 10., 0.);
 
     let dead_lasers = RefCell::new(Vec::new());
     let mut sim = physics::Simulation::<object::ObjectType>::new(point3(0., 0., 0.), 200.)

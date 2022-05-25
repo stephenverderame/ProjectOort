@@ -155,6 +155,7 @@ impl GameObject {
     }
 
     /// Makes the object unmoveable in physics simulations
+    #[allow(unused)]
     pub fn immobile(mut self) -> Self {
         self.bod_type = BodyType::Static;
         for body in &mut self.instances {
