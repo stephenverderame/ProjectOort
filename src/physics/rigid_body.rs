@@ -6,7 +6,7 @@ use cgmath::*;
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash)]
 pub enum BodyType {
-    Static, Dynamic
+    Static, Dynamic, Controlled
 }
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone)]
@@ -17,7 +17,7 @@ pub enum CollisionMethod {
 pub struct RigidBody<T> {
     pub transform: Rc<RefCell<node::Node>>,
     pub velocity: cgmath::Vector3<f64>,
-    pub rot_vel: Quaternion<f64>,
+    pub rot_vel: Vector3<f64>,
     pub collider: Option<collisions::CollisionObject>,
     pub body_type: BodyType,
     pub col_type: CollisionMethod,
@@ -34,7 +34,7 @@ impl<T> RigidBody<T> {
             mass: collider.as_ref().map(|collider| collider.aabb_volume()).unwrap_or(0.),
             collider,
             velocity: vec3(0., 0., 0.),
-            rot_vel: Quaternion::new(1., 0., 0., 0.),
+            rot_vel: vec3(0., 0., 0.),
             body_type,
             col_type: CollisionMethod::Triangle,
             metadata,
@@ -54,9 +54,16 @@ impl<T> RigidBody<T> {
     /// supplied density and volume of the body
     /// 
     /// If this object doesn't have a collision body, sets the mass to the supplied density value
-    pub fn density(mut self, density: f64) -> Self {
-        let mass = self.collider.as_ref().map(|collider| density * collider.aabb_volume()).unwrap_or(density);
+    pub fn density(&mut self, density: f64) {
+        let scale = self.transform.borrow().scale;
+        let scale = scale.x * scale.y * scale.z;
+        let mass = self.collider.as_ref().map(|collider| density * collider.aabb_volume() * scale).unwrap_or(density);
         self.mass = mass;
+    }
+
+    /// @see `density`
+    pub fn with_density(mut self, density: f64) -> Self {
+        self.density(density);
         self
     }
 }

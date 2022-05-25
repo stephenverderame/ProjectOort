@@ -115,7 +115,7 @@ fn main() {
         "assets/Ships/StarSparrow01.obj")));
     let mut asteroid = object::GameObject::new(model::Model::new("assets/asteroid1/Asteroid.obj", &*wnd.ctx()).with_instancing(), 
         object::ObjectType::Asteroid).with_depth()
-        .with_collisions("assets/asteroid1/Asteroid.obj", collisions::TreeStopCriteria::default()).immobile();
+        .with_collisions("assets/asteroid1/Asteroid.obj", collisions::TreeStopCriteria::default()).density(2.71);//.immobile();
     let asteroid_character = RefCell::new(object::AnimGameObject::new(model::Model::new("assets/animTest/dancing_vampire.dae", &*wnd.ctx())).with_depth());
     asteroid_character.borrow().transform().borrow_mut().scale = vec3(0.07, 0.07, 0.07);
     (*asteroid_character.borrow_mut()).start_anim("", true);
@@ -150,20 +150,24 @@ fn main() {
 
     laser.borrow_mut().new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)).pos(point3(10., 0., 10.)), None);
     laser.borrow_mut().new_instance(node::Node::default().pos(point3(-120., 120., 0.)), None);
-    laser.borrow_mut().body(0).rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(0.), Deg::<f64>(45. * 0.05), Deg::<f64>(0.)).into();
+    //laser.borrow_mut().body(0).rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(0.), Deg::<f64>(45. * 0.05), Deg::<f64>(0.)).into();
 
     let dead_lasers = RefCell::new(Vec::new());
     let mut sim = physics::Simulation::<object::ObjectType>::new(point3(0., 0., 0.), 200.)
     .with_on_hit(|a, b, hit| {
-        if a.metadata == object::ObjectType::Laser {
+        if a.metadata == object::ObjectType::Laser ||
+            b.metadata == object::ObjectType::Laser {
             let ctx = graphics_engine::get_active_ctx();
             let facade = ctx.ctx.borrow();
             particles.borrow_mut().new_emitter(
-                particles::laser_hit_emitter(hit.pos_norm_b.0, hit.pos_norm_b.1, a.velocity, &*facade), 1
+                particles::laser_hit_emitter(hit.pos_norm_b.0, hit.pos_norm_b.1, a.velocity - b.velocity, &*facade), 1
             );
-            dead_lasers.borrow_mut().push(a.transform.clone());
-            false
-        } else if b.metadata == object::ObjectType::Asteroid {
+            let laser_transform = if a.metadata == object::ObjectType::Laser { a.transform.clone() } 
+            else { b.transform.clone() };
+            dead_lasers.borrow_mut().push(laser_transform);
+        } 
+        if b.metadata == object::ObjectType::Asteroid ||
+            a.metadata == object::ObjectType::Asteroid {
             let relative_vel = a.velocity - b.velocity;
             if relative_vel.magnitude() > 1. {
                 let ctx = graphics_engine::get_active_ctx();
@@ -172,9 +176,10 @@ fn main() {
                     particles::asteroid_hit_emitter(hit.pos_norm_b.0, hit.pos_norm_b.1, relative_vel, &*facade), 0
                 );
             }
-            true
         }
-        else { true }
+    }).with_do_resolve(|a, b, _| {
+        // no collision resolution for lasers
+        a.metadata != object::ObjectType::Laser && b.metadata != object::ObjectType::Laser
     });
 
     let mut draw_cb = |dt : std::time::Duration, mut scene : std::cell::RefMut<scene::Scene>| {
@@ -189,7 +194,7 @@ fn main() {
             let mut bodies = asteroid.bodies_ref();
             bodies.append(&mut lz.bodies_ref());
             bodies.push(u.as_rigid_body(&*c));
-            sim.step(&bodies, dt);
+            sim.step(&mut bodies, dt);
         }
         laser.borrow_mut().retain(|laser_ptr|
             !dead_lasers.borrow().iter().any(|dead| dead.as_ptr() as *const () == laser_ptr));

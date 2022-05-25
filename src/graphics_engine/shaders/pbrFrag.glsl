@@ -485,5 +485,5 @@ void main() {
     vec3 ambient = (kd * diffuse + specular) * ao * (1.0 - calcShadow(norm) * 0.7);
     vec3 color = ambient + direct_radiance + emission * 4;
 
-    frag_color = vec4(applyTransparency(applyFog(color), view_dir, norm), 1.0);
+    frag_color = vec4(applyTransparency(color, view_dir, norm), 1.0);
 }

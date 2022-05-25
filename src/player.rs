@@ -51,7 +51,7 @@ impl Player {
             })),
             body: physics::RigidBody::new(root_node.clone(), Some(
                 collisions::CollisionObject::new(root_node, c_str, collisions::TreeStopCriteria::default())),
-                physics::BodyType::Dynamic, object::ObjectType::Ship),
+                physics::BodyType::Controlled, object::ObjectType::Ship).with_density(0.88),
             inv_fac
         }
     }
@@ -68,8 +68,10 @@ impl Player {
                     controls::Movement::Backwards => forward * -10f64,
                     _ => vec3(0., 0., 0.),
                 };
-            self.body.rot_vel = Euler::<Deg<f64>>::new(Deg::<f64>(input.pitch), 
+            let rot = self.body.transform.borrow().orientation;
+            let delta_rot : Quaternion<f64> = Euler::<Deg<f64>>::new(Deg::<f64>(input.pitch), 
                 Deg::<f64>(0.), Deg::<f64>(input.roll)).into();
+            self.body.transform.borrow_mut().orientation = rot * delta_rot;
         }
         &mut self.body
         

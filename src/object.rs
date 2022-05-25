@@ -83,6 +83,7 @@ pub struct GameObject {
     collision_prototype: Option<collisions::CollisionObject>,
     bod_type: BodyType,
     typ: ObjectType,
+    density: f64,
 }
 
 impl GameObject {
@@ -101,6 +102,7 @@ impl GameObject {
             collision_prototype: None,
             bod_type: BodyType::Dynamic,
             typ,
+            density: 1.0,
         }
     }
 
@@ -110,6 +112,15 @@ impl GameObject {
         for body in &mut self.instances {
             body.collider = Some(
                 collisions::CollisionObject::from(body.transform.clone(), self.collision_prototype.as_ref().unwrap()));
+        }
+        self
+    }
+
+    /// Sets the density of the object
+    pub fn density(mut self, density: f64) -> Self {
+        self.density = density;
+        for body in &mut self.instances {
+            body.density(density);
         }
         self
     }
@@ -137,7 +148,7 @@ impl GameObject {
         self.entity.borrow_mut().locations.push(transform.clone());
         self.instances.push(RigidBody::new(transform.clone(),
             self.collision_prototype.as_ref().map(|x| collisions::CollisionObject::from(transform, x)),
-            self.bod_type, self.typ));  
+            self.bod_type, self.typ).with_density(self.density));  
         if let Some(vel) = initial_vel {
             self.instances.last_mut().unwrap().velocity = vel;
         }     
