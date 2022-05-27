@@ -34,7 +34,7 @@ enum ShaderType {
     ParallelEqRect,
     ParallelPrefilter,
     Cloud,
-    //CloudDepth,
+    Line,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -69,7 +69,8 @@ impl PartialEq for RenderPassType {
 impl RenderPassType {
     /// Render pass that is equivalent to all transparency render passes
     /// 
-    /// Used to indicate that an object should be drawn on a reflection of another object
+    /// Used to indicate that an object should be drawn on 
+    /// a reflection of another object
     pub fn transparent_tag() -> Self {
         RenderPassType::Transparent(0 as *const Entity)
     }
@@ -93,7 +94,7 @@ impl ShaderType {
                     //polygon_mode: glium::PolygonMode::Line,
                     .. Default::default()
                 },
-            CollisionDebug => 
+            CollisionDebug | Line => 
                 glium::DrawParameters {
                     depth: glium::Depth {
                         test: DepthTest::IfLess,
@@ -133,8 +134,9 @@ pub struct LightData {
 }
 
 impl LightData {
-    pub fn tube_light(start: Point3<f32>, end: Point3<f32>, radius: f32, luminance: f32,
-        color: Vector3<f32>) -> Self {
+    pub fn tube_light(start: Point3<f32>, end: Point3<f32>, 
+        radius: f32, luminance: f32, color: Vector3<f32>) -> Self 
+    {
             Self {
                 _light_start: start.into(),
                 _light_end: end.into(),
@@ -145,7 +147,9 @@ impl LightData {
     }
 
     #[allow(dead_code)]
-    pub fn sphere_light(pos: Point3<f32>, radius: f32, luminance: f32, color: Vector3<f32>) -> Self {
+    pub fn sphere_light(pos: Point3<f32>, radius: f32, 
+        luminance: f32, color: Vector3<f32>) -> Self 
+    {
         Self {
             _light_start: pos.into(),
             _light_end: pos.into(),
@@ -155,7 +159,9 @@ impl LightData {
         }
     }
 
-    pub fn point_light(pos: Point3<f32>, luminance: f32, color: Vector3<f32>) -> Self {
+    pub fn point_light(pos: Point3<f32>, luminance: f32, 
+        color: Vector3<f32>) -> Self 
+    {
         Self {
             _light_start: pos.into(),
             _light_end: pos.into(),
@@ -320,7 +326,8 @@ pub struct PipelineCache<'a> {
     pub cascade_ubo: Option<glium::uniforms::UniformBuffer<CascadeUniform>>,
     pub tiles_x: Option<u32>,
     pub cascade_maps: Option<Vec<&'a glium::texture::DepthTexture2d>>,
-    pub trans_cascade_maps: Option<Vec<(&'a glium::texture::DepthTexture2d, &'a glium::texture::Texture2d)>>,
+    pub trans_cascade_maps: Option<Vec<(&'a glium::texture::DepthTexture2d, 
+        &'a glium::texture::Texture2d)>>,
     pub obj_cubemaps: HashMap<u32, &'a glium::texture::Cubemap>,
     pub cam_depth: Option<&'a glium::texture::DepthTexture2d>,
 }
@@ -354,6 +361,7 @@ pub enum UniformInfo<'a> {
     CollisionDebugInfo([[f32; 4]; 4]),
     BillboardInfo(&'a glium::texture::SrgbTexture2d, f32),
     CloudInfo(CloudData<'a>),
+    LineInfo,
 }
 
 impl<'a> std::fmt::Debug for UniformInfo<'a> {
@@ -374,6 +382,7 @@ impl<'a> std::fmt::Debug for UniformInfo<'a> {
             CollisionDebugInfo(_) => "Collision debug",
             BillboardInfo(_, _) => "Billboard",
             CloudInfo(_) => "Cloud",
+            LineInfo => "Line",
         };
         f.write_str(name)
     }
@@ -406,6 +415,7 @@ impl<'a> UniformInfo<'a> {
             (LaserInfo, Depth) => ShaderType::DepthShader,
             (CollisionDebugInfo(_), Visual) => ShaderType::CollisionDebug,
             (CloudInfo(_), Visual) => ShaderType::Cloud,
+            (LineInfo, Visual) => ShaderType::Line,
             //(CloudInfo(_), Depth) => ShaderType::CloudDepth,
 
             // game objects
@@ -470,6 +480,7 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, i32, 
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
+    LineUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -620,6 +631,8 @@ impl ShaderManager {
             "shaders/parallelSkyGeom.glsl").unwrap();
         let cloud_shader = load_shader_source!(facade,
             "shaders/cloudVert.glsl", "shaders/cloudFrag.glsl").unwrap();
+        let line_shader = load_shader_source!(facade,
+            "shaders/lineVert.glsl", "shaders/lineFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -649,6 +662,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::ParallelAnimPbr, parallel_anim_pbr);
         shaders.insert(ShaderType::ParallelPrefilter, parallel_prefilter);
         shaders.insert(ShaderType::Cloud, cloud_shader);
+        shaders.insert(ShaderType::Line, line_shader);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -665,7 +679,8 @@ impl ShaderManager {
     /// the shader's draw parameters, and `data` converted to a uniform
     /// Panics if `data` is missing required fields or if `data` does not match a 
     /// shader
-    pub fn use_shader<'b>(&'b self, data: &'b UniformInfo, scene_data: Option<&'b SceneData<'b>>, cache: Option<&'b PipelineCache<'b>>) 
+    pub fn use_shader<'b>(&'b self, data: &'b UniformInfo, 
+        scene_data: Option<&'b SceneData<'b>>, cache: Option<&'b PipelineCache<'b>>) 
         -> (&'b glium::Program, glium::DrawParameters, UniformType<'b>)
     {
         use UniformInfo::*;
@@ -721,7 +736,8 @@ impl ShaderManager {
                 let trans_data = if pass_tp == Visual { trans_data.unwrap_or(&default) }
                 else { &default };
                 UniformType::PbrUniform(UniformsArray { name: "cascadeDepthMaps", 
-                vals: maps.iter().map(|x| sample_nearest_border!(*x)).collect::<Vec<Sampler<'b, glium::texture::DepthTexture2d>>>(), 
+                vals: maps.iter().map(|x| 
+                    sample_nearest_border!(*x)).collect::<Vec<Sampler<'b, glium::texture::DepthTexture2d>>>(), 
                 rest: UniformsArray { name: "cascadeTransMaps",
                 vals: cache.trans_cascade_maps.as_ref().map(|v| {
                         v.iter().map(|(d, _)| sample_nearest_border!(*d))
@@ -821,6 +837,9 @@ impl ShaderManager {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 cam_depth: sample_linear_clamp!(cache.unwrap().cam_depth.unwrap()),
+            }),
+            (LineInfo, Visual) => UniformType::LineUniform(glium::uniform! {
+                viewproj: scene_data.unwrap().viewer.viewproj,
             }),
             (data, pass) => 
                 panic!("Invalid shader/shader data combination with shader (Args: `{:?}` '{:?}') during pass '{:?}'", data, typ, pass),

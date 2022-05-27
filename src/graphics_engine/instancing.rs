@@ -7,8 +7,8 @@ pub struct InstancePosition {
     pub instance_model_col3: [f32; 4],
 }
 
-glium::implement_vertex!(InstancePosition, instance_model_col0, instance_model_col1, instance_model_col2, 
-    instance_model_col3);
+glium::implement_vertex!(InstancePosition, instance_model_col0, 
+    instance_model_col1, instance_model_col2, instance_model_col3);
 
 
 #[derive(Copy, Clone)]
@@ -18,7 +18,17 @@ pub struct BillboardAttributes {
     pub instance_color: [f32; 4],
 }
 
-glium::implement_vertex!(BillboardAttributes, instance_pos_rot, instance_scale, instance_color);
+glium::implement_vertex!(BillboardAttributes, instance_pos_rot, 
+    instance_scale, instance_color);
+
+#[derive(Copy, Clone)]
+pub struct LineAttributes {
+    pub start_pos: [f32; 4],
+    pub end_pos: [f32; 4],
+    pub color: [f32; 4],
+}
+
+glium::implement_vertex!(LineAttributes, start_pos, end_pos, color);
 
 /// A dynamically resizing buffer of per-instance information
 /// If the amount of instances change, the buffer is resized
@@ -35,9 +45,12 @@ impl<T : Copy + glium::Vertex> InstanceBuffer<T> {
         }
     }
 
-    pub fn new_sized<F : glium::backend::Facade>(num: usize, facade: &F) -> Self {
+    pub fn new_sized<F : glium::backend::Facade>(num: usize, facade: &F) 
+    -> Self 
+    {
         InstanceBuffer {
-            instance_data: Some(glium::VertexBuffer::empty_dynamic(facade, num).unwrap()),
+            instance_data: 
+                Some(glium::VertexBuffer::empty_dynamic(facade, num).unwrap()),
             buffer_count: num,
         }
     }
@@ -66,7 +79,8 @@ impl<T : Copy + glium::Vertex> InstanceBuffer<T> {
 
     /// Updates the buffer with `data` which must be less than the allocated buffer
     /// 
-    /// `data` is assigned to the first `data.len()` elements of the buffer, and `empty` is assigned to the rest
+    /// `data` is assigned to the first `data.len()` elements of the buffer, 
+    /// and `empty` is assigned to the rest
     pub fn update_no_grow(&mut self, data: &[T], empty: T) {
         if self.buffer_count < data.len() || self.instance_data.is_none() {
             panic!("Cannot grow data");

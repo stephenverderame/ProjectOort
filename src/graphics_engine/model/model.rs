@@ -172,7 +172,8 @@ impl Model {
     }
 
     /// Render this model once, animating if there is one
-    fn render<'a>(&'a mut self, model: [[f32; 4]; 4]) -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
+    fn render<'a>(&'a mut self, model: [[f32; 4]; 4]) -> 
+        Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
         let bones = self.animator.animate(std::time::Instant::now());
         match (&bones, self.bone_buffer.as_mut()) {
@@ -192,8 +193,9 @@ impl Model {
 
     /// Render multiple instances of this model
     /// 
-    /// `instance_buffer` - VertexBuffer where each element in it is passed to each rendered copy of this model. So this will render an amount of copies equal to elements
-    /// in this buffer
+    /// `instance_buffer` - VertexBuffer where each element in it is 
+    /// passed to each rendered copy of this model. So this will render 
+    /// an amount of copies equal to elements in this buffer
     fn render_instanced<'a>(&'a mut self, positions: &[[[f32; 4]; 4]]) 
         -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {

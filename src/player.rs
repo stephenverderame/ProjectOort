@@ -60,24 +60,32 @@ impl Player {
     pub fn as_rigid_body(&mut self, input: &controls::PlayerControls) -> &mut physics::RigidBody<object::ObjectType> {
         use cgmath::*;
         {
-            let model : cgmath::Matrix4<f64> = std::convert::From::from(&*self.body.transform.borrow());
+            let model : cgmath::Matrix4<f64> = 
+                std::convert::From::from(&*self.body.base.transform.borrow());
             let forward = model.transform_vector(cgmath::vec3(0., 0., 1.));
-            self.body.velocity += 
+            self.body.base.velocity += 
                 match input.movement {
                     controls::Movement::Forward => forward,
                     controls::Movement::Backwards => -forward,
                     _ => vec3(0., 0., 0.),
                 };
-            self.body.rot_vel = vec3(input.pitch, 0., input.roll) / 10000.;
+            self.body.base.rot_vel = vec3(input.pitch, 0., input.roll) / 10000.;
         }
         &mut self.body
         
     }
 
+    #[inline(always)]
+    #[allow(unused)]
+    pub fn node(&self) -> &Rc<RefCell<Node>> {
+        &self.body.base.transform
+    }
+
     /// Gets the player's forward vector
     /// This is not the camera's forward vector, it is the player ship's
     pub fn forward(&self) -> cgmath::Vector3<f64> {
-        let model : cgmath::Matrix4<f64> = std::convert::From::from(&*self.body.transform.borrow());
+        let model : cgmath::Matrix4<f64> = 
+            std::convert::From::from(&*self.body.base.transform.borrow());
         model.transform_vector(cgmath::vec3(0., 0., 1.))
     }
 
@@ -89,8 +97,8 @@ impl Player {
             near: 0.1,
             far: FAR_PLANE,
             cam: self.cam_pos(),
-            up: Matrix4::<f64>::from(&self.cam).transform_vector(vec3(0., 1., 0.)).cast::<f32>().unwrap(),
-            target: self.body.transform.borrow().pos.cast::<f32>().unwrap(),
+            up: self.cam.transform_vec(vec3(0., 1., 0.)).cast::<f32>().unwrap(),
+            target: self.body.base.transform.borrow().local_pos().cast::<f32>().unwrap(),
 
         }
     }
@@ -105,7 +113,7 @@ impl Player {
     #[inline(always)]
     pub fn root(&self) -> &Rc<RefCell<Node>>
     {
-        &self.body.transform
+        &self.body.base.transform
     }
 
     #[inline]
@@ -122,14 +130,13 @@ impl drawable::Viewer for Player {
     }
 
     fn cam_pos(&self) -> cgmath::Point3<f32> {
-        let trans = Matrix4::<f32>::from(&self.cam);
-        trans.transform_point(point3(0., 0., 0.))
+        self.cam.transform_point(point3(0., 0., 0.)).cast().unwrap()
     }
 
     fn view_mat(&self) -> Matrix4<f32> {
         let cam_pos = self.cam_pos();
-        let view_pos = self.body.transform.borrow().pos;
-        let up = Matrix4::<f64>::from(&self.cam).transform_vector(vec3(0., 1., 0.))
+        let view_pos = self.body.base.transform.borrow().local_pos();
+        let up = self.cam.transform_vec(vec3(0., 1., 0.))
             .cast::<f32>().unwrap();
         Matrix4::look_at_rh(cam_pos, view_pos.cast::<f32>().unwrap(), up)
     }

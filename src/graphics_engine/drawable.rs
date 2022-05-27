@@ -234,6 +234,8 @@ pub fn render_drawable<S : glium::Surface>(drawable: &mut dyn Drawable, matrices
                 surface.draw(vbo, ebo, shader, &uniform, &params),
             shader::UniformType::CloudUniform(uniform) =>
                 surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::LineUniform(uniform) =>
+                surface.draw(vbo, ebo, shader, &uniform, &params),
         }.unwrap()
     }
 }

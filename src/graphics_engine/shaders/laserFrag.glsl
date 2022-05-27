@@ -7,5 +7,5 @@ in FragData {
 
 out vec4 frag_color;
 void main() {
-    frag_color = vec4(f_in.color * 4, 1.0);
+    frag_color = vec4(f_in.color * 8, 1.0);
 }

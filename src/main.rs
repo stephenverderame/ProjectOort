@@ -15,16 +15,18 @@ use graphics_engine::pipeline::*;
 use graphics_engine::*;
 
 use std::rc::Rc;
-use std::cell::RefCell;
+use std::cell::{RefCell};
 use cg_support::node;
 use graphics_engine::particles;
 
 fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, lasers: &mut object::GameObject) {
     if controller.fire {
-        let mut transform = user.root().borrow().clone();
-        transform.scale = cgmath::vec3(0.3, 0.3, 1.);
-        transform.pos += user.forward() * 10.;
-        lasers.new_instance(transform, Some(user.forward() * 120f64));
+        let mut transform = user.root().borrow().clone()
+            .scale(cgmath::vec3(0.3, 0.3, 1.));
+        transform.translate(user.forward() * 10.);
+        lasers.new_instance(transform, Some(user.forward() * 120f64)).metadata =
+            if controller.fire_rope { object::ObjectType::Hook }
+            else { object::ObjectType::Laser };
     }
 }
 
@@ -117,7 +119,7 @@ fn main() {
         object::ObjectType::Asteroid).with_depth()
         .with_collisions("assets/asteroid1/Asteroid.obj", collisions::TreeStopCriteria::default()).density(2.71);//.immobile();
     let asteroid_character = RefCell::new(object::AnimGameObject::new(model::Model::new("assets/animTest/dancing_vampire.dae", &*wnd.ctx())).with_depth());
-    asteroid_character.borrow().transform().borrow_mut().scale = vec3(0.07, 0.07, 0.07);
+    asteroid_character.borrow().transform().borrow_mut().set_scale(vec3(0.07, 0.07, 0.07));
     (*asteroid_character.borrow_mut()).start_anim("", true);
     let mut skybox = cubes::Skybox::cvt_from_sphere("assets/Milkyway/Milkyway_BG.jpg", 2048, &*wnd.shaders, &*wnd.ctx());
     let ibl = scene::gen_ibl_from_hdr("assets/Milkyway/Milkyway_Light.hdr", &mut skybox, &*wnd.shaders, &*wnd.ctx());
@@ -137,6 +139,7 @@ fn main() {
 
     let laser = Rc::new(RefCell::new(object::GameObject::new(model::Model::new("assets/laser2.obj", &*wnd.ctx()).with_instancing(), 
         object::ObjectType::Laser).with_collisions("assets/laser2.obj", collisions::TreeStopCriteria::default())));
+    let lines = Rc::new(RefCell::new(primitives::Lines::new(&*wnd.ctx())));
     let container = object::GameObject::new(model::Model::new("assets/BlackMarble/floor.obj", &*wnd.ctx()), object::ObjectType::Any) 
         .at_pos(node::Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None)).with_depth();
     let particles = Rc::new(RefCell::new(
@@ -145,30 +148,34 @@ fn main() {
     
     // skybox must be rendered first, particles must be rendered last
     main_scene.set_entities(vec![sky_entity, user.borrow().as_entity(), laser.borrow().as_entity(), container.as_entity(), asteroid.as_entity(),
-        asteroid_character.borrow().as_entity(), particles.clone(), cloud]);
+        asteroid_character.borrow().as_entity(), lines.clone(), particles.clone(), cloud]);
     wnd.scene_manager().insert_scene("main", main_scene).change_scene("main");
 
     laser.borrow_mut().new_instance(node::Node::default().scale(vec3(0.3, 0.3, 3.)).pos(point3(10., 0., 10.)), None);
     laser.borrow_mut().new_instance(node::Node::default().pos(point3(-120., 120., 0.)), None);
-    laser.borrow_mut().body(0).rot_vel = vec3(0., 10., 0.);
+    laser.borrow_mut().body(0).base.rot_vel = vec3(0., 10., 0.);
 
     let dead_lasers = RefCell::new(Vec::new());
+    let mut springs : Vec<Box<dyn physics::Forcer>> = Vec::new();
+    let new_springs : RefCell<Vec<Box<dyn physics::Forcer>>> = RefCell::new(Vec::new());
     let mut sim = physics::Simulation::<object::ObjectType>::new(point3(0., 0., 0.), 200.)
-    .with_on_hit(|a, b, hit| {
+    .with_on_hit(|a, b, hit, player| {
         if a.metadata == object::ObjectType::Laser ||
             b.metadata == object::ObjectType::Laser {
             let ctx = graphics_engine::get_active_ctx();
             let facade = ctx.ctx.borrow();
             particles.borrow_mut().new_emitter(
-                particles::laser_hit_emitter(hit.pos_norm_b.0, hit.pos_norm_b.1, a.velocity - b.velocity, &*facade), 1
+                particles::laser_hit_emitter(hit.pos_norm_b.0, 
+                    hit.pos_norm_b.1, a.base.velocity - b.base.velocity, &*facade), 1
             );
-            let laser_transform = if a.metadata == object::ObjectType::Laser { a.transform.clone() } 
-            else { b.transform.clone() };
+            let laser_transform = if a.metadata == object::ObjectType::Laser 
+            { a.base.transform.clone() } 
+            else { b.base.transform.clone() };
             dead_lasers.borrow_mut().push(laser_transform);
         } 
         if b.metadata == object::ObjectType::Asteroid ||
             a.metadata == object::ObjectType::Asteroid {
-            let relative_vel = a.velocity - b.velocity;
+            let relative_vel = a.base.velocity - b.base.velocity;
             if relative_vel.magnitude() > 1. {
                 let ctx = graphics_engine::get_active_ctx();
                 let facade = ctx.ctx.borrow();
@@ -177,9 +184,50 @@ fn main() {
                 );
             }
         }
+        if a.metadata == object::ObjectType::Hook ||
+            b.metadata == object::ObjectType::Hook {
+                let target = if a.metadata == object::ObjectType::Hook 
+                    { b } else { a };
+                let hit_point = if a.metadata == object::ObjectType::Hook 
+                    { hit.pos_norm_b.0 } else { hit.pos_norm_a.0 };
+                let ship_front = player.transform.borrow().transform_point(point3(0., 0., 10.));
+                let hit_local = target.base.transform.borrow().mat()
+                    .invert().unwrap().transform_point(hit_point);
+                lines.borrow_mut().add_line(0, primitives::LineData {
+                    color: [1., 0., 0., 1.],
+                    start: node::Node::default().parent(player.transform.clone())
+                        .pos(point3(0., 0., 10.)),
+                    end: node::Node::default().parent(target.base.transform.clone())
+                        .pos(hit_local),
+                });
+                new_springs.borrow_mut().push(Box::new(physics::Spring {
+                    k: 1000.0,
+                    attach_pt_a: hit_local,
+                    obj_a_ptr: Rc::downgrade(&target.base.transform),
+                    mode: physics::RestoringMode::String,
+                    attach_pt_b: ship_front,
+                    obj_b_ptr: Rc::downgrade(&player.transform),
+                    natural_length: (player.transform.borrow().transform_point(ship_front)
+                         - hit_point).magnitude()
+                }
+                /*physics::Centripetal{
+                    attach_pt_a: target.base.transform.borrow().mat()
+                        .invert().unwrap().transform_point(hit_point),
+                    obj_a_ptr: Rc::downgrade(&target.base.transform),
+                    attach_pt_b: ship_front,
+                    obj_b_ptr: Rc::downgrade(&player.transform),
+                    natural_length: (player.transform.borrow().transform_point(ship_front)
+                         - hit_point).magnitude()
+                }*/));
+            let laser_transform = if a.metadata == object::ObjectType::Hook
+            { a.base.transform.clone() } 
+            else { b.base.transform.clone() };
+            dead_lasers.borrow_mut().push(laser_transform);
+        }
     }).with_do_resolve(|a, b, _| {
         // no collision resolution for lasers
-        a.metadata != object::ObjectType::Laser && b.metadata != object::ObjectType::Laser
+        a.metadata != object::ObjectType::Laser && b.metadata != object::ObjectType::Laser &&
+        a.metadata != object::ObjectType::Hook && b.metadata != object::ObjectType::Hook
     });
 
     let mut draw_cb = |dt : std::time::Duration, mut scene : std::cell::RefMut<scene::Scene>| {
@@ -187,14 +235,20 @@ fn main() {
         *user.borrow().trans_fac() = controller.borrow_mut().compute_transparency_fac();
         dead_lasers.borrow_mut().clear();
         {
+            let mut bodies = asteroid.bodies_ref();
             let mut u = user.borrow_mut();
+            if controller.borrow().cut_rope {
+                springs.clear();
+                lines.borrow_mut().remove_line(0);
+            }
             let c = controller.borrow();
             let mut lz = laser.borrow_mut();
             handle_shots(&*u, &*c, &mut *lz);
-            let mut bodies = asteroid.bodies_ref();
             bodies.append(&mut lz.bodies_ref());
             bodies.push(u.as_rigid_body(&*c));
-            sim.step(&mut bodies, dt);
+            let player_idx = bodies.len() - 1;
+            springs.append(&mut new_springs.borrow_mut());
+            sim.step(&mut bodies, &springs, player_idx, dt);
         }
         laser.borrow_mut().retain(|laser_ptr|
             !dead_lasers.borrow().iter().any(|dead| dead.as_ptr() as *const () == laser_ptr));
@@ -205,7 +259,9 @@ fn main() {
                 let mat : cgmath::Matrix4<f32> = From::from(node);
                 let start = mat.transform_point(point3(0., 0., 3.));
                 let end = mat.transform_point(point3(0., 0., -3.));
-                lights.push(shader::LightData::tube_light(start, end, 1.5, 10., 
+                let radius = 1.5;
+                let luminance = 80.;
+                lights.push(shader::LightData::tube_light(start, end, radius, luminance, 
                     vec3(0.5451, 0., 0.5451)));
             });
             lights.append(&mut particles.borrow().lights().unwrap_or_else(|| Vec::new()));

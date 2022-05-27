@@ -138,11 +138,13 @@ mod test {
         use glutin::window::{WindowBuilder};
         use glutin::ContextBuilder;
         use glutin::platform::windows::EventLoopExtWindows;
-        let e_loop : glutin::event_loop::EventLoop<()> = glutin::event_loop::EventLoop::new_any_thread();
-        let window_builder = WindowBuilder::new().with_visible(false).with_inner_size(glium::glutin::dpi::PhysicalSize::<u32>{
-            width: 128, height: 128,
-        });
-        let wnd_ctx = ContextBuilder::new();//.build_headless(&e_loop, glutin::dpi::PhysicalSize::from((128, 128)));
+        let e_loop : glutin::event_loop::EventLoop<()> = 
+            glutin::event_loop::EventLoop::new_any_thread();
+        let window_builder = WindowBuilder::new()
+            .with_visible(false)
+            .with_inner_size(glium::glutin::dpi::PhysicalSize::<u32>
+                { width: 128, height: 128, });
+        let wnd_ctx = ContextBuilder::new();
         let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
         gl::load_with(|s| wnd_ctx.gl_window().get_proc_address(s));
         (shader::ShaderManager::init(&wnd_ctx), wnd_ctx)
@@ -161,20 +163,20 @@ mod test {
         let mut t_ast = node::Node::default();
         let mut t_ship = node::Node::default();
         let asteroid = CollisionMesh::new("assets/asteroid1/Asteroid.obj", TreeStopCriteria::default());
-        t_ast.pos = point3(11.743949077465658, 19.97710245003765, 16.749212434348635);
-        t_ast.scale = vec3(0.2025860334703863, 0.2025860334703863, 0.2025860334703863);
-        t_ast.orientation = Quaternion::new(0.9213945937844363, 0.07290361996544982, -0.10036152351261705, 0.3682996461293077);
+        t_ast = t_ast.pos(point3(11.743949077465658, 19.97710245003765, 16.749212434348635))
+            .scale(vec3(0.2025860334703863, 0.2025860334703863, 0.2025860334703863))
+            .rot(Quaternion::new(0.9213945937844363, 0.07290361996544982, -0.10036152351261705, 0.3682996461293077));
 
-        t_ship.pos = point3(10.87532384616883, 11.219439807187339, 2.8101362590310326);
-        t_ship.orientation = Quaternion::new(-0.0025265890813806324, -0.4370424383838227, -0.4747224546633822, -0.7639542620062583);
+        t_ship = t_ship.pos(point3(10.87532384616883, 11.219439807187339, 2.8101362590310326))
+            .rot(Quaternion::new(-0.0025265890813806324, -0.4370424383838227, -0.4747224546633822, -0.7639542620062583));
         assert_eq!(asteroid.collision(&t_ast.mat(), &plane_mesh, &t_ship.mat(), &method).is_some(), true);
 
-        t_ship.pos = point3(-69.25926888264416, 92.04805170691911, -11.333046808157235);
-        t_ship.orientation = Quaternion::new(0.6138717343783247, 0.7250881014216262, -0.31210219023218827, 0.0009806938413965951);
+        t_ship = t_ship.pos(point3(-69.25926888264416, 92.04805170691911, -11.333046808157235))
+            .rot(Quaternion::new(0.6138717343783247, 0.7250881014216262, -0.31210219023218827, 0.0009806938413965951));
 
-        t_ast.pos = point3(-69.70801643768598, 71.32888312152988, -19.245189840990307);
-        t_ast.scale = vec3(0.29053803758358265, 0.29053803758358265, 0.29053803758358265);
-        t_ast.orientation = Quaternion::new(0.6138717343783247, 0.7250881014216262, -0.31210219023218827, 0.0009806938413965951);
+        t_ast = t_ast.pos(point3(-69.70801643768598, 71.32888312152988, -19.245189840990307))
+            .scale(vec3(0.29053803758358265, 0.29053803758358265, 0.29053803758358265))
+            .rot(Quaternion::new(0.6138717343783247, 0.7250881014216262, -0.31210219023218827, 0.0009806938413965951));
         assert_eq!(asteroid.collision(&t_ast.mat(), &plane_mesh, &t_ship.mat(), &method).is_some(), true);
         assert_eq!(plane_mesh.collision(&t_ship.mat(), &asteroid, &t_ast.mat(), &method).is_some(), true);
     }
@@ -192,35 +194,35 @@ mod test {
         let mut t_a = node::Node::default();
         assert_eq!(strat.collide(&triangle, &Matrix4::from_scale(1.), 
             &triangle, &Matrix4::from_translation(vec3(0., 0., 1.))).is_some(), false); //plane test reject
-        t_b.orientation = Matrix3::from_angle_y(Deg(70f64)).into();
-        t_b.pos = point3(0., 0., 0.8);
+        t_b = t_b.rot(Matrix3::from_angle_y(Deg(70f64)).into())
+            .pos(point3(0., 0., 0.8));
         assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); //small intersect
-        t_a.pos = point3(1., 0., 0.);
+        t_a = t_a.pos(point3(1., 0., 0.));
         assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); //small intersect off origin
-        t_b.pos = point3(-0.3, 0., 0.5);
+        t_b = t_b.pos(point3(-0.3, 0., 0.5));
         assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), false); //plane test pass, no intersect
-        t_b.pos = point3(-0.3, 1., 0.5);
-        t_b.orientation = Matrix3::from_angle_y(Deg(120f64)).into();
-        t_a.orientation = From::from(Euler::new(Deg(20f64), Deg(0.), Deg(53.)));
+        t_b = t_b.pos(point3(-0.3, 1., 0.5))
+            .rot(Matrix3::from_angle_y(Deg(120f64)).into());
+        t_a = t_a.rot(From::from(Euler::new(Deg(20f64), Deg(0.), Deg(53.))));
         assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), false); //plane test pass, no intersect (more transforms)
-        t_a.scale = vec3(1.895f64, 1.895, 1.895);
+        t_a = t_a.scale(vec3(1.895f64, 1.895, 1.895));
         assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); // intersect via scale
 
         let vertices2 = vec![
             CollisionVertex{pos: point3(-0.292f32, -0.0536, 0.00074), norm: vec3(0., 0., 0.) }, 
             CollisionVertex{pos: point3(-0.392, 0.273, 0.296), norm: vec3(0., 0., 0.)}, 
             CollisionVertex{pos: point3(0.747, 0.515, 0.255), norm: vec3(0., 0., 0.) }];
-        t_a.pos = point3(0., 0f64, 0.);
-        t_a.orientation = Matrix3::from_angle_x(Deg(0.)).into();
+        t_a = t_a.pos(point3(0., 0f64, 0.))
+            .rot(Matrix3::from_angle_x(Deg(0.)).into());
         let triangle2 = bvh::Triangle::array_from(vec![0, 1, 2], &vertices2 as *const Vec<CollisionVertex<f32>>);
         assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()).is_some(), false); // random triangle no intersect
-        t_a.pos = point3(-0.16618f64, 0.97175, 0.65434);
+        t_a = t_a.pos(point3(-0.16618f64, 0.97175, 0.65434));
         assert_eq!(strat.collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); // random triangle intersect
         t_a = node::Node::default();
         t_b = node::Node::default();
-        t_a.pos = point3(1.06508f64, 0.559814, 0.);
+        t_a = t_a.pos(point3(1.06508f64, 0.559814, 0.));
         assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), true); //coplanar intersect
-        t_a.pos = point3(3f64, 0., 0.);
+        t_a = t_a.pos(point3(3f64, 0., 0.));
         assert_eq!(strat.collide(&triangle, &t_a.mat(), &triangle, &t_b.mat()).is_some(), false); //coplanar no intersect
     }
 
@@ -249,29 +251,29 @@ mod test {
         assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat).is_some(), false);
 
 
-        t_ship.pos = point3(-25.20556890402142, 34.70378892431485, 33.41363920806364);
-        t_ship.orientation = Quaternion::new(0.20591263538805038, 0.27125974748507087, -0.09978353992557279, -0.9349124991900651);
-        t_ast.pos = point3(-37.86042001868104, 17.471324865149157, 39.919355753951976);
-        t_ast.orientation = Quaternion::new(0.7633320035030866, -0.41610255061356016, -0.27499327009999497, -0.4105625667307782);
-        t_ast.scale = vec3(0.23288870438198583, 0.23288870438198583, 0.23288870438198583);
+        t_ship = t_ship.pos(point3(-25.20556890402142, 34.70378892431485, 33.41363920806364));
+        t_ship = t_ship.rot(Quaternion::new(0.20591263538805038, 0.27125974748507087, -0.09978353992557279, -0.9349124991900651));
+        t_ast = t_ast.pos(point3(-37.86042001868104, 17.471324865149157, 39.919355753951976));
+        t_ast = t_ast.rot(Quaternion::new(0.7633320035030866, -0.41610255061356016, -0.27499327009999497, -0.4105625667307782));
+        t_ast = t_ast.scale(vec3(0.23288870438198583, 0.23288870438198583, 0.23288870438198583));
         assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat).is_some(), false);
 
         t_ast = node::Node::default();
         t_ship = node::Node::default();
-        t_ast.pos = point3(11.743949077465658, 19.97710245003765, 16.749212434348635);
-        t_ast.scale = vec3(0.2025860334703863, 0.2025860334703863, 0.2025860334703863);
-        t_ast.orientation = Quaternion::new(0.9213945937844363, 0.07290361996544982, -0.10036152351261705, 0.3682996461293077);
+        t_ast = t_ast.pos(point3(11.743949077465658, 19.97710245003765, 16.749212434348635))
+            .scale(vec3(0.2025860334703863, 0.2025860334703863, 0.2025860334703863))
+            .rot(Quaternion::new(0.9213945937844363, 0.07290361996544982, -0.10036152351261705, 0.3682996461293077));
 
-        t_ship.pos = point3(10.87532384616883, 11.219439807187339, 2.8101362590310326);
-        t_ship.orientation = Quaternion::new(-0.0025265890813806324, -0.4370424383838227, -0.4747224546633822, -0.7639542620062583);
+        t_ship = t_ship.pos(point3(10.87532384616883, 11.219439807187339, 2.8101362590310326))
+            .rot(Quaternion::new(-0.0025265890813806324, -0.4370424383838227, -0.4747224546633822, -0.7639542620062583));
         assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat).is_some(), true);
 
-        t_ship.pos = point3(-69.25926888264416, 92.04805170691911, -11.333046808157235);
-        t_ship.orientation = Quaternion::new(0.6138717343783247, 0.7250881014216262, -0.31210219023218827, 0.0009806938413965951);
+        t_ship = t_ship.pos(point3(-69.25926888264416, 92.04805170691911, -11.333046808157235))
+            .rot(Quaternion::new(0.6138717343783247, 0.7250881014216262, -0.31210219023218827, 0.0009806938413965951));
 
-        t_ast.pos = point3(-69.70801643768598, 71.32888312152988, -19.245189840990307);
-        t_ast.scale = vec3(0.29053803758358265, 0.29053803758358265, 0.29053803758358265);
-        t_ast.orientation = Quaternion::new(0.6138717343783247, 0.7250881014216262, -0.31210219023218827, 0.0009806938413965951);
+        t_ast = t_ast.pos(point3(-69.70801643768598, 71.32888312152988, -19.245189840990307))
+            .scale(vec3(0.29053803758358265, 0.29053803758358265, 0.29053803758358265))
+            .rot(Quaternion::new(0.6138717343783247, 0.7250881014216262, -0.31210219023218827, 0.0009806938413965951));
         assert_eq!(asteroid.collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat).is_some(), true);
     }
 }

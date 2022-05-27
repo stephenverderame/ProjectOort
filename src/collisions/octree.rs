@@ -423,16 +423,16 @@ mod test {
         for o in &obj {
             ot.insert(o.clone());
         }
-        obj[0].borrow_mut().model.borrow_mut().pos = point3(-6., 3., 3.);
+        obj[0].borrow_mut().model.borrow_mut().set_pos(point3(-6., 3., 3.));
         Octree::update(&obj[0]);
         assert_eq!(obj[0].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root.borrow().children.as_ref().unwrap()[6])), true);
         //let local_origin = obj[14].borrow().local_center;
-        obj[14].borrow_mut().model.borrow_mut().scale = vec3(0.1, 0.1, 0.1);
+        obj[14].borrow_mut().model.borrow_mut().set_scale(vec3(0.1, 0.1, 0.1));
         //obj[14].borrow_mut().model.borrow_mut().anchor = local_origin;
         Octree::update(&obj[14]);
         assert_eq!(obj[14].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root.borrow().children.as_ref().unwrap()[6])), true);
         //let local_origin = obj[14].borrow().local_center;
-        obj[1].borrow_mut().model.borrow_mut().scale = vec3(5., 5., 5.);
+        obj[1].borrow_mut().model.borrow_mut().set_scale(vec3(5., 5., 5.));
         //obj[1].borrow().model.borrow_mut().anchor = local_origin;
         Octree::update(&obj[1]);
         assert_eq!(obj[1].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root)), true);
@@ -445,12 +445,12 @@ mod test {
         let obj = Rc::new(RefCell::new(obj));
         assert_eq!(ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj), Some(0));
         assert_eq!(ONode::get_octant_index(&point3(-5., -5., -5.), 5., &obj), Some(7));
-        trans.borrow_mut().orientation = From::from(Euler::new(Deg(10f64), Deg(0.), Deg(30f64)));
-        trans.borrow_mut().scale = vec3(10., 3., 1.);
-        trans.borrow_mut().pos = point3(-20., -20., -20.);
+        trans.borrow_mut().set_rot(From::from(Euler::new(Deg(10f64), Deg(0.), Deg(30f64))));
+        trans.borrow_mut().set_scale(vec3(10., 3., 1.));
+        trans.borrow_mut().set_pos(point3(-20., -20., -20.));
         assert_eq!(ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj), None);
-        trans.borrow_mut().scale = vec3(10., 3., 1.);
-        trans.borrow_mut().pos = point3(-20., -20., -20.);
+        trans.borrow_mut().set_scale(vec3(10., 3., 1.));
+        trans.borrow_mut().set_pos(point3(-20., -20., -20.));
     }
 
     #[test]
@@ -503,7 +503,7 @@ mod test {
         }
         objs.shuffle(&mut thread_rng());
         for i in objs.iter().take(100) {
-            i.borrow().model.borrow_mut().pos = random_pt(point3(0., 0., 0.), 200.);
+            i.borrow().model.borrow_mut().set_pos(random_pt(point3(0., 0., 0.), 200.));
             i.borrow_mut().local_radius = random_radius(200.);
             Octree::update(&i);
         }

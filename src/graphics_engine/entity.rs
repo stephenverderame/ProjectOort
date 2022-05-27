@@ -65,9 +65,11 @@ impl AbstractEntity for Entity {
         if base_bool {
             match pass {
                 shader::RenderPassType::Depth => 
-                    self.geometry.transparency().map(|x| x <= f32::EPSILON).unwrap_or(true),
+                    self.geometry.transparency().map(|x| x <= f32::EPSILON)
+                        .unwrap_or(true),
                 shader::RenderPassType::TransparentDepth => 
-                    self.geometry.transparency().map(|x| x > f32::EPSILON).unwrap_or(false),
+                    self.geometry.transparency().map(|x| x > f32::EPSILON)
+                        .unwrap_or(false),
                 _ => base_bool,
             }
         } else { base_bool }
@@ -139,9 +141,11 @@ impl AbstractEntity for ModelEntity {
         if base_bool {
             match pass {
                 shader::RenderPassType::Depth => 
-                    self.geometry.transparency().map(|x| x <= f32::EPSILON).unwrap_or(true),
+                    self.geometry.transparency().map(|x| x <= f32::EPSILON)
+                    .unwrap_or(true),
                 shader::RenderPassType::TransparentDepth => 
-                    self.geometry.transparency().map(|x| x > f32::EPSILON).unwrap_or(false),
+                    self.geometry.transparency().map(|x| x > f32::EPSILON)
+                    .unwrap_or(false),
                 _ => base_bool,
             }
         } else { base_bool }
@@ -154,11 +158,14 @@ impl AbstractEntity for ModelEntity {
 }
 
 /// Renders the entity to the given surface
-pub fn render_entity<S : glium::Surface>(entity: &mut dyn AbstractEntity, surface: &mut S, scene_data: &shader::SceneData, 
+pub fn render_entity<S : glium::Surface>(entity: &mut dyn AbstractEntity, 
+    surface: &mut S, scene_data: &shader::SceneData, 
     cache: &shader::PipelineCache, shader: &shader::ShaderManager) 
 {
     let matrices : Vec<[[f32; 4]; 4]> 
-        = entity.transformations().iter().map(|x| x.borrow().as_transform().cast().unwrap().into()).collect();
-    super::drawable::render_drawable(entity.drawable(), Some(&matrices), surface, scene_data, cache, shader)
+        = entity.transformations().iter().map(|x| x.borrow().as_transform()
+            .cast().unwrap().into()).collect();
+    super::drawable::render_drawable(entity.drawable(), Some(&matrices), 
+        surface, scene_data, cache, shader)
       
 }

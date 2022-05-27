@@ -160,7 +160,8 @@ impl CollisionObject {
         let transform = self.obj.borrow().model.clone();
         let transform = transform.borrow();
         let (pt, radius) = self.mesh.borrow().bounding_sphere();
-        let max_scale = transform.scale.x.abs().max(transform.scale.y.abs().max(transform.scale.z.abs()));
+        let scale = transform.local_scale();
+        let max_scale = scale.x.abs().max(scale.y.abs().max(scale.z.abs()));
         (transform.mat().transform_point(pt), radius * max_scale)
     }
 

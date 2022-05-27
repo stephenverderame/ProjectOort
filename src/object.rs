@@ -9,7 +9,7 @@ use crate::physics::*;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ObjectType {
-    Laser, Ship, Asteroid, Any
+    Laser, Ship, Asteroid, Any, Hook
 }
 
 /// A game object that only stores a model
@@ -50,7 +50,7 @@ impl AnimGameObject {
     #[inline]
     #[allow(dead_code)]
     pub fn immobile(mut self) -> Self {
-        self.data.body_type = BodyType::Static;
+        self.data.base.body_type = BodyType::Static;
         self
     }
 
@@ -70,7 +70,7 @@ impl AnimGameObject {
     #[inline(always)]
     pub fn transform(&self) -> &Rc<RefCell<node::Node>>
     {
-        &self.data.transform
+        &self.data.base.transform
     }
 }
 
@@ -110,8 +110,9 @@ impl GameObject {
     pub fn with_collisions(mut self, collision_mesh: &str, tree_args: collisions::TreeStopCriteria) -> Self {
         self.collision_prototype = Some(collisions::CollisionObject::prototype(collision_mesh, tree_args));
         for body in &mut self.instances {
-            body.collider = Some(
-                collisions::CollisionObject::from(body.transform.clone(), self.collision_prototype.as_ref().unwrap()));
+            body.base.collider = Some(
+                collisions::CollisionObject::from(body.base.transform.clone(), 
+                self.collision_prototype.as_ref().unwrap()));
         }
         self
     }
@@ -120,7 +121,7 @@ impl GameObject {
     pub fn density(mut self, density: f64) -> Self {
         self.density = density;
         for body in &mut self.instances {
-            body.density(density);
+            body.base.density(density);
         }
         self
     }
@@ -143,15 +144,19 @@ impl GameObject {
     }
 
     /// Creates a new instance of this object
-    pub fn new_instance(&mut self, transform: node::Node, initial_vel: Option<cgmath::Vector3<f64>>) {
+    /// 
+    /// Returns a mutable reference to this new instance
+    pub fn new_instance(&mut self, transform: node::Node, 
+        initial_vel: Option<cgmath::Vector3<f64>>) -> &mut RigidBody<ObjectType> {
         let transform = Rc::new(RefCell::new(transform));
         self.entity.borrow_mut().locations.push(transform.clone());
         self.instances.push(RigidBody::new(transform.clone(),
             self.collision_prototype.as_ref().map(|x| collisions::CollisionObject::from(transform, x)),
             self.bod_type, self.typ).with_density(self.density));  
         if let Some(vel) = initial_vel {
-            self.instances.last_mut().unwrap().velocity = vel;
-        }     
+            self.instances.last_mut().unwrap().base.velocity = vel;
+        }
+        self.instances.last_mut().unwrap()   
     }
 
     /// Makes the object unmoveable in physics simulations
@@ -159,14 +164,14 @@ impl GameObject {
     pub fn immobile(mut self) -> Self {
         self.bod_type = BodyType::Static;
         for body in &mut self.instances {
-            body.body_type = self.bod_type;
+            body.base.body_type = self.bod_type;
         }
         self
     }
 
     pub fn iter_positions<F : FnMut(&node::Node)>(&self, mut cb: F) {
         for instance in &self.instances {
-            cb(&*instance.transform.borrow())
+            cb(&*instance.base.transform.borrow())
         }
     }
 
@@ -182,7 +187,7 @@ impl GameObject {
     #[allow(dead_code)]
     pub fn transform(&self) -> &Rc<RefCell<node::Node>>
     {
-        &self.instances[0].transform
+        &self.instances[0].base.transform
     }
 
     /// Gets a mutable reference to the rigid body at index `idx`
@@ -204,7 +209,7 @@ impl GameObject {
     /// 
     /// `pred` - takes a pointer to the object transformation and returns `false` to remove it
     pub fn retain<T : Fn(*const ()) -> bool>(&mut self, pred: T) {
-        self.instances.retain(|body| pred(body.transform.as_ptr() as *const ()));
+        self.instances.retain(|body| pred(body.base.transform.as_ptr() as *const ()));
         // *const () to compare fat and thin pointers
         self.entity.borrow_mut().locations.retain(|model| {
             let r = pred(model.as_ptr() as *const ());

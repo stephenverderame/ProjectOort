@@ -236,11 +236,11 @@ mod test {
         let a = AABB::from(&[point3(5., -2., 2.), point3(3.0, 0., 0.)]);
         let b = AABB::from(&[point3(6., -1., 1.), point3(7., 0., 0.,)]);
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
-        t_b.anchor = point3(6., -1., 1.);
-        t_b.orientation = From::from(Euler::new(Deg(0.), Deg(-180.), Deg(0f64)));
+        t_b = t_b.anchor(point3(6., -1., 1.))
+            .rot(From::from(Euler::new(Deg(0.), Deg(-180.), Deg(0f64))));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
-        t_b.anchor = point3(6., 0., 0.);
-        t_b.orientation = From::from(Euler::new(Deg(-180f64), Deg(0.), Deg(0.)));
+        t_b = t_b.anchor(point3(6., 0., 0.))
+            .rot(From::from(Euler::new(Deg(-180f64), Deg(0.), Deg(0.))));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
         
     }
@@ -251,17 +251,17 @@ mod test {
         let mut t_b = node::Node::default();
         let a = AABB::from(&[point3(4., -1., 0.), point3(6., 1., 2.)]);
         let b = AABB::from(&[point3(-1., -1., -1.), point3(1., 1., 1.,)]);
-        t_a.anchor = point3(4., -1., 0.);
+        t_a = t_a.anchor(point3(4., -1., 0.));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
-        t_b.pos = point3(3.5, 0., 0.);
+        t_b = t_b.pos(point3(3.5, 0., 0.));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
-        t_b.pos = point3(2.5, 0., 0.);
-        t_a.orientation = From::from(Euler::new(Deg(0.), Deg(0.), Deg(70.)));
+        t_b = t_b.pos(point3(2.5, 0., 0.));
+        t_a = t_a.rot(From::from(Euler::new(Deg(0.), Deg(0.), Deg(70.))));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
-        t_a.orientation = From::from(Euler::new(Deg(0.), Deg(0.), Deg(0.)));
-        t_b.scale = vec3(1., 1., 2.);
+        t_a = t_a.rot(From::from(Euler::new(Deg(0.), Deg(0.), Deg(0.))));
+        t_b = t_b.scale(vec3(1., 1., 2.));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
-        t_b.orientation = From::from(Euler::new(Deg(0.), Deg(30.), Deg(0.)));
+        t_b = t_b.rot(From::from(Euler::new(Deg(0.), Deg(30.), Deg(0.))));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
 
     }
@@ -272,17 +272,17 @@ mod test {
         let mut t_b = node::Node::default();
         let a = AABB::from(&[point3(-1., -1., -1.), point3(1., 1., 1.)]);
         let b = AABB::from(&[point3(-1., -1., -1.), point3(1., 1., 1.,)]);
-        t_a.pos = point3(3., 0., 3.);
-        t_b.pos = point3(5., 0., 1.);
+        t_a = t_a.pos(point3(3., 0., 3.));
+        t_b = t_b.pos(point3(5., 0., 1.));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
-        t_a.orientation = From::from(Euler::new(Deg(0f64), Deg(10.), Deg(0f64)));
+        t_a = t_a.rot(From::from(Euler::new(Deg(0f64), Deg(10.), Deg(0f64))));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
-        t_b.scale = vec3(1.144, 1.144, 1.144);
+        t_b = t_b.scale(vec3(1.144, 1.144, 1.144));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
-        t_b.anchor = point3(6.1437, -1.1437, 2.1437);
-        t_b.orientation = From::from(Euler::new(Deg(0f64), Deg(-9.), Deg(0f64)));
+        t_b = t_b.anchor(point3(6.1437, -1.1437, 2.1437))
+            .rot(From::from(Euler::new(Deg(0f64), Deg(-9.), Deg(0f64))));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), false);
-        t_b.anchor = point3(0., 0., 0.);
+        t_b = t_b.anchor(point3(0., 0., 0.));
         assert_eq!(a.collide(&t_a.mat(), &b, &t_b.mat()), true);
     }
 }

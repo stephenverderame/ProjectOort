@@ -23,7 +23,8 @@ impl Object {
 
     pub fn radius(&self) -> f64 {
         let model = self.model.borrow();
-        let max_extents = model.scale.x.max(model.scale.y.max(model.scale.z));
+        let scale = model.local_scale();
+        let max_extents = scale.x.max(scale.y.max(scale.z));
         self.local_radius * max_extents
     }
 

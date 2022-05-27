@@ -88,17 +88,17 @@ pub fn simple_emitter<G, S, F>(pos: cgmath::Point3<f64>, are_lights: bool, parti
         if let Some(step) = particle_step.as_mut() {
             step(particle, dt)
         }
-        particle.transform.pos += particle.vel * dt;
-        particle.transform.orientation = particle.transform.orientation *
-            particle.rot_vel;
+        particle.transform.translate(particle.vel * dt);
+        particle.transform.rotate_world(particle.rot_vel);
     },
     |particle| {
-        let pos = particle.transform.pos;
-        let rot = particle.transform.orientation.s;
+        let pos = particle.transform.local_pos();
+        let rot = particle.transform.local_rot().s;
+        let scale = particle.transform.local_scale();
         instancing::BillboardAttributes {
             instance_color: particle.color.into(),
             instance_pos_rot: vec4(pos.x, pos.y, pos.z, rot).cast().unwrap().into(),
-            instance_scale: [particle.transform.scale.x as f32, particle.transform.scale.y as f32],
+            instance_scale: [scale.x as f32, scale.y as f32],
         }
     },
     move |particle| {
@@ -130,7 +130,8 @@ pub fn laser_hit_emitter<F : glium::backend::Facade>(body_pos: Point3<f64>,
             let vel = v.normalize() * f64::cos(theta) * f64::sin(phi) + body_normal.normalize() * f64::sin(theta) * f64::cos(phi) +
                 z.normalize() * f64::cos(phi);
             // randomly select a vector on a unit sphere with the normal as the zenith
-            Particle::new(origin.pos, node::Node::default().pos(origin.pos).u_scale(rnd.gen_range(0.1 .. 0.8)))
+            let origin_pos = origin.transform_point(point3(0., 0., 0.));
+            Particle::new(origin_pos, node::Node::default().pos(origin_pos).u_scale(rnd.gen_range(0.1 .. 0.8)))
                 .color(vec4(0.5451, 0., 0.5451, 1.))
                 .lifetime(Duration::from_millis(rnd.gen_range(60 .. 300)))
                 .vel(vel.normalize() * mag)
@@ -159,7 +160,8 @@ pub fn asteroid_hit_emitter<F : glium::backend::Facade>(body_pos: Point3<f64>, b
             let vel = v.normalize() * f64::cos(theta) * f64::sin(phi) + body_normal.normalize() * f64::sin(theta) * f64::cos(phi) +
                 z.normalize() * f64::cos(phi);
             // randomly select a vector on a unit sphere with the normal as the zenith
-            Particle::new(origin.pos, node::Node::default().pos(origin.pos).u_scale(rnd.gen_range(0.6 .. 1.2)))
+            let origin_pos = origin.transform_point(point3(0., 0., 0.));
+            Particle::new(origin_pos, node::Node::default().pos(origin_pos).u_scale(rnd.gen_range(0.6 .. 1.2)))
                 .color(vec4(0.421875, 0.2265625, 0.046875, 0.5))
                 .lifetime(Duration::from_millis(rnd.gen_range(300 .. 1000)))
                 .vel(vel.normalize() * mag)

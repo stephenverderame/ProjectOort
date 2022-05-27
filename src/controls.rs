@@ -12,6 +12,8 @@ pub struct PlayerControls {
     pub pitch: f64,
     pub roll: f64,
     pub fire: bool,
+    pub fire_rope: bool,
+    pub cut_rope: bool,
     mouse_capture: bool,
     visible: bool,
     vis_transition_start: std::time::Instant,
@@ -28,6 +30,8 @@ impl PlayerControls {
             visible: true,
             vis_transition_start: std::time::Instant::now(),
             inv_fac: 0., inv_trans_fac_start: 0.,
+            fire_rope: false,
+            cut_rope: false,
         }
     }
     /// Changes the mouse capture mode and returns the new value
@@ -77,6 +81,12 @@ impl PlayerControls {
                 // button 1 is lmouse, 3 is rmouse, 2 is middle mouse
                 if button == 1 && state == ElementState::Pressed {
                     self.fire = true;
+                } else if button == 3 && state == ElementState::Pressed {
+                    self.fire = true;
+                    self.fire_rope = true;
+                    self.cut_rope = false;
+                } else if button == 3 && state == ElementState::Released {
+                    self.cut_rope = true;
                 }
             },
             _ => (),
@@ -89,5 +99,6 @@ impl PlayerControls {
         self.pitch = 0.;
         self.roll = 0.;
         self.fire = false;
+        self.fire_rope = false;
     }
 }
