@@ -29,12 +29,13 @@ pub struct LineData {
 /// If used as an entity, the `transformations` method will always return
 /// nothing regardless of how many lines will actually be drawn
 /// 
-/// This is bad design, but it keeps usage a bit simpler
+/// This is bad design, but rihgt now, I think it keeps usage a bit simpler
 pub struct Lines {
     vertices: VertexBuffer<Vertex>,
     indices: IndexBuffer<u8>,
     instances: InstanceBuffer<LineAttributes>,
     lines: HashMap<u32, LineData>,
+    _dummy_transform: [Rc<RefCell<dyn Transformation>>; 1]
 }
 
 impl Lines {
@@ -45,6 +46,7 @@ impl Lines {
                 &LINE_INDICES).unwrap(),
             instances: InstanceBuffer::new(),
             lines: HashMap::new(),
+            _dummy_transform: [Rc::new(RefCell::new(Matrix4::from_scale(1.)))],
         }
     }
 
@@ -104,7 +106,7 @@ use crate::cg_support::Transformation;
 impl AbstractEntity for Lines {
 
     fn transformations(&self) -> &[Rc<RefCell<dyn Transformation>>] {
-        &[]
+        &self._dummy_transform[..]
     }
 
     fn drawable(&mut self) -> &mut dyn Drawable {

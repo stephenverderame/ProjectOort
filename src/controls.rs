@@ -47,8 +47,11 @@ impl PlayerControls {
     pub fn compute_transparency_fac(&mut self) -> f32 {
         let goal_fac = if self.visible { 0.0 } else { 1.0 };
         if (self.inv_fac - goal_fac).abs() > f32::EPSILON {
-            let dt = (std::time::Instant::now().duration_since(self.vis_transition_start).as_secs_f32() / 3.).min(1.);
-            self.inv_fac = dt * (goal_fac - self.inv_trans_fac_start) + self.inv_trans_fac_start;
+            let dt = (std::time::Instant::now()
+                .duration_since(self.vis_transition_start).as_secs_f32() / 3.)
+                .min(1.);
+            self.inv_fac = dt * (goal_fac - self.inv_trans_fac_start) 
+                + self.inv_trans_fac_start;
         }
         self.inv_fac
     }
@@ -57,19 +60,26 @@ impl PlayerControls {
         let ctx = crate::graphics_engine::get_active_ctx();
         match ev {
             #[allow(deprecated)]
-            DeviceEvent::Key(KeyboardInput {scancode: _, state, virtual_keycode: Some(vk), modifiers: _}) => {
+            DeviceEvent::Key(KeyboardInput {scancode: _, state, 
+                virtual_keycode: Some(vk), modifiers: _}) => 
+            {
                 match (vk, state) {
-                    (VirtualKeyCode::W, ElementState::Pressed) => self.movement = Movement::Forward,
-                    (VirtualKeyCode::W, ElementState::Released) => self.movement = Movement::Stopped,
-                    (VirtualKeyCode::S, ElementState::Pressed) => self.movement = Movement::Backwards,
-                    (VirtualKeyCode::S, ElementState::Released) => self.movement = Movement::Stopped,
+                    (VirtualKeyCode::W, ElementState::Pressed) => 
+                        self.movement = Movement::Forward,
+                    (VirtualKeyCode::W, ElementState::Released) => 
+                        self.movement = Movement::Stopped,
+                    (VirtualKeyCode::S, ElementState::Pressed) => 
+                        self.movement = Movement::Backwards,
+                    (VirtualKeyCode::S, ElementState::Released) => 
+                        self.movement = Movement::Stopped,
                     (VirtualKeyCode::T, ElementState::Pressed) => {
                         self.inv_trans_fac_start = self.inv_fac;
                         self.vis_transition_start = std::time::Instant::now();
                         self.visible = !self.visible;
                     },
                     (VirtualKeyCode::Escape, ElementState::Pressed) => 
-                        self.mouse_capture = PlayerControls::change_mouse_mode(self.mouse_capture, &*ctx.ctx.borrow().gl_window().window()),
+                        self.mouse_capture = PlayerControls::change_mouse_mode(
+                            self.mouse_capture, &*ctx.ctx.borrow().gl_window().window()),
                     _ => (),
                 }
             },

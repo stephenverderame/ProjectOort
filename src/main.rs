@@ -24,9 +24,12 @@ fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, la
         let mut transform = user.root().borrow().clone()
             .scale(cgmath::vec3(0.3, 0.3, 1.));
         transform.translate(user.forward() * 10.);
-        lasers.new_instance(transform, Some(user.forward() * 120f64)).metadata =
-            if controller.fire_rope { object::ObjectType::Hook }
-            else { object::ObjectType::Laser };
+        let (typ, speed) = if controller.fire_rope 
+            { (object::ObjectType::Hook, 200.) }
+        else 
+            { (object::ObjectType::Laser, 120.) };
+        lasers.new_instance(transform, Some(user.forward() * speed))
+            .metadata = typ;
     }
 }
 
@@ -209,8 +212,8 @@ fn main() {
                     obj_b_ptr: Rc::downgrade(&player.transform),
                     natural_length: (player.transform.borrow().transform_point(ship_front)
                          - hit_point).magnitude()
-                }
-                /*physics::Centripetal{
+                }/*
+                physics::Centripetal{
                     attach_pt_a: target.base.transform.borrow().mat()
                         .invert().unwrap().transform_point(hit_point),
                     obj_a_ptr: Rc::downgrade(&target.base.transform),
@@ -218,7 +221,7 @@ fn main() {
                     obj_b_ptr: Rc::downgrade(&player.transform),
                     natural_length: (player.transform.borrow().transform_point(ship_front)
                          - hit_point).magnitude()
-                }*/));
+                })*/));
             let laser_transform = if a.metadata == object::ObjectType::Hook
             { a.base.transform.clone() } 
             else { b.base.transform.clone() };
@@ -270,13 +273,15 @@ fn main() {
         (&mut *scene).set_lights(&light_data);
         controller.borrow_mut().reset_toggles();
     };
-    let mut controller_cb = |ev, _: std::cell::RefMut<SceneManager>| (&mut *controller.borrow_mut()).on_input(ev);
+    let mut controller_cb = |ev, _: std::cell::RefMut<SceneManager>| 
+        (&mut *controller.borrow_mut()).on_input(ev);
     let mut resize_cb = |new_size : glutin::dpi::PhysicalSize<u32>| {
         if new_size.height != 0 {
             user.borrow_mut().aspect = new_size.width as f32 / new_size.height as f32;
         }
     };
-    let cbs = WindowCallbacks::new().with_draw_handler(&mut draw_cb).with_input_handler(&mut controller_cb)
+    let cbs = WindowCallbacks::new().with_draw_handler(&mut draw_cb)
+        .with_input_handler(&mut controller_cb)
         .with_resize_handler(&mut resize_cb);
     println!("Start game loop");
     wnd.main_loop(cbs);

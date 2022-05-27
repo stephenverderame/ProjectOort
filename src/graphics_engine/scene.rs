@@ -60,7 +60,8 @@ impl Scene {
                 // objects when doing a transparency pass
                 match entity.borrow().render_order() {
                     RenderOrder::Unordered => {
-                        let cam_z = (view_mat * entity.borrow().transformations()[0].borrow().as_transform())
+                        let cam_z = (view_mat * entity.borrow()
+                            .transformations()[0].borrow().as_transform())
                             .transform_point(point3(0., 0., 0.)).z;
                         let mut fixpoint_depth = -((cam_z * 10f64.powi(8) + 0.5) as i64);
                         while map.get(&fixpoint_depth).is_some() { fixpoint_depth -= 1; }
@@ -86,12 +87,14 @@ impl Scene {
         shader: &shader::ShaderManager) 
     {
         match pass {
-            shader::RenderPassType::Transparent(ptr) => self.render_transparency(ptr, viewer, scene_data, cache, fbo, shader),
+            shader::RenderPassType::Transparent(ptr) => 
+                self.render_transparency(ptr, viewer, scene_data, cache, fbo, shader),
             typ => {
                 for entity in &self.entities {
                     if entity.borrow().should_render(typ) {
                         let mut entity = entity.borrow_mut();
-                        entity::render_entity(&mut *entity, fbo, scene_data, cache, shader);
+                        entity::render_entity(&mut *entity, fbo, scene_data, 
+                            cache, shader);
                     }
                 }
             },
@@ -99,8 +102,8 @@ impl Scene {
     }
 
     /// Renders the scene
-    /// Returns either a texture result of the render or `None` if the result was rendered onto
-    /// the screen
+    /// Returns either a texture result of the render or `None` 
+    /// if the result was rendered onto the screen
     pub fn render(&self, shader: &shader::ShaderManager)
     {
         use glium::Surface;
@@ -147,8 +150,9 @@ impl Scene {
 /// `hdr_path` - the path to the hdr diffuse ibl image
 /// 
 /// `bg_skybox` - the skybox storing the texture to generate the specular ibl from
-pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, bg_skybox: &mut cubes::Skybox, 
-    shader_manager: &shader::ShaderManager, facade: &F) -> shader::PbrMaps 
+pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, 
+    bg_skybox: &mut cubes::Skybox, shader_manager: &shader::ShaderManager, 
+    facade: &F) -> shader::PbrMaps 
 {
     use super::{camera, drawable};
     use pipeline::*;
@@ -156,7 +160,8 @@ pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, bg_skybox: &
     let cam = camera::PerspectiveCamera::default(1.);
     let mip_levels = 5;
     let pos_func = || cgmath::point3(0., 0., 0.);
-    let mut rt = render_target::MipCubemapRenderTarget::new(128, mip_levels, 10., Box::new(pos_func));
+    let mut rt = render_target::MipCubemapRenderTarget::new(128, mip_levels, 10., 
+        Box::new(pos_func));
     let iterations = Cell::new(0);
     let mut cache = shader::PipelineCache::default();
     let res = rt.draw(&cam, None, &mut cache, &mut |fbo, viewer, _, cache, _, _| {
@@ -172,7 +177,8 @@ pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str, bg_skybox: &
     let mut tp = texture_processor::GenLutProcessor::new(512, 512, facade);
     let brdf = tp.process(None, shader_manager, &mut cache, None);
     match (res, brdf) {
-        (Some(TextureType::TexCube(Ownership::Own(spec))), Some(TextureType::Tex2d(Ownership::Own(brdf)))) =>
+        (Some(TextureType::TexCube(Ownership::Own(spec))), 
+            Some(TextureType::Tex2d(Ownership::Own(brdf)))) =>
             shader::PbrMaps {
                 diffuse_ibl: cbo,
                 spec_ibl: spec,

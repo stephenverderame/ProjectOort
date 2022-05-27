@@ -12,6 +12,7 @@ use super::material::Material;
 use super::animation::{Animator, Bone, AssimpNode};
 use super::super::drawable::*;
 use super::super::instancing;
+use std::cell::RefCell;
 
 
 /// A model is geometry loaded from the filesystem
@@ -39,6 +40,7 @@ pub struct Model {
     instances: instancing::InstanceBuffer<instancing::InstancePosition>,
     instancing: bool,
     transparency: Option<shader::TransparencyData>,
+    pub emissive_strength: Rc<RefCell<f32>>,
 }
 
 impl Model {
@@ -138,7 +140,8 @@ impl Model {
             bone_buffer, 
             instances: instancing::InstanceBuffer::new(),
             instancing: false,
-            transparency: None, }
+            transparency: None,
+            emissive_strength: Rc::new(RefCell::new(1.)) }
     }
 
     /// Enables model instancing
@@ -153,7 +156,6 @@ impl Model {
     /// 
     /// `object_id` - the unique id for each transparent object
     pub fn with_transparency(mut self, refraction_idx: f32, object_id: u32) -> Self {
-        use std::cell::RefCell;
         self.transparency = Some(shader::TransparencyData {
             refraction_idx,
             trans_fac: Rc::new(RefCell::new(0.)),
@@ -186,7 +188,7 @@ impl Model {
         let bones = self.bone_buffer.as_ref();
         for mesh in &self.meshes {
             v.push(mesh.render_args(Some(model), &self.materials, bones.clone(), 
-                self.transparency.as_ref()));
+                self.transparency.as_ref(), *self.emissive_strength.borrow()));
         }
         v
     }
@@ -210,7 +212,7 @@ impl Model {
                 = From::from(self.instances.get_stored_buffer().unwrap().per_instance().unwrap());
             for mesh in &self.meshes {
                 let (uniform, vertices, indices) = mesh.render_args(None, &self.materials, 
-                    None, self.transparency.as_ref());
+                    None, self.transparency.as_ref(), *self.emissive_strength.borrow());
                 v.push((uniform, vertices.append(data.clone()), indices));
             }
         }

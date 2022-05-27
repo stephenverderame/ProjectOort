@@ -23,6 +23,7 @@ pub struct Player {
     pub aspect: f32,
     body: physics::RigidBody<object::ObjectType>,
     pub inv_fac: Rc<RefCell<f32>>,
+    em_fac: Rc<RefCell<f32>>,
 }
 
 impl Player {
@@ -42,22 +43,29 @@ impl Player {
         Player {
             cam: cam,
             aspect: view_aspect,
+            em_fac: model.emissive_strength.clone(),
             entity: Rc::new(RefCell::new(entity::Entity {
                 geometry: Box::new(model),
                 locations: vec![root_node.clone()],
-                render_passes: vec![shader::RenderPassType::Visual, shader::RenderPassType::Depth, 
-                    shader::RenderPassType::transparent_tag(), shader::RenderPassType::TransparentDepth],
+                render_passes: vec![shader::RenderPassType::Visual, 
+                    shader::RenderPassType::Depth, 
+                    shader::RenderPassType::transparent_tag(), 
+                    shader::RenderPassType::TransparentDepth],
                 order: entity::RenderOrder::Unordered,
             })),
             body: physics::RigidBody::new(root_node.clone(), Some(
-                collisions::CollisionObject::new(root_node, c_str, collisions::TreeStopCriteria::default())),
-                physics::BodyType::Controlled, object::ObjectType::Ship).with_density(0.88),
-            inv_fac
+                collisions::CollisionObject::new(root_node, c_str, 
+                    collisions::TreeStopCriteria::default())),
+                physics::BodyType::Controlled, object::ObjectType::Ship)
+                    .with_density(0.88),
+            inv_fac,
         }
     }
 
     /// Updates the players' forces based on the input controls and returns the rigid body
-    pub fn as_rigid_body(&mut self, input: &controls::PlayerControls) -> &mut physics::RigidBody<object::ObjectType> {
+    pub fn as_rigid_body(&mut self, input: &controls::PlayerControls) 
+        -> &mut physics::RigidBody<object::ObjectType> 
+    {
         use cgmath::*;
         {
             let model : cgmath::Matrix4<f64> = 
@@ -65,9 +73,18 @@ impl Player {
             let forward = model.transform_vector(cgmath::vec3(0., 0., 1.));
             self.body.base.velocity += 
                 match input.movement {
-                    controls::Movement::Forward => forward,
-                    controls::Movement::Backwards => -forward,
-                    _ => vec3(0., 0., 0.),
+                    controls::Movement::Forward => {
+                        *self.em_fac.borrow_mut() = 4.;
+                        forward
+                    },
+                    controls::Movement::Backwards => {
+                        *self.em_fac.borrow_mut() = 4.;
+                        -forward
+                    },
+                    _ => {
+                        *self.em_fac.borrow_mut() = 2.5;
+                        vec3(0., 0., 0.)
+                    },
                 };
             self.body.base.rot_vel = vec3(input.pitch, 0., input.roll) / 10000.;
         }
@@ -89,7 +106,8 @@ impl Player {
         model.transform_vector(cgmath::vec3(0., 0., 1.))
     }
 
-    /// Constructs a new perspective camera so that it has the exact same view as the player's camera
+    /// Constructs a new perspective camera so that it has the exact 
+    /// same view as the player's camera
     pub fn get_cam(&self) -> camera::PerspectiveCamera {
         camera::PerspectiveCamera {
             fov_deg: 60.,
@@ -97,8 +115,10 @@ impl Player {
             near: 0.1,
             far: FAR_PLANE,
             cam: self.cam_pos(),
-            up: self.cam.transform_vec(vec3(0., 1., 0.)).cast::<f32>().unwrap(),
-            target: self.body.base.transform.borrow().local_pos().cast::<f32>().unwrap(),
+            up: self.cam.transform_vec(vec3(0., 1., 0.))
+                .cast::<f32>().unwrap(),
+            target: self.body.base.transform.borrow()
+                .local_pos().cast::<f32>().unwrap(),
 
         }
     }
@@ -126,7 +146,8 @@ impl Player {
 }
 impl drawable::Viewer for Player {
     fn proj_mat(&self) -> cgmath::Matrix4<f32> {
-        cgmath::perspective(cgmath::Deg::<f32>(60f32), self.aspect, 0.1, FAR_PLANE)
+        cgmath::perspective(cgmath::Deg::<f32>(60f32), 
+            self.aspect, 0.1, FAR_PLANE)
     }
 
     fn cam_pos(&self) -> cgmath::Point3<f32> {

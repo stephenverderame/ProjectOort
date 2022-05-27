@@ -17,6 +17,7 @@ uniform sampler2D roughness_map;
 uniform sampler2D emission_map;
 uniform sampler2D ao_map;
 uniform bool use_ao;
+uniform float emission_strength;
 
 uniform vec3 dir_light_dir;
 const float dir_light_near = 0.3;
@@ -483,7 +484,7 @@ void main() {
     vec3 diffuse = irradiance * albedo;
     vec3 specular = prefilter_color * (ks * env_brdf.x + env_brdf.y);
     vec3 ambient = (kd * diffuse + specular) * ao * (1.0 - calcShadow(norm) * 0.7);
-    vec3 color = ambient + direct_radiance + emission * 4;
+    vec3 color = ambient + direct_radiance + emission * emission_strength;
 
     frag_color = vec4(applyTransparency(color, view_dir, norm), 1.0);
 }

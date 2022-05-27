@@ -4,6 +4,7 @@ use std::io::BufRead;
 use super::super::textures;
 use super::super::shader;
 use crate::cg_support::ssbo;
+
 struct PBRData {
     roughness_tex: glium::texture::Texture2d,
     metalness_tex: glium::texture::Texture2d,
@@ -195,7 +196,8 @@ impl Material {
     /// `model` - model matrix if available. If `None`, the identity matrix is used
     pub fn to_uniform_args<'a>(&'a self, instancing: bool, model: Option<[[f32; 4]; 4]>, 
         bones: Option<&'a ssbo::SSBO<[[f32; 4]; 4]>>, 
-        trans_data: Option<&'a shader::TransparencyData>) -> shader::UniformInfo 
+        trans_data: Option<&'a shader::TransparencyData>, 
+        emission_strength: f32) -> shader::UniformInfo 
     {
         match &self.name[..] {
             "Laser" => shader::UniformInfo::LaserInfo,
@@ -209,6 +211,7 @@ impl Material {
                 ao_map: self.pbr_data.as_ref().and_then(|data| { data.ao_tex.as_ref() }),
                 instancing, bone_mats: bones,
                 trans_data,
+                emission_strength,
             }),
             x => panic!("Unimplemented texture with name: {}", x),
         }  

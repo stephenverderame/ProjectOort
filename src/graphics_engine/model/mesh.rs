@@ -9,11 +9,13 @@ use super::super::drawable::*;
 
 /// Creates a OpenGL vbo and ebo for the vertices and indices
 #[inline]
-fn get_vbo_ebo<F : glium::backend::Facade>(verts: Vec<Vertex>, indices: Vec<u32>, ctx: &F) 
+fn get_vbo_ebo<F : glium::backend::Facade>(verts: Vec<Vertex>, 
+    indices: Vec<u32>, ctx: &F) 
     -> (glium::VertexBuffer<Vertex>, glium::IndexBuffer<u32>) 
 {
     (glium::VertexBuffer::immutable(ctx, &verts).unwrap(),
-    glium::IndexBuffer::immutable(ctx, glium::index::PrimitiveType::TrianglesList, &indices).unwrap())
+    glium::IndexBuffer::immutable(ctx, 
+        glium::index::PrimitiveType::TrianglesList, &indices).unwrap())
 }
 
 /// A component of a model with its own material, vertices, and indices
@@ -25,15 +27,15 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    /// Gets a vector indexable by mesh vertex index which returns a vector of tuples of corresponding
-    /// scene bone ids and bone weights
+    /// Gets a vector indexable by mesh vertex index which returns a vector of 
+    /// tuples of corresponding scene bone ids and bone weights
     /// 
-    /// `bone_map` - scene wide storage of bones to keep track of unique ids for each bone across the model
-    /// and reuse the same `Bone` `struct` per bone
+    /// `bone_map` - scene wide storage of bones to keep track of unique ids for 
+    /// each bone across the model and reuse the same `Bone` `struct` per bone
     /// 
     /// `num_vertices` - the number of vertices in the mesh and size of the return vector
-    fn get_bones(mesh: &assimp::Mesh, bone_map: &mut HashMap<String, Bone>, num_vertices: usize) 
-        -> Vec<Vec<(i32, f32)>> 
+    fn get_bones(mesh: &assimp::Mesh, bone_map: &mut HashMap<String, Bone>, 
+        num_vertices: usize) -> Vec<Vec<(i32, f32)>> 
     {
         let mut unique_bones = bone_map.len() as i32;
         let mut vertex_bone_data = Vec::<Vec<(i32, f32)>>::new();
@@ -56,21 +58,26 @@ impl Mesh {
             // Assimp weight_iter is broken
             for i in 0 .. bone.num_weights as usize {
                 let weight = unsafe { *bone.weights.add(i) };
-                vertex_bone_data[weight.vertex_id as usize].push((bone_id, weight.weight));
+                vertex_bone_data[weight.vertex_id as usize]
+                    .push((bone_id, weight.weight));
             }
         }
         vertex_bone_data
     }
     
-    /// Splits an iterator over bone id, bone weight tuples into respective bone id and bone weight arrays
-    /// If there are less weights than `max_bones_per_vertex`, the bone id will be `-1` and weight will be `0`
+    /// Splits an iterator over bone id, bone weight tuples into respective 
+    /// bone id and bone weight arrays
+    /// If there are less weights than `max_bones_per_vertex`, the bone id will 
+    /// be `-1` and weight will be `0`
     fn to_bone_weight_arrays(bone_weights: &mut dyn Iterator<Item = &(i32, f32)>) 
         -> ([i32; MAX_BONES_PER_VERTEX], [f32; MAX_BONES_PER_VERTEX]) 
     {
         // set associated type, Item, for Iterator
         use std::mem::MaybeUninit;
-        let mut id_array : [MaybeUninit<i32>; MAX_BONES_PER_VERTEX] = unsafe { MaybeUninit::uninit().assume_init() };
-        let mut weight_array : [MaybeUninit<f32>; MAX_BONES_PER_VERTEX] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut id_array : [MaybeUninit<i32>; MAX_BONES_PER_VERTEX] = 
+            unsafe { MaybeUninit::uninit().assume_init() };
+        let mut weight_array : [MaybeUninit<f32>; MAX_BONES_PER_VERTEX] = 
+            unsafe { MaybeUninit::uninit().assume_init() };
         let mut idx : usize = 0;
         while idx < MAX_BONES_PER_VERTEX {
             match bone_weights.next() {
@@ -92,16 +99,21 @@ impl Mesh {
     }
     /// Creates a new mesh 
     /// 
-    /// `bone_map` - map of already loaded bones by other meshes in the model. Will be updated if this mesh contains
-    /// new bones
-    pub fn new<F : glium::backend::Facade>(mesh: &assimp::Mesh, bone_map: &mut HashMap<String, Bone>, ctx: &F) -> Mesh {
+    /// `bone_map` - map of already loaded bones by other meshes in the model. 
+    /// Will be updated if this mesh contains new bones
+    pub fn new<F : glium::backend::Facade>(mesh: &assimp::Mesh, 
+        bone_map: &mut HashMap<String, Bone>, ctx: &F) -> Mesh 
+    {
         let mut vertices = Vec::<Vertex>::new();
         let mut indices = Vec::<u32>::new();
         let bones = Mesh::get_bones(mesh, bone_map, mesh.num_vertices() as usize);
-        for (vert, norm, tex_coord, tan, bone_weights) in mesh.vertex_iter().zip(mesh.normal_iter()).zip(mesh.texture_coords_iter(0))
-            .zip(mesh.tangent_iter()).zip(bones.iter()).map(|((((v, n), t), ta), b)| (v, n, t, ta, b))
+        for (vert, norm, tex_coord, tan, bone_weights) in mesh.vertex_iter()
+            .zip(mesh.normal_iter()).zip(mesh.texture_coords_iter(0))
+            .zip(mesh.tangent_iter()).zip(bones.iter())
+            .map(|((((v, n), t), ta), b)| (v, n, t, ta, b))
         {
-            let (bone_ids, bone_weights) = Mesh::to_bone_weight_arrays(&mut bone_weights.iter());
+            let (bone_ids, bone_weights) = 
+                Mesh::to_bone_weight_arrays(&mut bone_weights.iter());
             vertices.push(Vertex {
                 pos: to_v3(vert).into(),
                 normal: to_v3(norm).into(),
@@ -121,17 +133,21 @@ impl Mesh {
 
     /// Gets the uniform, vertex information, and indices for this mesh
     /// 
-    /// `model` - the model matrix for this mesh or `None` to use instancing at the model level
+    /// `model` - the model matrix for this mesh or `None` to 
+    /// use instancing at the model level
     /// 
     /// `mats` - the material list for the entire model
     /// 
     /// `bones` - the bones SSBO or `None` to not animate the mesh
-    pub fn render_args<'a>(&'a self, model: Option<[[f32; 4]; 4]>, mats: &'a Vec<Material>, 
-        bones: Option<&'a ssbo::SSBO::<[[f32; 4]; 4]>>, trans_data: Option<&'a shader::TransparencyData>) 
+    pub fn render_args<'a>(&'a self, model: Option<[[f32; 4]; 4]>, 
+        mats: &'a Vec<Material>,  bones: Option<&'a ssbo::SSBO::<[[f32; 4]; 4]>>, 
+        trans_data: Option<&'a shader::TransparencyData>, emission: f32) 
         -> (shader::UniformInfo<'a>, VertexHolder<'a>, glium::index::IndicesSource<'a>)
     {
         let mat = mats[self.mat_idx.min(mats.len() - 1)]
-            .to_uniform_args(model.is_none(), model, bones, trans_data);
-        (mat, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), From::from(&self.ebo))
+            .to_uniform_args(model.is_none(), model, bones, trans_data, 
+                emission);
+        (mat, VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))), 
+            From::from(&self.ebo))
     }
 }
