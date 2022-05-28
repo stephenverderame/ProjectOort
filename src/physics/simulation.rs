@@ -133,51 +133,32 @@ fn rot_vel_to_quat(rot_vel: Vector3<f64>, dt: f64) -> Quaternion<f64> {
 
 }
 
-/// Gets the difference in linear and angular velocity due to the force
-fn delta_vels_from_force(pt: &Point3<f64>, force: &Vector3<f64>, 
-    body: &BaseRigidBody, dt: f64) -> (Vector3<f64>, Vector3<f64>)
+/// Applies all the manipulators to the rigid bodies
+fn apply_forces<T>(objs: &mut [&mut RigidBody<T>], 
+    obj_indices: &HashMap<*const node::Node, u32>, forces: &[Box<dyn Manipulator<T>>],
+    dt: std::time::Duration)
 {
-    let accl = force / body.mass;
-
-    let r = pt - body.center();
-    let torque = r.cross(*force);
-
-    let angular_accl = body.moment_inertia().invert().unwrap() 
-        * torque;
-
-    (accl * dt, angular_accl * dt)
+    for f in forces {
+        f.affect_bodies(objs, obj_indices, dt);
+    }
 }
 
-/// Calculates velocity and updates position and orientation of each dynamic body
-fn apply_forces<T>(objs: &mut [&mut RigidBody<T>], forces: &[Box<dyn Forcer>], dt: f64) {
-    //println!("{:?}", objs[100].rot_vel);
-    for obj in objs {
-        if obj.base.body_type != BodyType::Static {
-            {
-                let mut vel = vec3(0., 0., 0.);
-                let mut a_vel = vec3(0., 0., 0.);
-                for f in forces {
-                    if let Some((pt, force)) = f.get_force(&obj.base) {
-                        let (delta_v, delta_a_v) = 
-                            delta_vels_from_force(&pt, &force, &obj.base, dt);
-                        vel += delta_v;
-                        a_vel += delta_a_v;
-                    };
-                }
-                obj.base.velocity += vel;
-                //obj.base.rot_vel += a_vel;
-                let mut t = obj.base.transform.borrow_mut();
-                (&mut *t).translate(obj.base.velocity * dt);
-                (&mut *t).rotate_world(rot_vel_to_quat(obj.base.rot_vel, dt));
-            }
-            obj.base.collider.as_ref().map(|x| x.update_in_collision_tree());
-
+/// Updates position and orientation of each dynamic body
+fn move_objects<T>(objs: &mut [&mut RigidBody<T>], dt: f64) {
+    for obj in objs.iter_mut()
+        .filter(|obj| obj.base.body_type != BodyType::Static) 
+    {
+        {
+            let mut t = obj.base.transform.borrow_mut();
+            (&mut *t).translate(obj.base.velocity * dt);
+            (&mut *t).rotate_world(rot_vel_to_quat(obj.base.rot_vel, dt));
         }
+        obj.base.collider.as_ref().map(|x| x.update_in_collision_tree());
     }
 }
 
 /// Uses `resolvers` to update position and rotation based on collisions
-fn resolve_forces<T>(objects: &mut [&mut RigidBody<T>], 
+fn resolve_collisions<T>(objects: &mut [&mut RigidBody<T>], 
     resolvers: Vec<CollisionResolution>, _dt: f64) 
 {
     for (resolver, body_idx) in resolvers.into_iter().zip(0 .. objects.len())
@@ -202,64 +183,6 @@ fn update_octree<T>(objs: &[&mut RigidBody<T>]) {
             if o.base.body_type == BodyType::Dynamic {
                 collider.update_in_collision_tree();
             }
-        }
-    }
-}
-
-/// Projection coefficient of `v` projected onto `u`
-/// 
-/// The vector would be this coefficient times `u`
-fn project_onto(v: Vector3<f64>, u: Vector3<f64>) -> f64 {
-    v.dot(u) / u.dot(u)
-}
-
-/// Gets the r vector, the projection of `body_a`'s velocity onto that vector,
-/// the projection of `body_b`'s velocity onto that vector and the total mass
-/// of both bodies
-fn get_r_projections_mass<T>(body_a: &RigidBody<T>, body_b: &RigidBody<T>, 
-    tether_length: f64) -> Option<(Vector3<f64>, f64, f64, f64)>
-{
-    /*let attach_a_world = body_a.base.transform.borrow()
-        .transform_point(t.attach_a);
-    let attach_b_world = body_b.base.transform.borrow()
-        .transform_point(t.attach_b);*/
-    let a_to_b = body_b.base.center() - body_a.base.center();
-    if a_to_b.magnitude() < tether_length { None }
-    else {
-        let a_to_b = a_to_b.normalize();
-        let t_a = project_onto(body_a.base.velocity, a_to_b);
-        let t_b = project_onto(body_b.base.velocity, a_to_b);
-        Some((a_to_b, t_a, t_b, body_a.base.mass + body_b.base.mass))
-    }
-}
-
-fn resolve_tethers<T>(tethers: &[Tether], objs: &mut [&mut RigidBody<T>],
-    body_map: HashMap<*const node::Node, u32>) 
-{
-    for t in tethers {
-        if let (Some(a), Some(b)) = (t.a.upgrade(), t.b.upgrade()) {
-            let a_idx = body_map[&(a.as_ptr() as *const _)] as usize;
-            let b_idx = body_map[&(b.as_ptr() as *const _)] as usize;
-            if let Some((a_to_b, t_a, t_b, total_mass)) = 
-                get_r_projections_mass(&objs[a_idx], &objs[b_idx], t.length) 
-            {
-                let mut total_parallel_p = vec3(0., 0., 0.);
-                let calc_momentum = |body : &mut RigidBody<T>, t| {
-                    let v = t * a_to_b;
-                    body.base.velocity -= v;
-                    v * body.base.mass
-                };
-                if t_a < 0. {
-                    total_parallel_p += calc_momentum(&mut objs[a_idx], t_a);
-                }
-                if t_b > 0. {
-                    total_parallel_p += calc_momentum(&mut objs[b_idx], t_b);
-                }
-                total_parallel_p /= total_mass;
-                objs[a_idx].base.velocity += total_parallel_p;
-                objs[b_idx].base.velocity += total_parallel_p;
-            }
-
         }
     }
 }
@@ -396,15 +319,15 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     /// 
     /// `player_idx` - the index of the player's rigid body in `objects`
     pub fn step(&mut self, objects: &mut [&mut RigidBody<T>], 
-        forces: &[Box<dyn Forcer>], tethers: &[Tether], player_idx: usize,
+        forces: &[Box<dyn Manipulator<T>>], player_idx: usize,
         dt: std::time::Duration) 
     {
         let dt_sec = dt.as_secs_f64();
         let body_map = insert_into_octree(&mut self.obj_tree, objects);
-        apply_forces(objects, forces, dt_sec);
-        let resolvers = self.get_resolving_forces(objects, player_idx);
-        resolve_tethers(tethers, objects, body_map);
-        resolve_forces(objects, resolvers, dt_sec);
+        apply_forces(objects, &body_map, forces, dt);
+        move_objects(objects, dt_sec);
+        resolve_collisions(objects, 
+            self.get_resolving_forces(objects, player_idx), dt_sec);
         update_octree(objects);
     }
 }

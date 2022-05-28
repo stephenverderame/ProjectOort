@@ -159,8 +159,9 @@ fn main() {
     laser.borrow_mut().body(0).base.rot_vel = vec3(0., 10., 0.);
 
     let dead_lasers = RefCell::new(Vec::new());
-    let mut tethers = Vec::new();
-    let new_tethers : RefCell<Vec<physics::Tether>> = RefCell::new(Vec::new());
+    let mut forces = Vec::new();
+    let new_forces : RefCell<Vec<Box<dyn physics::Manipulator<object::ObjectType>>>> 
+        = RefCell::new(Vec::new());
     let mut sim = physics::Simulation::<object::ObjectType>::new(point3(0., 0., 0.), 200.)
     .with_on_hit(|a, b, hit, player| {
         if a.metadata == object::ObjectType::Laser ||
@@ -204,13 +205,14 @@ fn main() {
                     end: node::Node::default().parent(target.base.transform.clone())
                         .pos(hit_local),
                 });
-                new_tethers.borrow_mut().push(physics::Tether {
+                new_forces.borrow_mut().push(Box::new(physics::Tether::new( 
+                physics::TetherData {
                     attach_a: hit_local,
                     a: Rc::downgrade(&target.base.transform),
                     attach_b: ship_front,
                     b: Rc::downgrade(&player.transform),
                     length: (ship_front - hit_point).magnitude()
-                });
+                })));
             let laser_transform = if a.metadata == object::ObjectType::Hook
             { a.base.transform.clone() } 
             else { b.base.transform.clone() };
@@ -230,7 +232,7 @@ fn main() {
             let mut bodies = asteroid.bodies_ref();
             let mut u = user.borrow_mut();
             if controller.borrow().cut_rope {
-                tethers.clear();
+                forces.clear();
                 lines.borrow_mut().remove_line(0);
             }
             let c = controller.borrow();
@@ -239,8 +241,8 @@ fn main() {
             bodies.append(&mut lz.bodies_ref());
             bodies.push(u.as_rigid_body(&*c));
             let player_idx = bodies.len() - 1;
-            tethers.append(&mut new_tethers.borrow_mut());
-            sim.step(&mut bodies, &[], &tethers, player_idx, dt);
+            forces.append(&mut new_forces.borrow_mut());
+            sim.step(&mut bodies, &forces, player_idx, dt);
         }
         laser.borrow_mut().retain(|laser_ptr|
             !dead_lasers.borrow().iter().any(|dead| dead.as_ptr() as *const () == laser_ptr));
