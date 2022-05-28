@@ -30,10 +30,13 @@ pub struct Tether {
 }
 
 impl Tether {
+    /// `true` if the tether is taught (at or beyond its maximum length)
+    #[allow(unused)]
     pub fn is_taught(&self) -> bool {
         if let (Some(a), Some(b)) = (self.a.upgrade(), self.b.upgrade()) {
-            (a.borrow().get_pos() - b.borrow().get_pos()).magnitude() > 
-                self.length
+            (a.borrow().transform_point(self.attach_a) 
+                - b.borrow().transform_point(self.attach_b)).magnitude() 
+                > self.length
         } else { false }
     }
 }

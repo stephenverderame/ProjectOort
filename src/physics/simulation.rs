@@ -206,30 +206,60 @@ fn update_octree<T>(objs: &[&mut RigidBody<T>]) {
     }
 }
 
+/// Projection coefficient of `v` projected onto `u`
+/// 
+/// The vector would be this coefficient times `u`
+fn project_onto(v: Vector3<f64>, u: Vector3<f64>) -> f64 {
+    v.dot(u) / u.dot(u)
+}
+
+/// Gets the r vector, the projection of `body_a`'s velocity onto that vector,
+/// the projection of `body_b`'s velocity onto that vector and the total mass
+/// of both bodies
+fn get_r_projections_mass<T>(body_a: &RigidBody<T>, body_b: &RigidBody<T>, 
+    tether_length: f64) -> Option<(Vector3<f64>, f64, f64, f64)>
+{
+    /*let attach_a_world = body_a.base.transform.borrow()
+        .transform_point(t.attach_a);
+    let attach_b_world = body_b.base.transform.borrow()
+        .transform_point(t.attach_b);*/
+    let a_to_b = body_b.base.center() - body_a.base.center();
+    if a_to_b.magnitude() < tether_length { None }
+    else {
+        let a_to_b = a_to_b.normalize();
+        let t_a = project_onto(body_a.base.velocity, a_to_b);
+        let t_b = project_onto(body_b.base.velocity, a_to_b);
+        Some((a_to_b, t_a, t_b, body_a.base.mass + body_b.base.mass))
+    }
+}
+
 fn resolve_tethers<T>(tethers: &[Tether], objs: &mut [&mut RigidBody<T>],
-    body_map: HashMap<*const node::Node, u32>, 
-    resolvers: &mut Vec<CollisionResolution>) 
+    body_map: HashMap<*const node::Node, u32>) 
 {
     for t in tethers {
-        if !t.is_taught() { continue; }
         if let (Some(a), Some(b)) = (t.a.upgrade(), t.b.upgrade()) {
             let a_idx = body_map[&(a.as_ptr() as *const _)] as usize;
             let b_idx = body_map[&(b.as_ptr() as *const _)] as usize;
-            let body_a = &objs[a_idx];
-            let body_b = &objs[b_idx];
-            let attach_a_world = body_a.base.transform.borrow()
-                .transform_point(t.attach_a);
-            let attach_b_world = body_b.base.transform.borrow()
-                .transform_point(t.attach_b);
-            let a_to_b = attach_b_world - attach_a_world;
-            if a_to_b.magnitude() > t.length {
-                let cr = &mut resolvers[a_idx];
-                cr.do_collision(a_to_b.normalize(), attach_a_world, 
-                    body_a, body_b);
-                let cr = &mut resolvers[b_idx];
-                cr.do_collision(-1. * a_to_b.normalize(), attach_b_world, 
-                    body_b, body_a);
+            if let Some((a_to_b, t_a, t_b, total_mass)) = 
+                get_r_projections_mass(&objs[a_idx], &objs[b_idx], t.length) 
+            {
+                let mut total_parallel_p = vec3(0., 0., 0.);
+                let calc_momentum = |body : &mut RigidBody<T>, t| {
+                    let v = t * a_to_b;
+                    body.base.velocity -= v;
+                    v * body.base.mass
+                };
+                if t_a < 0. {
+                    total_parallel_p += calc_momentum(&mut objs[a_idx], t_a);
+                }
+                if t_b > 0. {
+                    total_parallel_p += calc_momentum(&mut objs[b_idx], t_b);
+                }
+                total_parallel_p /= total_mass;
+                objs[a_idx].base.velocity += total_parallel_p;
+                objs[b_idx].base.velocity += total_parallel_p;
             }
+
         }
     }
 }
@@ -372,8 +402,8 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         let dt_sec = dt.as_secs_f64();
         let body_map = insert_into_octree(&mut self.obj_tree, objects);
         apply_forces(objects, forces, dt_sec);
-        let mut resolvers = self.get_resolving_forces(objects, player_idx);
-        resolve_tethers(tethers, objects, body_map, &mut resolvers);
+        let resolvers = self.get_resolving_forces(objects, player_idx);
+        resolve_tethers(tethers, objects, body_map);
         resolve_forces(objects, resolvers, dt_sec);
         update_octree(objects);
     }

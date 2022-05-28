@@ -194,7 +194,7 @@ fn main() {
                     { b } else { a };
                 let hit_point = if a.metadata == object::ObjectType::Hook 
                     { hit.pos_norm_b.0 } else { hit.pos_norm_a.0 };
-                let ship_front = player.transform.borrow().transform_point(point3(0., 0., 10.));
+                let ship_front = player.transform.borrow().transform_point(point3(0., 0., 8.));
                 let hit_local = target.base.transform.borrow().mat()
                     .invert().unwrap().transform_point(hit_point);
                 lines.borrow_mut().add_line(0, primitives::LineData {
@@ -204,23 +204,6 @@ fn main() {
                     end: node::Node::default().parent(target.base.transform.clone())
                         .pos(hit_local),
                 });
-                /*new_springs.borrow_mut().push(Box::new(/*physics::Spring {
-                    k: 1000.0,
-                    attach_pt_a: hit_local,
-                    obj_a_ptr: Rc::downgrade(&target.base.transform),
-                    mode: physics::RestoringMode::String,
-                    attach_pt_b: ship_front,
-                    obj_b_ptr: Rc::downgrade(&player.transform),
-                    natural_length: (ship_front - hit_point).magnitude()
-                }*/
-                physics::Centripetal{
-                    attach_pt_a: target.base.transform.borrow().mat()
-                        .invert().unwrap().transform_point(hit_point),
-                    obj_a_ptr: Rc::downgrade(&target.base.transform),
-                    attach_pt_b: ship_front,
-                    obj_b_ptr: Rc::downgrade(&player.transform),
-                    natural_length: (ship_front - hit_point).magnitude()
-                }));*/
                 new_tethers.borrow_mut().push(physics::Tether {
                     attach_a: hit_local,
                     a: Rc::downgrade(&target.base.transform),
