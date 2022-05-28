@@ -84,13 +84,15 @@ impl super::Forcer for Centripetal {
         if Rc::ptr_eq(&body.transform, &a) {
             let r = b.borrow().transform_point(self.attach_pt_b) - 
                 a.borrow().transform_point(self.attach_pt_a);
-            let force = body.mass * body.velocity.magnitude() / r.magnitude2() * r.normalize();
-            Some((body.transform.borrow().transform_point(self.attach_pt_a), force * 8000.))
+            let force = body.mass * body.velocity.magnitude2() / 
+                r.magnitude() * r.normalize();
+            Some((body.transform.borrow().transform_point(self.attach_pt_a), force))
         } else if Rc::ptr_eq(&body.transform, &b) {
             let r = a.borrow().transform_point(self.attach_pt_a) - 
                 b.borrow().transform_point(self.attach_pt_b);
-            let force = body.mass * body.velocity.magnitude() / r.magnitude2() * r.normalize();
-            Some((body.transform.borrow().transform_point(self.attach_pt_b), force * 8000.))
+            let force = body.mass * body.velocity.magnitude2() / 
+                r.magnitude() * r.normalize();
+            Some((body.transform.borrow().transform_point(self.attach_pt_b), force))
         } else {
             None
         }

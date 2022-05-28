@@ -159,8 +159,8 @@ fn main() {
     laser.borrow_mut().body(0).base.rot_vel = vec3(0., 10., 0.);
 
     let dead_lasers = RefCell::new(Vec::new());
-    let mut springs : Vec<Box<dyn physics::Forcer>> = Vec::new();
-    let new_springs : RefCell<Vec<Box<dyn physics::Forcer>>> = RefCell::new(Vec::new());
+    let mut tethers = Vec::new();
+    let new_tethers : RefCell<Vec<physics::Tether>> = RefCell::new(Vec::new());
     let mut sim = physics::Simulation::<object::ObjectType>::new(point3(0., 0., 0.), 200.)
     .with_on_hit(|a, b, hit, player| {
         if a.metadata == object::ObjectType::Laser ||
@@ -183,7 +183,8 @@ fn main() {
                 let ctx = graphics_engine::get_active_ctx();
                 let facade = ctx.ctx.borrow();
                 particles.borrow_mut().new_emitter(
-                    particles::asteroid_hit_emitter(hit.pos_norm_b.0, hit.pos_norm_b.1, relative_vel, &*facade), 0
+                    particles::asteroid_hit_emitter(hit.pos_norm_b.0, 
+                        hit.pos_norm_b.1, relative_vel, &*facade), 0
                 );
             }
         }
@@ -203,25 +204,30 @@ fn main() {
                     end: node::Node::default().parent(target.base.transform.clone())
                         .pos(hit_local),
                 });
-                new_springs.borrow_mut().push(Box::new(physics::Spring {
+                /*new_springs.borrow_mut().push(Box::new(/*physics::Spring {
                     k: 1000.0,
                     attach_pt_a: hit_local,
                     obj_a_ptr: Rc::downgrade(&target.base.transform),
                     mode: physics::RestoringMode::String,
                     attach_pt_b: ship_front,
                     obj_b_ptr: Rc::downgrade(&player.transform),
-                    natural_length: (player.transform.borrow().transform_point(ship_front)
-                         - hit_point).magnitude()
-                }/*
+                    natural_length: (ship_front - hit_point).magnitude()
+                }*/
                 physics::Centripetal{
                     attach_pt_a: target.base.transform.borrow().mat()
                         .invert().unwrap().transform_point(hit_point),
                     obj_a_ptr: Rc::downgrade(&target.base.transform),
                     attach_pt_b: ship_front,
                     obj_b_ptr: Rc::downgrade(&player.transform),
-                    natural_length: (player.transform.borrow().transform_point(ship_front)
-                         - hit_point).magnitude()
-                })*/));
+                    natural_length: (ship_front - hit_point).magnitude()
+                }));*/
+                new_tethers.borrow_mut().push(physics::Tether {
+                    attach_a: hit_local,
+                    a: Rc::downgrade(&target.base.transform),
+                    attach_b: ship_front,
+                    b: Rc::downgrade(&player.transform),
+                    length: (ship_front - hit_point).magnitude()
+                });
             let laser_transform = if a.metadata == object::ObjectType::Hook
             { a.base.transform.clone() } 
             else { b.base.transform.clone() };
@@ -241,7 +247,7 @@ fn main() {
             let mut bodies = asteroid.bodies_ref();
             let mut u = user.borrow_mut();
             if controller.borrow().cut_rope {
-                springs.clear();
+                tethers.clear();
                 lines.borrow_mut().remove_line(0);
             }
             let c = controller.borrow();
@@ -250,8 +256,8 @@ fn main() {
             bodies.append(&mut lz.bodies_ref());
             bodies.push(u.as_rigid_body(&*c));
             let player_idx = bodies.len() - 1;
-            springs.append(&mut new_springs.borrow_mut());
-            sim.step(&mut bodies, &springs, player_idx, dt);
+            tethers.append(&mut new_tethers.borrow_mut());
+            sim.step(&mut bodies, &[], &tethers, player_idx, dt);
         }
         laser.borrow_mut().retain(|laser_ptr|
             !dead_lasers.borrow().iter().any(|dead| dead.as_ptr() as *const () == laser_ptr));
