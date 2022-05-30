@@ -5,9 +5,15 @@ use super::super::textures;
 use super::super::shader;
 use crate::cg_support::ssbo;
 
+/// Either a texture or constant factor
+enum TexOrConst {
+    Tex(glium::texture::Texture2d),
+    Fac(f32),
+}
+
 struct PBRData {
-    roughness_tex: glium::texture::Texture2d,
-    metalness_tex: glium::texture::Texture2d,
+    roughness: TexOrConst,
+    metalness: TexOrConst,
     ao_tex: Option<glium::texture::Texture2d>,
 }
 
@@ -25,6 +31,14 @@ struct ExtraTexData {
 /// key being on a separate line
 /// 
 /// Returns the map of key value pairs as strings
+/// 
+/// ### Valid Keys
+/// 
+/// * `roughness` - texture path or non-negative float
+/// * `metalness` - texture path or non-negative float
+/// * `ao` - texture path [optional]
+/// * `albedo` - texture path [optional if read by assimp]
+/// * `normal` - texture path [optional if read by assimp]
 fn get_pbr_data(dir: &str, mat_name: &str) -> Option<BTreeMap<String, String>> {
     let file = format!("{}{}-pbr.yml", dir, mat_name);
     println!("{}", file);
@@ -57,19 +71,31 @@ fn get_pbr_textures<F>(dir: &str, mat_name: &str, facade: &F)
             if tex_maps.contains_key("ao") {
                 println!("ao: {}", tex_maps["ao"]);
             }
+            let rough_fac = tex_maps["roughness"].parse::<f32>();
+            let metal_fac = tex_maps["metalness"].parse::<f32>();
             (Some(PBRData {
-                roughness_tex: textures::load_texture_2d(&format!("{}{}", dir, tex_maps["roughness"]), facade),
-                metalness_tex: textures::load_texture_2d(&format!("{}{}", dir, tex_maps["metalness"]), facade),
                 ao_tex: if tex_maps.contains_key("ao") {
                     Some(textures::load_texture_2d(&format!("{}{}", dir, tex_maps["ao"]), facade))
                 } else { None },
+                roughness: match rough_fac {
+                    Ok(f) => TexOrConst::Fac(f),
+                    _ => TexOrConst::Tex(textures::load_texture_2d(
+                        &format!("{}{}", dir, tex_maps["roughness"]), facade)),
+                },
+                metalness: match metal_fac {
+                    Ok(f) => TexOrConst::Fac(f),
+                    _ => TexOrConst::Tex(textures::load_texture_2d(
+                        &format!("{}{}", dir, tex_maps["metalness"]), facade))
+                }
             }),
             Some(ExtraTexData {
                 albedo_tex: if tex_maps.contains_key("albedo") {
-                    Some(textures::load_texture_srgb(&format!("{}{}", dir, tex_maps["albedo"]), facade))
+                    Some(textures::load_texture_srgb(
+                        &format!("{}{}", dir, tex_maps["albedo"]), facade))
                 } else { None },
                 normal_tex: if tex_maps.contains_key("normal") {
-                    Some(textures::load_texture_2d(&format!("{}{}", dir, tex_maps["normal"]), facade))
+                    Some(textures::load_texture_2d(
+                        &format!("{}{}", dir, tex_maps["normal"]), facade))
                 } else { None },
             }))
         },
@@ -204,14 +230,32 @@ impl Material {
             _ if self.pbr_data.is_some() => shader::UniformInfo::PBRInfo(shader::PBRData {
                 diffuse_tex: self.diffuse_tex.as_ref().unwrap(),
                 model: model.unwrap_or_else(|| cgmath::Matrix4::from_scale(1f32).into()),
-                roughness_map: self.pbr_data.as_ref().map(|data| { &data.roughness_tex }),
-                metallic_map: self.pbr_data.as_ref().map(|data| { &data.metalness_tex }),
+                roughness_map: self.pbr_data.as_ref().and_then(|data| { 
+                    match &data.roughness {
+                        TexOrConst::Fac(_) => None,
+                        TexOrConst::Tex(t) => Some(t),
+                } }),
+                metallic_map: self.pbr_data.as_ref().and_then(|data| { 
+                    match &data.metalness {
+                        TexOrConst::Fac(_) => None,
+                        TexOrConst::Tex(t) => Some(t),
+                } }),
                 normal_map: self.normal_tex.as_ref(),
                 emission_map: self.emission_tex.as_ref(),
                 ao_map: self.pbr_data.as_ref().and_then(|data| { data.ao_tex.as_ref() }),
                 instancing, bone_mats: bones,
                 trans_data,
                 emission_strength,
+                roughness_fac: self.pbr_data.as_ref().map(|data| { 
+                    match &data.roughness {
+                        TexOrConst::Fac(f) => *f,
+                        TexOrConst::Tex(_) => -2.0,
+                } }).unwrap(),
+                metallic_fac: self.pbr_data.as_ref().map(|data| { 
+                    match &data.metalness {
+                        TexOrConst::Fac(f) => *f,
+                        TexOrConst::Tex(_) => -2.,
+                } }).unwrap(),
             }),
             x => panic!("Unimplemented texture with name: {}", x),
         }  

@@ -18,6 +18,8 @@ uniform sampler2D emission_map;
 uniform sampler2D ao_map;
 uniform bool use_ao;
 uniform float emission_strength;
+uniform float roughness_fac;
+uniform float metallic_fac;
 
 uniform vec3 dir_light_dir;
 const float dir_light_near = 0.3;
@@ -459,8 +461,10 @@ vec3 applyTransparency(vec3 frag_color, vec3 view_dir, vec3 norm) {
 void main() {
     vec3 albedo = texture(albedo_map, f_in.tex_coords).rgb; // load textures using SRGB so no need to gamma correct
     vec3 emission = texture(emission_map, f_in.tex_coords).rgb;
-    float metallic = texture(metallic_map, f_in.tex_coords).r;
-    float roughness = texture(roughness_map, f_in.tex_coords).r;
+    float metallic = metallic_fac < -1 ? 
+        texture(metallic_map, f_in.tex_coords).r : metallic_fac;
+    float roughness = roughness_fac < -1 ?
+        texture(roughness_map, f_in.tex_coords).r : roughness_fac;
     vec3 ao = use_ao ? texture(ao_map, f_in.tex_coords).rgb : vec3(0.7);
 
     vec3 norm = normalize(getNormal());

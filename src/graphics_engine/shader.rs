@@ -235,6 +235,8 @@ pub struct PBRData<'a> {
     pub bone_mats: Option<&'a ssbo::SSBO<[[f32; 4]; 4]>>,
     pub trans_data: Option<&'a TransparencyData>,
     pub emission_strength: f32,
+    pub metallic_fac: f32,
+    pub roughness_fac: f32,
 }
 /// Shader inputs for Spherical Texture shader
 pub struct EqRectData<'a> {
@@ -465,7 +467,7 @@ pub enum UniformType<'a> {
         glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::Texture2d>, 
         glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::texture::SrgbTexture2d>, 
         glium::uniforms::UniformsStorage<'a, [[f32; 4]; 4], glium::uniforms::UniformsStorage<'a, [[f32; 4]; 4], 
-        UniformsStorage<'a, f32, glium::uniforms::EmptyUniforms>>>>>>>>>>>>>>>>>>>>>>),
+        UniformsStorage<'a, f32, UniformsStorage< 'a, f32, UniformsStorage<'a, f32, glium::uniforms::EmptyUniforms>>>>>>>>>>>>>>>>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     ExtractBrightUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
     UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
@@ -717,13 +719,16 @@ impl ShaderManager {
             }),
             (PBRInfo(PBRData { model, 
                 diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map,
-                instancing: _, bone_mats, trans_data, emission_strength}), Visual) |
+                instancing: _, bone_mats, trans_data, emission_strength, roughness_fac,
+                metallic_fac}), Visual) |
             (PBRInfo(PBRData { model, 
                 diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map,
-                instancing: _, bone_mats, trans_data, emission_strength}), Transparent(_)) |
+                instancing: _, bone_mats, trans_data, emission_strength, roughness_fac,
+                metallic_fac}), Transparent(_)) |
             (PBRInfo(PBRData { model, 
                 diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map,
-                instancing: _, bone_mats, trans_data, emission_strength}), LayeredVisual) 
+                instancing: _, bone_mats, trans_data, emission_strength, roughness_fac,
+                metallic_fac}), LayeredVisual) 
             => {
                 let sd = scene_data.unwrap();
                 sd.lights.unwrap().bind(0);
@@ -757,13 +762,15 @@ impl ShaderManager {
                         sample_linear_clamp!(cache.obj_cubemaps.get(&trans_data.object_id).unwrap_or(&&self.empty_cube)),
                 },
                 rest: glium::uniform! {
+                    roughness_fac: *roughness_fac,
+                    metallic_fac: *metallic_fac,
                     emission_strength: *emission_strength,
                     viewproj: sd.viewer.viewproj,
                     model: model.clone(),
                     albedo_map: sample_mip_repeat!(diffuse_tex),
-                    roughness_map: sample_mip_repeat!(roughness_map.unwrap()),
+                    roughness_map: sample_mip_repeat!(roughness_map.unwrap_or(&self.empty_2d)),
                     normal_map: sample_mip_repeat!(normal_map.unwrap()),
-                    metallic_map: sample_mip_repeat!(metallic_map.unwrap()),
+                    metallic_map: sample_mip_repeat!(metallic_map.unwrap_or(&self.empty_2d)),
                     cam_pos: sd.viewer.cam_pos,
                     emission_map: sample_mip_repeat!(emission_map.unwrap_or(&self.empty_srgb)),
                     irradiance_map: sample_linear_clamp!(sd.ibl_maps.unwrap().diffuse_ibl),

@@ -225,7 +225,7 @@ There's still much more besides this and I am writing this so I know how to pick
     Implemented by rendering an opaque and a transparent depth texture and computing the shadow factor as `(1.0 - invFac) * transparentShadow + opaqueShadow`. This works well for transparent objects that don't overlap. Artifacts can occur if we have a very transparent object occlude a partially transparent object since the `invFac` stored in the color texture belongs to the 
     nearest transparent object.
 
-- [ ] Good Dust Cloud Effect (WIP)
+- [x] Good Dust Cloud Effect
 
     Need to add FBM and better shape generation. I initially wanted this to be used for a dust effect when something hits an asteroid.
     Realistically, a ray-marched volumetric is probably not the best thing to use for this given the real-time constraint.
@@ -252,18 +252,18 @@ There's still much more besides this and I am writing this so I know how to pick
 
 ### Physics + Collisions
 
-- [ ] (Bug) BVH not detecting collisions when the ship is the "self"
-- [ ] Add mass and moment of inertia to `RigidBody`
+- [x] (Bug) BVH not detecting collisions when the ship is the "self"
+- [x] Add mass and moment of inertia to `RigidBody`
 
     I could probably estimate these values based on size and distribution of vertices
 
-- [ ] Torque and Force calculations
+- [x] Torque and Force calculations
 
     Although it would be more realistic for player controls to apply forces on the ship, it may be weird and have a "sliding on ice"
     feel since, well, there's no air resistance in space. However it could also be a cool game mechanic, especially when asteroids start
     moving.
 
-- [ ] Make asteroids dynamic
+- [x] Make asteroids dynamic
 - [ ] (Possible) use a swept ellipsoid for laser collisions. [Relevant Paper](http://www.peroxide.dk/papers/collision/collision.pdf)
 
 ## References
