@@ -62,6 +62,7 @@ impl AnimGameObject {
     }
 
     #[inline(always)]
+    #[allow(unused)]
     pub fn as_entity(&self) -> Rc<RefCell<ModelEntity>> {
         self.entity.clone()
     }
@@ -72,6 +73,9 @@ impl AnimGameObject {
     {
         &self.data.base.transform
     }
+
+    pub fn to_entity(self) -> Rc<RefCell<dyn AbstractEntity>>
+    { self.entity }
 }
 
 /// A game object is a renderable entity that has collision information and
@@ -193,6 +197,7 @@ impl GameObject {
     /// Gets a mutable reference to the rigid body at index `idx`
     /// Requires there are more instances than `idx`
     #[inline(always)]
+    #[allow(unused)]
     pub fn body(&mut self, idx: usize) -> &mut RigidBody<ObjectType>
     {
         &mut self.instances[idx]
@@ -216,5 +221,9 @@ impl GameObject {
             r
         });
     }
+
+    #[allow(unused)]
+    pub fn to_entity(self) -> Rc<RefCell<dyn AbstractEntity>>
+    { self.entity }
 }
 

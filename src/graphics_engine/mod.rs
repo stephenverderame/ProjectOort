@@ -12,6 +12,7 @@ mod instancing;
 mod billboard;
 pub mod particles;
 pub mod primitives;
+pub mod map;
 use std::rc::Rc;
 use std::cell::{Cell, RefCell};
 use std::mem::MaybeUninit;
