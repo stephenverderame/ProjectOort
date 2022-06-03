@@ -35,7 +35,7 @@ impl Player {
     /// 
     /// `c_str` - collision string, the path of the collision mesh
     pub fn new(model: Model, view_aspect: f32, c_str: &str) -> Player {
-        let root_node = Rc::new(RefCell::new(Node::new(None, None, None, None)));
+        let root_node = Rc::new(RefCell::new(Node::default().pos(point3(100., 100., 100.))));
         let mut cam = Node::new(Some(point3(0., 15., -25.)), None, None, None);
         cam.set_parent(root_node.clone());
         let mut model = model.with_transparency(0.99, 0);

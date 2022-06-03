@@ -4,7 +4,7 @@ use super::entity::*;
 use super::shader::*;
 use crate::physics;
 
-
+/// A Map contains the entities and lighting information of a scene
 pub trait Map<T> {
     /// Gets the entities in this map
     fn entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>>;

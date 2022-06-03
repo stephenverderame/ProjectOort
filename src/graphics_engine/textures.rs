@@ -109,9 +109,9 @@ pub fn gen_cloud_noise_vol<F : glium::backend::Facade>(width: u32, height: u32,
     use cgmath::*;
     let mut data = Vec::new();
     let voxels_per_slice = width * height;
-    let fbm = Fbm::new();
-    //let perlin = Perlin::new();
-    //perlin.octaves = 8;
+    //let fbm = Fbm::new();
+    let perlin = Perlin::new();
+
     let scale = 0.1f64;
     let remap = |x| (x + 1.0) * 0.5;
     for idx in 0 .. width * height * depth {
@@ -123,14 +123,14 @@ pub fn gen_cloud_noise_vol<F : glium::backend::Facade>(width: u32, height: u32,
             y / height as f64,
             z / depth as f64);
 
-        let mut noise = remap(fbm.get([x * scale, y * scale, z * scale]));
-        noise *= remap(fbm.get([ pt.x * 100., pt.y * 100., pt.z * 100. ]));
+        let /*mut*/ noise = remap(perlin.get([x * scale, y * scale, z * scale]));
+        /*noise *= remap(fbm.get([ pt.x * 100., pt.y * 100., pt.z * 100. ]));
         noise *= remap(fbm.get([pt.x * 10., pt.y * 10., pt.z * 10.]));
-        noise *= 4.0;
+        noise *= 4.0;*/
 
-        let dist = (0.8 - (pt - vec3(0.5, 0.5, 0.5)).magnitude()).max(0.0);
+        let dist = (1.0 - (pt - vec3(0.5, 0.5, 0.5)).magnitude()).max(0.0);
 
-        data.push((noise * dist * 255. ).round() as u8);
+        data.push((noise * dist * dist * 255. ).round() as u8);
     }
     let img = glium::texture::RawImage3d {
         data: std::borrow::Cow::Owned(data),

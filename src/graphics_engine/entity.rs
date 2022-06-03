@@ -96,6 +96,7 @@ impl EntityBuilder {
         }
     }
 
+    #[allow(unused)]
     pub fn at(mut self, pos: crate::cg_support::node::Node) -> Self {
         self.locations.push(Rc::new(RefCell::new(pos)));
         self

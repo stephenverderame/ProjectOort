@@ -48,15 +48,15 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
 
     let user_clone = user.clone();
     let render_cascade_1 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 30., 2048) })), true));
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 100., 2048) })), true));
 
     let user_clone = user.clone();
     let render_cascade_2 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 30., 80., 2048) })), true));
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 100., 400., 2048) })), true));
 
     let user_clone = user.clone();
     let render_cascade_3 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 80., 400., 2048) })), true));
+    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 400., 1000., 2048) })), true));
 
     let user_clone = user.clone();
     pipeline::RenderPass::new(vec![depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency], 
@@ -115,7 +115,7 @@ fn main() {
     let mut draw_cb = |dt, mut scene : std::cell::RefMut<scene::Scene>| {
         game.borrow().on_draw(&mut sim.borrow_mut(), dt, &mut *scene, 
             &mut controller.borrow_mut());
-        // will call on_hit
+        // will call on_hit, so cannot mutably borrow game
         controller.borrow_mut().reset_toggles();
     };
     let mut controller_cb = |ev, _: std::cell::RefMut<SceneManager>| 

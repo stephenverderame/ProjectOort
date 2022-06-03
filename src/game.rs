@@ -11,6 +11,7 @@ use super::controls;
 use crate::graphics_engine::scene;
 use crate::graphics_engine::particles::*;
 
+/// Encapsulates the game map and handles the logic for base game mechanics
 pub struct Game<'c> {
     map: Box<dyn GameMap + 'c>,
     pub player: Rc<RefCell<player::Player>>,
@@ -30,6 +31,7 @@ impl<'c> Game<'c> {
         }
     }
 
+    /// Creates a new particle emitter from an emitter factory function
     fn create_emitter<Func>(&self, emitter_factory: Func, 
         a: &RigidBody<object::ObjectType>, b: &RigidBody<object::ObjectType>, 
         hit: &HitData, emitter_id: usize)
@@ -48,6 +50,8 @@ impl<'c> Game<'c> {
         }
     }
 
+    /// Callback function for when a tether shot collides with
+    /// an object
     fn on_hook(&self, a: &RigidBody<object::ObjectType>, 
         b: &RigidBody<object::ObjectType>, hit: &HitData, 
         player: &BaseRigidBody)
@@ -79,6 +83,7 @@ impl<'c> Game<'c> {
         })));
     }
 
+    /// Callback function for when two objects collide
     pub fn on_hit(&self, a: &RigidBody<object::ObjectType>, 
         b: &RigidBody<object::ObjectType>, hit: &HitData, 
         player: &BaseRigidBody)
@@ -104,6 +109,10 @@ impl<'c> Game<'c> {
 
     }
 
+    /// Callback function for physics simulation
+    /// 
+    /// Returns `true` if the simulation should do physical collision
+    /// resolution
     pub fn should_resolve(a: &RigidBody<object::ObjectType>, 
         b: &RigidBody<object::ObjectType>, _: &HitData) -> bool 
     {
@@ -114,6 +123,7 @@ impl<'c> Game<'c> {
         }
     }
 
+    /// Steps the simulation `sim`, `dt` into the future
     fn step_sim<'a, 'b>(&self, 
         sim: &mut Simulation<'a, 'b, object::ObjectType>,
         controls: &controls::PlayerControls, dt: std::time::Duration) 
@@ -129,6 +139,7 @@ impl<'c> Game<'c> {
         }));
     }
 
+    /// Function thet should be called every frame to handle shooting lasers
     fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, 
         lasers: &mut object::GameObject) 
     {
@@ -145,6 +156,7 @@ impl<'c> Game<'c> {
         }
     }
 
+    /// Callback function for when a frame is drawn
     pub fn on_draw<'a, 'b>(&self,
         sim: &mut Simulation<'a, 'b, object::ObjectType>,
         dt : std::time::Duration, scene : &mut scene::Scene,
