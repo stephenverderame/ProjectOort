@@ -55,7 +55,8 @@ impl std::ops::DerefMut for Entity {
 
 impl AbstractEntity for Entity {
     fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]> {
-        Some(&self.locations)
+        if !self.locations.is_empty() { Some(&self.locations) }
+        else { None }
     }
     fn drawable(&mut self) -> &mut dyn Drawable {
         &mut *self.geometry
@@ -132,7 +133,8 @@ pub struct ModelEntity {
 
 impl AbstractEntity for ModelEntity {
     fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]> {
-        Some(&self.locations)
+        if !self.locations.is_empty() { Some(&self.locations) }
+        else { None }
     }
     fn drawable(&mut self) -> &mut dyn Drawable {
         &mut *self.geometry

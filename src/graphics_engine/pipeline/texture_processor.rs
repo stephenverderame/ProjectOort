@@ -166,10 +166,10 @@ pub struct CompositorProcessor
 
 impl CompositorProcessor
 {
-    /// `get_surface` - callable that returns the surface to render to. The surface is **not** cleared
+
+    /// `width` - width of input and output textures
     /// 
-    /// `clean_surface` - callable that accepts the returned surface and performs any necessary cleanup
-    /// after drawing is finished
+    /// `height` - height of input and output textures
     pub fn new<Fac: backend::Facade>(width: u32, height: u32, facade: &Fac) 
         -> CompositorProcessor 
     {
@@ -199,7 +199,8 @@ impl CompositorProcessor
         match uniform {
             shader::UniformType::CompositeUniform(uniform) => {
                 self.fbo.clear_color_and_depth((0., 0., 0., 1.0), 1.0);
-                self.fbo.draw(&self.vbo, &self.ebo, program, &uniform, &params);
+                self.fbo.draw(&self.vbo, &self.ebo, program, &uniform, &params)
+                    .expect("Error drawing to fbo in compositor processor");
             },
             _ => panic!("Invalid uniform type returned for RenderTarget"),
         };
@@ -246,8 +247,6 @@ pub struct BlitTextureProcessor<S : Surface,
     CleanSHolder : Fn(SHolder)>
 {
 
-    vbo: VertexBuffer<Vertex>,
-    ebo: IndexBuffer<u16>,
     get_surface: GetSHolder,
     clean_surface: CleanSHolder,
     in_width: u32,
@@ -260,12 +259,21 @@ impl<S : Surface,
     CleanSHolder : Fn(SHolder)>
     BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>
 {
-    pub fn new<Fac: backend::Facade>(facade: &Fac, in_width: u32, in_height: u32,
+    /// `get_surface` - callable that returns the surface to render to and a 
+    /// destination rectangle on that surface that we will blit to. 
+    /// The surface is **not** cleared
+    /// 
+    /// `clean_surface` - callable that accepts the returned surface and performs 
+    /// any necessary cleanup after drawing is finished
+    /// 
+    /// `in_width` - width of input texture
+    /// 
+    /// `in_height` - height of input texture
+    pub fn new(in_width: u32, in_height: u32,
         get_surface: GetSHolder, clean_surface: CleanSHolder) 
         -> BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder> 
     {
-        let (vbo, ebo) = get_rect_vbo_ebo(facade);
-        BlitTextureProcessor { vbo, ebo, get_surface, clean_surface,
+        BlitTextureProcessor { get_surface, clean_surface,
             in_width, in_height }
     }
 
@@ -276,13 +284,15 @@ impl<S : Surface,
         {
             let surface = &mut *surface_holder;
             surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
-            let r = Rect {
+            /*let r = Rect {
                 left: 0, bottom: 0,
                 width: self.in_width,
                 height: self.in_height,
-            };
-            surface.blit_color(&r, &texture.as_surface(), &dst_rect, 
+            };*/
+            texture.as_surface().blit_whole_color_to(surface, &dst_rect,
                 uniforms::MagnifySamplerFilter::Linear);
+            /*surface.blit_color(&r, &texture.as_surface(), &dst_rect, 
+                uniforms::MagnifySamplerFilter::Linear);*/
         }
         (self.clean_surface)(surface_holder);
     }

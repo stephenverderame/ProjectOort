@@ -10,9 +10,9 @@ layout (location = 7) in vec4 color;
 
 uniform mat4 viewproj;
 
-flat out Glyph {
-    ivec4 x_y_width_height;
-    vec4 color;
+out Glyph {
+    flat ivec4 x_y_width_height;
+    flat vec4 color;
 } glyph;
 
 out vec2 tcoords;

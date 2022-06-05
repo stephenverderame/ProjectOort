@@ -217,3 +217,22 @@ impl Viewer for StaticCamera {
     fn cam_pos(&self) -> Point3<f32> { self.cam_pos }
     fn view_dist(&self) -> (f32, f32) { (self.near, self.far) }
 }
+
+pub struct Camera2D {
+    pub proj: Matrix4<f32>
+}
+
+impl Camera2D {
+    pub fn new(width: u32, height: u32) -> Camera2D {
+        Camera2D {
+            proj: ortho(0f32, width as f32, height as f32, 0., 0., 1.)
+        }
+    }
+}
+
+impl Viewer for Camera2D {
+    fn proj_mat(&self) -> Matrix4<f32> { self.proj }
+    fn view_mat(&self) -> Matrix4<f32> { Matrix4::from_scale(1.) }
+    fn cam_pos(&self) -> Point3<f32> { point3(0., 0., 0.) }
+    fn view_dist(&self) -> (f32, f32) { (0., 1.) }
+}

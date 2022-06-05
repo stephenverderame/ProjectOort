@@ -1,12 +1,11 @@
 #version 430 core
 #extension GL_ARB_bindless_texture : require
+const int MAX_TEXTURES = 10;
 
 in vec2 f_tex_coords;
 
-uniform sampler2D diffuse;
-uniform sampler2D bloom_tex;
-
-uniform bool do_blend;
+uniform uint tex_count;
+uniform sampler2D textures[MAX_TEXTURES];
 
 out vec4 frag_color;
 
@@ -27,12 +26,9 @@ float textureLinearize(sampler2D tex, vec2 tex_coords) {
 }
 
 void main() {
-    vec3 color = texture(diffuse, f_tex_coords).rgb;
-    if (do_blend) 
-        color += texture(bloom_tex, f_tex_coords).rgb;
-    //color = vec3(textureLinearize(cascade1, f_tex_coords));
-    //color = vec3(texture(cascade2, f_tex_coords).r);
-    //color = vec3(far_planes[2], 0, 0);
-    frag_color = vec4(color, 1.0);
+    frag_color = texture(textures[0], f_tex_coords);
+    for (uint i = 1; i < tex_count; ++i) {
+        frag_color += texture(textures[i], f_tex_coords);
+    }
     // tone mapping done automatically by sRGB framebuffer
 }

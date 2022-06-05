@@ -33,7 +33,7 @@ pub struct Scene {
 impl Scene {
     pub fn new(pass: pipeline::RenderPass, viewer: Rc<RefCell<dyn Viewer>>) -> Scene {
         Scene {
-            ibl_maps: None, lights: None,
+            ibl_maps: None, lights: Some(ssbo::SSBO::dynamic(None)),
             main_light_dir: None,
             entities: Vec::new(),
             pass: Some(pass),
@@ -41,19 +41,21 @@ impl Scene {
         }
     }
 
-    fn get_scene_data(&self, viewer: shader::ViewerData, pass: shader::RenderPassType) 
-        -> shader::SceneData
+    fn get_scene_data<'a>(viewer: shader::ViewerData, pass: shader::RenderPassType,
+        ibl_maps: &'a Option<shader::PbrMaps>, lights: &'a Option<ssbo::SSBO<shader::LightData>>,
+        light_dir: &'a Option<cgmath::Vector3<f32>>) -> shader::SceneData<'a>
     {
         shader::SceneData {
             viewer,
-            ibl_maps: self.ibl_maps.as_ref(),
-            lights: self.lights.as_ref(),
+            ibl_maps: ibl_maps.as_ref(),
+            lights: lights.as_ref(),
             pass_type: pass,
-            light_pos: self.main_light_dir.map(|x| x.into()),
+            light_pos: light_dir.map(|x| x.into()),
         }
     }
 
-    fn render_transparency(&self, obj: *const entity::Entity, viewer: &dyn Viewer, 
+    fn render_transparency(entities:  &[Rc<RefCell<dyn AbstractEntity>>], 
+        obj: *const entity::Entity, viewer: &dyn Viewer, 
         scene_data: &shader::SceneData, cache: &shader::PipelineCache,
         fbo: &mut glium::framebuffer::SimpleFrameBuffer,
         shader: &shader::ShaderManager) 
@@ -65,7 +67,7 @@ impl Scene {
         let mut firsts = Vec::new();
         let mut lasts = Vec::new();
         let view_mat = viewer.view_mat().into_transform();
-        for entity in &self.entities {
+        for entity in entities {
             if entity.as_ptr() as *const entity::Entity != obj && 
                 entity.borrow().should_render(shader::RenderPassType::Transparent(obj)) 
             {
@@ -96,16 +98,18 @@ impl Scene {
         }
     }
 
-    fn render_entities(&self, viewer: &dyn Viewer, scene_data: &shader::SceneData, 
+    fn render_entities(entities:  &[Rc<RefCell<dyn AbstractEntity>>], 
+        viewer: &dyn Viewer, scene_data: &shader::SceneData, 
         pass: shader::RenderPassType, cache: &shader::PipelineCache,
         fbo: &mut glium::framebuffer::SimpleFrameBuffer,
         shader: &shader::ShaderManager) 
     {
         match pass {
             shader::RenderPassType::Transparent(ptr) => 
-                self.render_transparency(ptr, viewer, scene_data, cache, fbo, shader),
+                Self::render_transparency(entities, ptr, viewer, 
+                    scene_data, cache, fbo, shader),
             typ => {
-                for entity in &self.entities {
+                for entity in entities {
                     if entity.borrow().should_render(typ) {
                         let mut entity = entity.borrow_mut();
                         entity::render_entity(&mut *entity, fbo, scene_data, 
@@ -192,8 +196,10 @@ impl AbstractScene for Scene {
         -> Option<pipeline::TextureType>
     {
         let vd = viewer_data_from(&*self.viewer.borrow());
-        let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
+        let sd = Rc::new(RefCell::new(Self::get_scene_data(vd, shader::RenderPassType::Visual,
+            &self.ibl_maps, &self.lights, &self.main_light_dir)));
         let viewer = self.viewer.borrow();
+        let entities = &self.entities;
         let res = self.pass.as_mut().unwrap().run_pass(&*viewer, shader, sd.clone(),
         &mut |fbo, viewer, typ, cache, _, _| {
             fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
@@ -203,7 +209,8 @@ impl AbstractScene for Scene {
                 sdm.pass_type = typ;
             }
             let scene_data = sd.borrow();
-            self.render_entities(viewer, &*scene_data, typ, cache, fbo, shader);
+            Self::render_entities(entities, viewer, &*scene_data, 
+                typ, cache, fbo, shader);
         });
         res
     }
@@ -218,17 +225,26 @@ impl AbstractScene for Scene {
 }
 
 use glium::*;
-use pipeline::texture_processor::BlitTextureProcessor;
+use pipeline::texture_processor::{BlitTextureProcessor, CompositorProcessor};
 pub struct CompositorScene<S : Surface,
     SHolder : std::ops::DerefMut<Target = S>,
     GetSHolder : Fn() -> (SHolder, BlitTarget),
     CleanSHolder : Fn(SHolder)> 
 {
     scenes: Vec<Box<dyn AbstractScene>>,
-    compositor: BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>,
+    compositor: CompositorProcessor,
+    blitter: BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>,
     viewer: Rc<RefCell<dyn Viewer>>,
 }
 
+/// Creates a new `CompositorScene` which blends together all output textures 
+/// from each scene in `scenes` and blits the result to the main framebuffer
+/// 
+/// `width` - width of input textures
+/// 
+/// `height` - height of input textures
+/// 
+/// `viewer` - viewer to get the projection and view matrices for compositing
 pub fn compositor_scene_new<F : backend::Facade>(width : u32, height : u32, 
     viewer: Rc<RefCell<dyn Viewer>>, scenes: Vec<Box<dyn AbstractScene>>, 
     fac: &F) -> CompositorScene<glium::Frame, super::MutCtx, 
@@ -237,7 +253,7 @@ pub fn compositor_scene_new<F : backend::Facade>(width : u32, height : u32,
 {
     CompositorScene {
         scenes,
-        compositor: BlitTextureProcessor::new(fac, width, height, move || { 
+        blitter: BlitTextureProcessor::new(width, height, move || { 
             let mut surface = super::get_active_ctx().as_surface();
             surface.clear_color_and_depth((1., 0., 0., 1.), 1.);
             (surface, BlitTarget {
@@ -245,6 +261,7 @@ pub fn compositor_scene_new<F : backend::Facade>(width : u32, height : u32,
                 width: width as i32, height: height as i32,
             })
         }, |disp| disp.finish()),
+        compositor: CompositorProcessor::new(width, height, fac),
         viewer,
     }
 }
@@ -262,7 +279,7 @@ impl<S : Surface,
         use super::shader::{PipelineCache, SceneData, RenderPassType};
         use super::pipeline::TextureProcessor;
         let mut new_inputs = Vec::new();
-        for scene in &self.scenes {
+        for scene in &mut self.scenes {
             if let Some(comp) = scene.render(inputs, shader) {
                 new_inputs.push(comp);
             }
@@ -277,8 +294,16 @@ impl<S : Surface,
         let default = Vec::new();
         let final_inputs : Vec<_> = 
             inputs.unwrap_or(&default).iter().chain(new_inputs.iter()).collect();
-        self.compositor.process(Some(final_inputs), 
-            shader, &mut PipelineCache::default(), Some(&sd));
+        if let Some(tex @ pipeline::TextureType::Tex2d(_)) = 
+            self.compositor.process(Some(final_inputs), shader, 
+            &mut PipelineCache::default(), Some(&sd))
+        {
+            self.blitter.process(Some(vec![&tex]), shader, 
+                &mut PipelineCache::default(), Some(&sd));
+        } else {
+            panic!("Invalid return from compositor in compositor scene")
+        }
+        
         None
     }
 

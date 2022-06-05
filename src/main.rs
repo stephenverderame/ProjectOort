@@ -99,7 +99,12 @@ fn main() {
     let mut entities = game.borrow().get_map().entities();
     entities.push(game.borrow().player.borrow().as_entity());
     main_scene.set_entities(entities);
-    wnd.scene_manager().insert_scene("main", main_scene).change_scene("main");
+    let compositor_scene = scene::compositor_scene_new(render_width, render_height, 
+        Rc::new(RefCell::new(camera::Camera2D::new(render_width, render_height))), 
+        vec![Box::new(main_scene)], &*wnd.ctx());
+    wnd.scene_manager()
+        .insert_scene("main", Box::new(RefCell::new(compositor_scene)))
+        .change_scene("main");
 
     let sim = RefCell::new(physics::Simulation::<object::ObjectType>::new(point3(0., 0., 0.), 500.)
         .with_do_resolve(game::Game::should_resolve)

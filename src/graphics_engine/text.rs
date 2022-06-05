@@ -89,6 +89,7 @@ impl Font {
         (line_height, width, height, tex_path.to_owned())
     }
 
+    /// `path` - path to the `fnt` file which contains the textual metadata
     pub fn new<F : backend::Facade>(path: &str, f: &F) -> Font {
         let dir = dir_stem(path);
         let mut file = File::open(path).expect(
@@ -141,11 +142,12 @@ impl Text {
         }
     }
 
+    /// Adds an instance of text with the given string, position/scaling, and color
     pub fn add_text(&mut self, txt: &str, pos: Rc<RefCell<Node>>, color: [f32; 4]) {
         use cgmath::*;
         let mut last_x = 0;
-        for c in txt.as_bytes().iter().map(|c| self.font.glyphs.get(c))
-            .filter(|c| c.is_some()).map(|c| c.unwrap()) 
+        let fnt = self.font.clone();
+        for c in txt.as_bytes().iter().filter_map(|c| fnt.glyphs.get(c))
         {
             let p = Node::default().parent(pos.clone()).pos(point3(
                 last_x as f64, (-self.font.line_height - c.yoff) as f64, 0.0

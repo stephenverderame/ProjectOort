@@ -31,10 +31,10 @@ impl SceneManager {
     }
 
     /// Adds a new scene to be managed by this manager with the given name
-    pub fn insert_scene(&mut self, name: &'static str, scene: Scene) 
-        -> &mut Self 
+    pub fn insert_scene(&mut self, name: &'static str, 
+        scene: Box<RefCell<dyn AbstractScene + 'static>>) -> &mut Self 
     {
-        self.scenes.insert(name, Box::new(RefCell::new(scene)));
+        self.scenes.insert(name, scene);
         self
     }
 
