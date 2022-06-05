@@ -6,24 +6,37 @@ use std::rc::Rc;
 use std::cell::{RefCell, Cell};
 use std::collections::BTreeMap;
 
+pub trait AbstractScene {
+    /// Renders the scene
+    /// Returns either a texture result of the render or `None` 
+    /// if the result was rendered onto the screen
+    fn render(&mut self, inputs: Option<&Vec<pipeline::TextureType>>,
+        shader: &shader::ShaderManager) 
+        -> Option<pipeline::TextureType>;
+
+
+    /// Sets the lights used for this scene
+    fn set_lights(&mut self, lights: &Vec<shader::LightData>);
+}
+
 /// A Scene manages the scene parameters and
 /// strings together multiple render passes
 pub struct Scene {
     ibl_maps: Option<shader::PbrMaps>,
-    lights: ssbo::SSBO<shader::LightData>,
+    lights: Option<ssbo::SSBO<shader::LightData>>,
     main_light_dir: Option<cgmath::Vector3<f32>>,
     entities: Vec<Rc<RefCell<dyn AbstractEntity>>>,
-    pass: Cell<Option<pipeline::RenderPass>>,
+    pass: Option<pipeline::RenderPass>,
     viewer: Rc<RefCell<dyn Viewer>>,
 }
 
 impl Scene {
     pub fn new(pass: pipeline::RenderPass, viewer: Rc<RefCell<dyn Viewer>>) -> Scene {
         Scene {
-            ibl_maps: None, lights: ssbo::SSBO::<shader::LightData>::dynamic(None),
+            ibl_maps: None, lights: None,
             main_light_dir: None,
             entities: Vec::new(),
-            pass: Cell::new(Some(pass)),
+            pass: Some(pass),
             viewer,
         }
     }
@@ -34,7 +47,7 @@ impl Scene {
         shader::SceneData {
             viewer,
             ibl_maps: self.ibl_maps.as_ref(),
-            lights: Some(&self.lights),
+            lights: self.lights.as_ref(),
             pass_type: pass,
             light_pos: self.main_light_dir.map(|x| x.into()),
         }
@@ -60,9 +73,11 @@ impl Scene {
                 // objects when doing a transparency pass
                 match entity.borrow().render_order() {
                     RenderOrder::Unordered => {
-                        let cam_z = (view_mat * entity.borrow()
-                            .transformations()[0].borrow().as_transform())
-                            .transform_point(point3(0., 0., 0.)).z;
+                        let cam_z = view_mat.transform_point(entity.borrow()
+                            .transformations().map(|trans| {
+                                trans[0].borrow().as_transform()
+                                .transform_point(point3(0., 0., 0.))
+                            }).unwrap_or(point3(0., 0., 0.))).z;
                         let mut fixpoint_depth = -((cam_z * 10f64.powi(8) + 0.5) as i64);
                         while map.get(&fixpoint_depth).is_some() { fixpoint_depth -= 1; }
                         map.insert(fixpoint_depth, entity.clone());
@@ -101,35 +116,8 @@ impl Scene {
         }
     }
 
-    /// Renders the scene
-    /// Returns either a texture result of the render or `None` 
-    /// if the result was rendered onto the screen
-    pub fn render(&self, shader: &shader::ShaderManager)
-    {
-        use glium::Surface;
-        let vd = viewer_data_from(&*self.viewer.borrow());
-        let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
-        let mut pass = self.pass.take().unwrap();
-        pass.run_pass(&*self.viewer.borrow(), shader, sd.clone(),
-        &mut |fbo, viewer, typ, cache, _, _| {
-            fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
-            {
-                let mut sdm = sd.borrow_mut();
-                sdm.viewer = viewer_data_from(viewer);
-                sdm.pass_type = typ;
-            }
-            let scene_data = sd.borrow();
-            self.render_entities(viewer, &*scene_data, typ, cache, fbo, shader);
-        });
-        self.pass.set(Some(pass));
-    }
-
     pub fn set_ibl_maps(&mut self, maps: shader::PbrMaps) {
         self.ibl_maps = Some(maps);
-    }
-
-    pub fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
-        self.lights.update(lights)
     }
 
     pub fn set_light_dir(&mut self, dir_light: cgmath::Vector3<f32>) {
@@ -138,6 +126,16 @@ impl Scene {
 
     pub fn set_entities(&mut self, entities: Vec<Rc<RefCell<dyn AbstractEntity>>>) {
         self.entities = entities;
+        use std::cmp::Ordering;
+        use entity::RenderOrder as RO;
+        self.entities.sort_by(|a, b| {
+            match (a.borrow().render_order(), b.borrow().render_order()) {
+                (RO::First, RO::First) | (RO::Last, RO::Last) |
+                (RO::Unordered, RO::Unordered) => Ordering::Equal,
+                (RO::First, _) | (_, RO::Last) => Ordering::Less,
+                (RO::Last, _) | (_, RO::First) => Ordering::Greater,
+            }
+        });
     }
 
     #[allow(dead_code)]
@@ -185,5 +183,108 @@ pub fn gen_ibl_from_hdr<F : glium::backend::Facade>(hdr_path: &str,
                 brdf_lut: brdf,
             },
         _ => panic!("Unexpected return from generating ibl textures"),
+    }
+}
+
+impl AbstractScene for Scene {
+    fn render(&mut self, _inputs: Option<&Vec<pipeline::TextureType>>,
+        shader: &shader::ShaderManager) 
+        -> Option<pipeline::TextureType>
+    {
+        let vd = viewer_data_from(&*self.viewer.borrow());
+        let sd = Rc::new(RefCell::new(self.get_scene_data(vd, shader::RenderPassType::Visual)));
+        let viewer = self.viewer.borrow();
+        let res = self.pass.as_mut().unwrap().run_pass(&*viewer, shader, sd.clone(),
+        &mut |fbo, viewer, typ, cache, _, _| {
+            fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
+            {
+                let mut sdm = sd.borrow_mut();
+                sdm.viewer = viewer_data_from(viewer);
+                sdm.pass_type = typ;
+            }
+            let scene_data = sd.borrow();
+            self.render_entities(viewer, &*scene_data, typ, cache, fbo, shader);
+        });
+        res
+    }
+
+    fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
+        if let Some(this_lights) = self.lights.as_mut() {
+            this_lights.update(lights)
+        } else {
+            self.lights = Some(ssbo::SSBO::dynamic(Some(&lights)))
+        }
+    }
+}
+
+use glium::*;
+use pipeline::texture_processor::BlitTextureProcessor;
+pub struct CompositorScene<S : Surface,
+    SHolder : std::ops::DerefMut<Target = S>,
+    GetSHolder : Fn() -> (SHolder, BlitTarget),
+    CleanSHolder : Fn(SHolder)> 
+{
+    scenes: Vec<Box<dyn AbstractScene>>,
+    compositor: BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>,
+    viewer: Rc<RefCell<dyn Viewer>>,
+}
+
+pub fn compositor_scene_new<F : backend::Facade>(width : u32, height : u32, 
+    viewer: Rc<RefCell<dyn Viewer>>, scenes: Vec<Box<dyn AbstractScene>>, 
+    fac: &F) -> CompositorScene<glium::Frame, super::MutCtx, 
+        impl Fn() -> (super::MutCtx, BlitTarget), 
+        impl Fn(super::MutCtx)>
+{
+    CompositorScene {
+        scenes,
+        compositor: BlitTextureProcessor::new(fac, width, height, move || { 
+            let mut surface = super::get_active_ctx().as_surface();
+            surface.clear_color_and_depth((1., 0., 0., 1.), 1.);
+            (surface, BlitTarget {
+                left: 0, bottom: 0,
+                width: width as i32, height: height as i32,
+            })
+        }, |disp| disp.finish()),
+        viewer,
+    }
+}
+
+impl<S : Surface,
+    SHolder : std::ops::DerefMut<Target = S>,
+    GetSHolder : Fn() -> (SHolder, BlitTarget),
+    CleanSHolder : Fn(SHolder)> 
+    AbstractScene for CompositorScene<S, SHolder, GetSHolder, CleanSHolder>
+{
+    fn render(&mut self, inputs: Option<&Vec<pipeline::TextureType>>,
+        shader: &shader::ShaderManager) 
+        -> Option<pipeline::TextureType>
+    {
+        use super::shader::{PipelineCache, SceneData, RenderPassType};
+        use super::pipeline::TextureProcessor;
+        let mut new_inputs = Vec::new();
+        for scene in &self.scenes {
+            if let Some(comp) = scene.render(inputs, shader) {
+                new_inputs.push(comp);
+            }
+        }
+        let sd = SceneData {
+            viewer: viewer_data_from(&*self.viewer.borrow()),
+            lights: None,
+            ibl_maps: None,
+            pass_type: RenderPassType::Visual,
+            light_pos: None,
+        };
+        let default = Vec::new();
+        let final_inputs : Vec<_> = 
+            inputs.unwrap_or(&default).iter().chain(new_inputs.iter()).collect();
+        self.compositor.process(Some(final_inputs), 
+            shader, &mut PipelineCache::default(), Some(&sd));
+        None
+    }
+
+    fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
+        for scene in &mut self.scenes {
+            scene.set_lights(lights);
+        }
     }
 }

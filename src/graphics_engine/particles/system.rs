@@ -10,7 +10,6 @@ use crate::cg_support::Transformation;
 /// A collection of particle emitters
 pub struct ParticleSystem {
     emitters: VecDeque<(Box<dyn Emitter>, usize)>,
-    tmp_transform: [Rc<RefCell<dyn Transformation>>; 1],
     drawables: Vec<Box<dyn Drawable>>,
 }
 
@@ -18,7 +17,6 @@ impl ParticleSystem {
     pub fn new() -> Self {
         Self {
             emitters: VecDeque::new(),
-            tmp_transform: [Rc::new(RefCell::new(cgmath::Matrix4::from_scale(1.)))],
             drawables: Vec::new(),
         }
     }
@@ -99,8 +97,8 @@ impl Drawable for ParticleSystem {
 }
 
 impl AbstractEntity for ParticleSystem {
-    fn transformations(&self) -> &[Rc<RefCell<dyn Transformation>>] {
-        &self.tmp_transform[..]
+    fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]> {
+        None
     }
     fn drawable(&mut self) -> &mut dyn Drawable {
         self

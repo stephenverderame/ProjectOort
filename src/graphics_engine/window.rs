@@ -5,13 +5,13 @@ use glutin::event_loop::{ControlFlow, EventLoop};
 use glutin::platform::run_return::EventLoopExtRunReturn;
 use glium::{Display};
 use std::time::{Instant, Duration};
-use super::scene::Scene;
+use super::scene::{Scene, AbstractScene};
 use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
 use super::shader;
 
 pub struct SceneManager {
-    scenes: std::collections::HashMap<&'static str, RefCell<Scene>>,
+    scenes: std::collections::HashMap<&'static str, Box<RefCell<dyn AbstractScene>>>,
     active_scene: Option<&'static str>,
 }
 
@@ -31,13 +31,17 @@ impl SceneManager {
     }
 
     /// Adds a new scene to be managed by this manager with the given name
-    pub fn insert_scene(&mut self, name: &'static str, scene: Scene) -> &mut Self {
-        self.scenes.insert(name, RefCell::new(scene));
+    pub fn insert_scene(&mut self, name: &'static str, scene: Scene) 
+        -> &mut Self 
+    {
+        self.scenes.insert(name, Box::new(RefCell::new(scene)));
         self
     }
 
-    pub fn get_active_scene(&self) -> Option<RefMut<Scene>> {
-        self.active_scene.map(|x| self.scenes[x].borrow_mut())
+    pub fn get_active_scene(&self) 
+        -> Option<RefMut<dyn AbstractScene + 'static>> 
+    {
+        self.active_scene.map(|x| self.scenes[x].as_ref().borrow_mut())
     }
 }
 
@@ -46,7 +50,7 @@ pub struct WindowCallbacks<'a> {
         FnMut(glutin::event::DeviceEvent, RefMut<SceneManager>)>,
     resize_cb: Option<&'a mut dyn 
         FnMut(glutin::dpi::PhysicalSize<u32>)>,
-    draw_cb: Option<&'a mut dyn FnMut(Duration, RefMut<Scene>)>,
+    draw_cb: Option<&'a mut dyn FnMut(Duration, RefMut<dyn AbstractScene>)>,
 }
 
 impl<'a> WindowCallbacks<'a> {
@@ -73,7 +77,7 @@ impl<'a> WindowCallbacks<'a> {
     }
 
     pub fn with_draw_handler(mut self,
-        on_draw: &'a mut dyn FnMut(Duration, RefMut<Scene>)) -> Self
+        on_draw: &'a mut dyn FnMut(Duration, RefMut<dyn AbstractScene>)) -> Self
     {
         self.draw_cb = Some(on_draw);
         self
@@ -144,7 +148,7 @@ impl Window {
                     last_time = now;
 
                     if let Some(mut active_scene) = self.scenes.borrow().get_active_scene() {
-                        (&mut *active_scene).render(&*shaders);
+                        (&mut *active_scene).render(None, &*shaders);
                     }
 
                     if let (Some(cb), Some(scene)) = (&mut callbacks.draw_cb.as_mut(), 

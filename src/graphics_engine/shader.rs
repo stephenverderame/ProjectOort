@@ -12,7 +12,7 @@ enum ShaderType {
     Pbr,
     Skybox,
     EquiRect,
-    UiShader,
+    CompositeShader,
     BlurShader,
     BloomShader,
     PrefilterHdrShader,
@@ -35,6 +35,7 @@ enum ShaderType {
     ParallelPrefilter,
     Cloud,
     Line,
+    Text,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -246,13 +247,6 @@ pub struct EqRectData<'a> {
 pub struct SkyboxData<'a> {
     pub env_map: &'a glium::texture::Cubemap,
 }
-/// Shader inputs for Ui shader
-pub struct UiData<'a> {
-    pub model: [[f32; 4]; 4],
-    pub diffuse: &'a glium::texture::Texture2d,
-    pub do_blend: bool,
-    pub blend_tex: Option<&'a glium::texture::Texture2d>,
-}
 /// Shader inputs for seperable convolutions
 pub struct SepConvData<'a> {
     pub tex: &'a glium::texture::Texture2d,
@@ -306,6 +300,12 @@ impl<'s, T : AsUniformValue, R : Uniforms> Uniforms for UniformsArray<'s, T, R> 
     }
 }
 
+/// Shader inputs for Composite shader
+pub struct CompositeData<'a> {
+    pub model: [[f32; 4]; 4],
+    pub textures: Vec<&'a glium::texture::Texture2d>,
+}
+
 /// A uniform struct named `name` enclosing the fields in `data`
 pub struct UniformsStruct<'s, T: Uniforms, R : Uniforms> {
     pub name: &'s str,
@@ -353,7 +353,7 @@ pub enum UniformInfo<'a> {
     PBRInfo(PBRData<'a>),
     EquiRectInfo(EqRectData<'a>),
     SkyboxInfo(SkyboxData<'a>),
-    UiInfo(UiData<'a>),
+    CompositeInfo(CompositeData<'a>),
     SepConvInfo(SepConvData<'a>),
     ExtractBrightInfo(ExtractBrightData<'a>),
     PrefilterHdrEnvInfo(PrefilterHdrEnvData<'a>),
@@ -361,10 +361,14 @@ pub enum UniformInfo<'a> {
     LaserInfo,
     TriangleCollisionsInfo,
     LightCullInfo(LightCullData<'a>),
+    /// Arg - model matrix
     CollisionDebugInfo([[f32; 4]; 4]),
+    /// Args - billboard texture, spherical billboard density
     BillboardInfo(&'a glium::texture::SrgbTexture2d, f32),
     CloudInfo(CloudData<'a>),
     LineInfo,
+    /// Args - SDF texture, `[tex_width, tex_height]`
+    TextInfo(&'a glium::texture::Texture2d, [i32; 2]),
 }
 
 impl<'a> std::fmt::Debug for UniformInfo<'a> {
@@ -374,7 +378,7 @@ impl<'a> std::fmt::Debug for UniformInfo<'a> {
             PBRInfo(_) => "PBR",
             EquiRectInfo(_) => "EQ Rect",
             SkyboxInfo(_) => "Skybox",
-            UiInfo(_) => "UI",
+            CompositeInfo(_) => "Compositor",
             SepConvInfo(_) => "Sep Conv",
             ExtractBrightInfo(_) => "Extract Bright",
             PrefilterHdrEnvInfo(_) => "Prefilter HDR",
@@ -386,6 +390,7 @@ impl<'a> std::fmt::Debug for UniformInfo<'a> {
             BillboardInfo(_, _) => "Billboard",
             CloudInfo(_) => "Cloud",
             LineInfo => "Line",
+            TextInfo(_, _) => "Text",
         };
         f.write_str(name)
     }
@@ -427,9 +432,10 @@ impl<'a> UniformInfo<'a> {
             (EquiRectInfo(_), LayeredVisual) | (EquiRectInfo(_), Transparent(_)) => ShaderType::ParallelEqRect,
             (SkyboxInfo(_), LayeredVisual) | (SkyboxInfo(_), Transparent(_)) => ShaderType::ParallelSky,
             (BillboardInfo(_, _), Visual) => ShaderType::Billboard,
+            (TextInfo(_, _), Visual) => ShaderType::Text,
 
             // tex processors
-            (UiInfo(_), Visual) => ShaderType::UiShader,
+            (CompositeInfo(_), Visual) => ShaderType::CompositeShader,
             (SepConvInfo(_), Visual) => ShaderType::BlurShader,
             (ExtractBrightInfo(_), Visual) => ShaderType::BloomShader,
             (PrefilterHdrEnvInfo(_), Visual) => ShaderType::PrefilterHdrShader,
@@ -470,8 +476,8 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, f32, UniformsStorage< 'a, f32, UniformsStorage<'a, f32, glium::uniforms::EmptyUniforms>>>>>>>>>>>>>>>>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     ExtractBrightUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
-    UiUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, 
-        UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
+    CompositeUniform(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], 
+        UniformsStorage<'a, u32, EmptyUniforms>>>),
     SepConvUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     PrefilterHdrEnvUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], 
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
@@ -484,6 +490,8 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
     LineUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
+    TextUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [f32; 2], UniformsStorage<'a, [[f32; 4]; 4],
+        EmptyUniforms>>>)
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -636,6 +644,8 @@ impl ShaderManager {
             "shaders/cloudVert.glsl", "shaders/cloudFrag.glsl").unwrap();
         let line_shader = load_shader_source!(facade,
             "shaders/lineVert.glsl", "shaders/lineFrag.glsl").unwrap();
+        let text_shader = load_shader_source!(facade,
+            "shaders/textVert.glsl", "shaders/textFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -645,7 +655,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::Skybox, skybox_shader);
         shaders.insert(ShaderType::Pbr, pbr_shader);
         shaders.insert(ShaderType::EquiRect, equirect_shader);
-        shaders.insert(ShaderType::UiShader, ui_shader);
+        shaders.insert(ShaderType::CompositeShader, ui_shader);
         shaders.insert(ShaderType::BlurShader, blur_shader);
         shaders.insert(ShaderType::BloomShader, bloom_shader);
         shaders.insert(ShaderType::PrefilterHdrShader, prefilter_shader);
@@ -666,6 +676,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::ParallelPrefilter, parallel_prefilter);
         shaders.insert(ShaderType::Cloud, cloud_shader);
         shaders.insert(ShaderType::Line, line_shader);
+        shaders.insert(ShaderType::Text, text_shader);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -787,12 +798,14 @@ impl ShaderManager {
                     }
                 }})
             },
-            (UiInfo(UiData {model, diffuse, do_blend, blend_tex }), _) => {
-                UniformType::UiUniform(glium::uniform! {
-                    model: *model,
-                    diffuse: sample_linear_clamp!(diffuse),
-                    do_blend: *do_blend,
-                    bloom_tex: sample_linear_clamp!(blend_tex.unwrap_or(&self.empty_2d)),
+            (CompositeInfo(CompositeData {model, textures}), _) => {
+                UniformType::CompositeUniform(UniformsArray {
+                    vals: textures.iter().map(|tex| sample_linear_clamp!(tex)).collect(),
+                    name: "textures",
+                    rest: glium::uniform! {
+                        tex_count: textures.len() as u32,
+                        model: *model
+                    },
                 })
             },
             (SepConvInfo(SepConvData {tex, horizontal_pass}), _) => UniformType::SepConvUniform(glium::uniform! {
@@ -849,6 +862,11 @@ impl ShaderManager {
             }),
             (LineInfo, Visual) => UniformType::LineUniform(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
+            }),
+            (TextInfo(tex, tex_width_height), Visual) => UniformType::TextUniform(glium::uniform! {
+                viewproj: scene_data.unwrap().viewer.viewproj,
+                tex_width_height: [tex_width_height[0] as f32, tex_width_height[1] as f32],
+                tex: sample_mip_clamp!(tex),
             }),
             (data, pass) => 
                 panic!("Invalid shader/shader data combination with shader (Args: `{:?}` '{:?}') during pass '{:?}'", data, typ, pass),

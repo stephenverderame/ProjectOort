@@ -20,6 +20,7 @@ assimp-sys = "*"
 arr_macro = "*"
 itertools = "*"
 noise = "*"
+regex = "*"
 
 [dev-dependencies]
 assertables = "*"

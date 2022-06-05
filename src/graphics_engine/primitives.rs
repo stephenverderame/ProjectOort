@@ -105,8 +105,8 @@ use crate::cg_support::Transformation;
 
 impl AbstractEntity for Lines {
 
-    fn transformations(&self) -> &[Rc<RefCell<dyn Transformation>>] {
-        &self._dummy_transform[..]
+    fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]> {
+        None
     }
 
     fn drawable(&mut self) -> &mut dyn Drawable {

@@ -13,6 +13,7 @@ mod billboard;
 pub mod particles;
 pub mod primitives;
 pub mod map;
+pub mod text;
 use std::rc::Rc;
 use std::cell::{Cell, RefCell};
 use std::mem::MaybeUninit;

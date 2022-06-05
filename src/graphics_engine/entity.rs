@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use super::shader;
 
 /// Relative render order of an entity
-#[derive(Copy, Clone, Hash)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub enum RenderOrder {
     /// Render this entity first, in the order they are specified
     First,
@@ -20,7 +20,7 @@ pub enum RenderOrder {
 /// An entity can be in many positions at once
 pub trait AbstractEntity {
     /// Gets the transformations for all locations for this entity
-    fn transformations(&self) -> &[Rc<RefCell<dyn Transformation>>];
+    fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]>;
 
     /// Gets the drawable for this entity
     fn drawable(&mut self) -> &mut dyn Drawable;
@@ -54,8 +54,8 @@ impl std::ops::DerefMut for Entity {
 }
 
 impl AbstractEntity for Entity {
-    fn transformations(&self) -> &[Rc<RefCell<dyn Transformation>>] {
-        &self.locations
+    fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]> {
+        Some(&self.locations)
     }
     fn drawable(&mut self) -> &mut dyn Drawable {
         &mut *self.geometry
@@ -131,8 +131,8 @@ pub struct ModelEntity {
 }
 
 impl AbstractEntity for ModelEntity {
-    fn transformations(&self) -> &[Rc<RefCell<dyn Transformation>>] {
-        &self.locations
+    fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]> {
+        Some(&self.locations)
     }
     fn drawable(&mut self) -> &mut dyn Drawable {
         &mut *self.geometry
@@ -164,8 +164,10 @@ pub fn render_entity<S : glium::Surface>(entity: &mut dyn AbstractEntity,
     cache: &shader::PipelineCache, shader: &shader::ShaderManager) 
 {
     let matrices : Vec<[[f32; 4]; 4]> 
-        = entity.transformations().iter().map(|x| x.borrow().as_transform()
-            .cast().unwrap().into()).collect();
+        = entity.transformations().map(|entities| {
+            entities.iter().map(|x| x.borrow().as_transform()
+            .cast().unwrap().into()).collect()
+        }).unwrap_or_else(|| Vec::new());
     super::drawable::render_drawable(entity.drawable(), Some(&matrices), 
         surface, scene_data, cache, shader)
       

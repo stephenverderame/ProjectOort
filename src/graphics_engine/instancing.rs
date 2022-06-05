@@ -30,6 +30,14 @@ pub struct LineAttributes {
 
 glium::implement_vertex!(LineAttributes, start_pos, end_pos, color);
 
+#[derive(Copy, Clone)]
+pub struct TextAttributes {
+    pub x_y_width_height: [i32; 4],
+    pub color: [f32; 4],
+}
+
+glium::implement_vertex!(TextAttributes, x_y_width_height, color);
+
 /// A dynamically resizing buffer of per-instance information
 /// If the amount of instances change, the buffer is resized
 pub struct InstanceBuffer<T : Copy + glium::Vertex> {
@@ -117,4 +125,16 @@ pub fn model_mats_to_vertex(data: &[[[f32; 4]; 4]]) -> Vec<InstancePosition>
             instance_model_col3: x[3],
         }
     ).collect()
+}
+
+pub fn mat_to_instance_pos<T : cgmath::BaseFloat>(mat: &cgmath::Matrix4<T>) 
+    -> InstancePosition 
+{
+    let mat : cgmath::Matrix4<f32> = mat.cast().unwrap();
+    InstancePosition {
+        instance_model_col0: mat.x.into(),
+        instance_model_col1: mat.y.into(),
+        instance_model_col2: mat.z.into(),
+        instance_model_col3: mat.w.into(),
+    }
 }

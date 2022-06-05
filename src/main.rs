@@ -21,17 +21,12 @@ use std::cell::{RefCell};
 use cg_support::node;
 
 fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<player::Player>>, wnd_ctx: &glium::Display) -> RenderPass {
-    use glium::{Surface};
     use pipeline::*;
     use graphics_engine::drawable::Viewer;
     let msaa = Box::new(render_target::MsaaRenderTarget::new(8, render_width, render_height, wnd_ctx));
     let eb = Box::new(texture_processor::ExtractBrightProcessor::new(wnd_ctx, render_width, render_height));
     let blur = Box::new(texture_processor::SepConvProcessor::new(render_width, render_height, 10, wnd_ctx));
-    let compose = Box::new(texture_processor::UiCompositeProcessor::new(wnd_ctx, || { 
-        let mut surface = graphics_engine::get_active_ctx().as_surface();
-        surface.clear_color_and_depth((1., 0., 0., 1.), 1.);
-        surface
-    }, |disp| disp.finish()));
+    let compose = Box::new(texture_processor::CompositorProcessor::new(render_width, render_height, wnd_ctx));
     let depth_render = Box::new(render_target::DepthRenderTarget::new(render_width, render_height, 
         None, None, false));
     let cull_lights = Box::new(texture_processor::CullLightProcessor::new(render_width, render_height, 16));
@@ -112,7 +107,8 @@ fn main() {
             game.borrow().on_hit(a, b, hit, player)
         }));
 
-    let mut draw_cb = |dt, mut scene : std::cell::RefMut<scene::Scene>| {
+    let mut draw_cb = 
+    |dt, mut scene : std::cell::RefMut<dyn scene::AbstractScene>| {
         game.borrow().on_draw(&mut sim.borrow_mut(), dt, &mut *scene, 
             &mut controller.borrow_mut());
         // will call on_hit, so cannot mutably borrow game

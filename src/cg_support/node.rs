@@ -288,6 +288,10 @@ impl Node {
     pub fn get_pos(&self) -> Point3<f64> {
         self.transform_point(point3(0., 0., 0.))
     }
+
+    #[inline]
+    pub fn get_parent(&self) -> Option<Rc<RefCell<Node>>>
+    { self.parent.clone() }
 }
 
 impl From<&'_ Node> for Matrix4<f64> {

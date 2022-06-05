@@ -153,80 +153,160 @@ impl<'a> TextureProcessor for SepConvProcessor {
 /// 
 /// ### Inputs
 /// 2D Main texture
-/// 2D additive texture
+/// 2D additive texture(s)
 /// ### Outputs
-/// None (result is drawn as a quad to main FBO)
-pub struct UiCompositeProcessor<S : Surface, 
-    D : std::ops::DerefMut<Target = S>, F : Fn() -> D, 
-    G : Fn(D)> 
+/// Additively blends all input 2D textures
+pub struct CompositorProcessor
 {
     vbo: VertexBuffer<Vertex>,
     ebo: IndexBuffer<u16>,
-    get_surface: F,
-    clean_surface: G,
+    tex: Box<texture::Texture2d>,
+    fbo: framebuffer::SimpleFrameBuffer<'static>,
 }
 
-impl<S : Surface, D : std::ops::DerefMut<Target = S>, 
-    F : Fn() -> D, G : Fn(D)> UiCompositeProcessor<S, D, F, G> 
+impl CompositorProcessor
 {
     /// `get_surface` - callable that returns the surface to render to. The surface is **not** cleared
     /// 
     /// `clean_surface` - callable that accepts the returned surface and performs any necessary cleanup
     /// after drawing is finished
-    pub fn new<Fac: backend::Facade>(facade: &Fac, get_surface: F, clean_surface: G) -> UiCompositeProcessor<S, D, F, G> {
+    pub fn new<Fac: backend::Facade>(width: u32, height: u32, facade: &Fac) 
+        -> CompositorProcessor 
+    {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
-        UiCompositeProcessor { vbo, ebo, get_surface, clean_surface }
+        let tex = Box::new(glium::texture::Texture2d::empty_with_format(facade,
+            glium::texture::UncompressedFloatFormat::F16F16F16F16, glium::texture::MipmapsOption::NoMipmap,
+            width, height).unwrap());
+        
+        unsafe {
+            let tex_ptr = &*tex as *const texture::Texture2d;
+            CompositorProcessor {
+                vbo, ebo, 
+                fbo: glium::framebuffer::SimpleFrameBuffer::new(facade, &*tex_ptr).unwrap(),
+                tex,
+            }
+        }
     }
 
-    fn render<'a>(&self, tex_a: &Ownership<'a, texture::Texture2d>, cache: &PipelineCache,
-        tex_b: Option<&Ownership<'a, texture::Texture2d>>, shader: &shader::ShaderManager) 
+    fn render<'a>(&mut self, textures: Vec<&'a texture::Texture2d>, cache: &PipelineCache,
+        shader: &shader::ShaderManager) -> Option<TextureType>
     {
-        let diffuse = tex_a.to_ref();
-        let blend_tex = tex_b.map(|tex| tex.to_ref());
-        let args = shader::UniformInfo::UiInfo(shader::UiData {
-            diffuse, do_blend: blend_tex.is_some(), blend_tex,
+        let args = shader::UniformInfo::CompositeInfo(shader::CompositeData {
+            textures,
             model: cgmath::Matrix4::from_scale(1f32).into(),
         });
         let (program, params, uniform) = shader.use_shader(&args, None, Some(cache));
         match uniform {
-            shader::UniformType::UiUniform(uniform) => {
-                let mut surface_holder = (self.get_surface)();
-                {
-                    let surface = &mut *surface_holder;
-                    surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
-                    surface.draw(&self.vbo, &self.ebo, program, &uniform, &params).unwrap();
-                }
-                (self.clean_surface)(surface_holder);
+            shader::UniformType::CompositeUniform(uniform) => {
+                self.fbo.clear_color_and_depth((0., 0., 0., 1.0), 1.0);
+                self.fbo.draw(&self.vbo, &self.ebo, program, &uniform, &params);
             },
             _ => panic!("Invalid uniform type returned for RenderTarget"),
         };
+        Some(TextureType::Tex2d(Ref(&self.tex)))
     }
 }
 
-impl<S : Surface, D : std::ops::DerefMut<Target = S>, F : Fn() -> D, G : Fn(D)> 
-    TextureProcessor for UiCompositeProcessor<S, D, F, G> 
+impl TextureProcessor for CompositorProcessor
 {
     fn process(&mut self, source: Option<Vec<&TextureType>>, shader: &shader::ShaderManager,
-        c: &mut PipelineCache, _: Option<&shader::SceneData>) -> Option<TextureType>
+        cache: &mut PipelineCache, _: Option<&shader::SceneData>) -> Option<TextureType>
     {
         let source = source.unwrap();
-        if source.len() == 2 {
-            match (source[0], source[1]) {
-                (TextureType::Tex2d(diffuse), TextureType::Tex2d(blend)) => {
-                    self.render(diffuse, c, Some(blend), shader);
-                    None
-                },
-                _ => panic!("Invalid texture type passed to texture processor")
-            }
-        } else if source.len() == 1 {
-            if let TextureType::Tex2d(diffuse) = source[0] {
-                self.render(diffuse, c, None, shader);
-                None
-            } else {
-                panic!("Invalid texture type passed to ui composer")
-            }
+        let v : Vec<_> = source.iter().filter_map(|tt| match tt {
+            TextureType::Tex2d(tex) => Some(tex.to_ref()),
+            _ => None,
+        }).collect();
+        if v.len() == 0 {
+            panic!("Not enough 2d textures input to compositor")
         } else {
-            panic!("Invalid number of source textures")
+            self.render(v, cache, shader)
+        }
+    }
+}
+
+/// A processor which blits a texture onto another surface
+/// 
+/// ### Inputs
+/// A single 2d texture
+/// ### Outputs
+/// None (texture blitted to surface returned by getter function)
+/// 
+/// ### Template Params
+/// `S` - Surface type
+/// 
+/// `SHolder` - something that dereferences to `S`
+/// 
+/// `GetSHolder` - function that returns surface and rectangle on it to blit
+/// 
+/// `CleanSHolder` - function that cleans the surface
+pub struct BlitTextureProcessor<S : Surface,
+    SHolder : std::ops::DerefMut<Target = S>,
+    GetSHolder : Fn() -> (SHolder, BlitTarget),
+    CleanSHolder : Fn(SHolder)>
+{
+
+    vbo: VertexBuffer<Vertex>,
+    ebo: IndexBuffer<u16>,
+    get_surface: GetSHolder,
+    clean_surface: CleanSHolder,
+    in_width: u32,
+    in_height: u32,
+}
+
+impl<S : Surface, 
+    SHolder : std::ops::DerefMut<Target = S>,
+    GetSHolder : Fn() -> (SHolder, BlitTarget),
+    CleanSHolder : Fn(SHolder)>
+    BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>
+{
+    pub fn new<Fac: backend::Facade>(facade: &Fac, in_width: u32, in_height: u32,
+        get_surface: GetSHolder, clean_surface: CleanSHolder) 
+        -> BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder> 
+    {
+        let (vbo, ebo) = get_rect_vbo_ebo(facade);
+        BlitTextureProcessor { vbo, ebo, get_surface, clean_surface,
+            in_width, in_height }
+    }
+
+    fn render<'a>(&self, texture: &'a texture::Texture2d, _: &PipelineCache,
+        _: &shader::ShaderManager)
+    {
+        let (mut surface_holder, dst_rect) = (self.get_surface)();
+        {
+            let surface = &mut *surface_holder;
+            surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
+            let r = Rect {
+                left: 0, bottom: 0,
+                width: self.in_width,
+                height: self.in_height,
+            };
+            surface.blit_color(&r, &texture.as_surface(), &dst_rect, 
+                uniforms::MagnifySamplerFilter::Linear);
+        }
+        (self.clean_surface)(surface_holder);
+    }
+}
+
+impl<S : Surface, 
+    SHolder : std::ops::DerefMut<Target = S>,
+    GetSHolder : Fn() -> (SHolder, BlitTarget),
+    CleanSHolder : Fn(SHolder)>
+    TextureProcessor for BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>
+{
+    fn process(&mut self, source: Option<Vec<&TextureType>>, shader: &shader::ShaderManager,
+        cache: &mut PipelineCache, _: Option<&shader::SceneData>) -> Option<TextureType>
+    {
+        let source = source.unwrap();
+        let v : Vec<_> = source.iter().filter_map(|tt| match tt {
+            TextureType::Tex2d(tex) => Some(tex.to_ref()),
+            _ => None,
+        }).collect();
+        if v.len() != 1 {
+            panic!("Invalid number of 2d textures to input to compositor")
+        } else {
+            self.render(v[0], cache, shader);
+            None
         }
     }
 }

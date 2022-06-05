@@ -159,7 +159,7 @@ impl<'c> Game<'c> {
     /// Callback function for when a frame is drawn
     pub fn on_draw<'a, 'b>(&self,
         sim: &mut Simulation<'a, 'b, object::ObjectType>,
-        dt : std::time::Duration, scene : &mut scene::Scene,
+        dt : std::time::Duration, scene : &mut dyn scene::AbstractScene,
         controller: &mut controls::PlayerControls)
     {
         *self.player.borrow().trans_fac() = controller.compute_transparency_fac();
