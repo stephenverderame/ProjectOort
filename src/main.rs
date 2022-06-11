@@ -26,7 +26,8 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let msaa = Box::new(render_target::MsaaRenderTarget::new(8, render_width, render_height, wnd_ctx));
     let eb = Box::new(texture_processor::ExtractBrightProcessor::new(wnd_ctx, render_width, render_height));
     let blur = Box::new(texture_processor::SepConvProcessor::new(render_width, render_height, 10, wnd_ctx));
-    let compose = Box::new(texture_processor::CompositorProcessor::new(render_width, render_height, wnd_ctx));
+    let compose = Box::new(texture_processor::CompositorProcessor::new(render_width, render_height, 
+        shader::BlendFn::Add, wnd_ctx));
     let depth_render = Box::new(render_target::DepthRenderTarget::new(render_width, render_height, 
         None, None, false));
     let cull_lights = Box::new(texture_processor::CullLightProcessor::new(render_width, render_height, 16));
@@ -72,6 +73,17 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     }))
 }
 
+fn get_ui_render_pass(render_width: u32, render_height: u32, 
+    wnd_ctx: &glium::Display) -> RenderPass
+{
+    use pipeline::*;
+    let msaa = Box::new(render_target::MsaaRenderTarget::new(8, render_width, 
+        render_height, wnd_ctx));
+
+    pipeline::RenderPass::new(vec![msaa], Vec::new(), 
+        pipeline::Pipeline::new(vec![0], Vec::new()))
+}
+
 
 fn main() {
     let render_width = 1920;
@@ -94,6 +106,17 @@ fn main() {
     let (ibl, ldir) = game.borrow().get_map().lighting_info();
     main_scene.set_ibl_maps(ibl);
     main_scene.set_light_dir(ldir);
+
+    let mut ui_scene = scene::Scene::new_no_lights(
+        get_ui_render_pass(render_width, render_height, &*wnd.ctx()), 
+        Rc::new(RefCell::new(camera::Camera2D::new(render_width, render_height))));
+
+    let mut test_text = graphics_engine::text::Text::new(
+        Rc::new(text::Font::new("assets/fonts/SignedDistanceArial.fnt", &*wnd.ctx())),
+        &*wnd.ctx());
+    test_text.add_text("Test", Rc::new(RefCell::new(node::Node::default().u_scale(0.1).pos(point3(-0.8, 0.8, 0.1)))),
+        [1.0, 0., 0., 1.]);
+    ui_scene.set_entities(vec![Rc::new(RefCell::new(test_text))]);
     
     // skybox must be rendered first, particles must be rendered last
     let mut entities = game.borrow().get_map().entities();
@@ -101,7 +124,7 @@ fn main() {
     main_scene.set_entities(entities);
     let compositor_scene = scene::compositor_scene_new(render_width, render_height, 
         Rc::new(RefCell::new(camera::Camera2D::new(render_width, render_height))), 
-        vec![Box::new(main_scene)], &*wnd.ctx());
+        vec![Box::new(main_scene), Box::new(ui_scene)], &*wnd.ctx());
     wnd.scene_manager()
         .insert_scene("main", Box::new(RefCell::new(compositor_scene)))
         .change_scene("main");

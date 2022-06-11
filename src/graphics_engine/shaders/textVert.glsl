@@ -20,7 +20,7 @@ out vec2 tcoords;
 void main() {
     mat4 model = mat4(instance_model_col0, instance_model_col1, 
         instance_model_col2, instance_model_col3);
-    gl_Position = viewproj * model * vec4(pos, 1.0);
+    gl_Position = /*viewproj */ model * vec4(pos, 1.0);
     tcoords = tex_coords;
     glyph.color = color;
     glyph.x_y_width_height = x_y_width_height;

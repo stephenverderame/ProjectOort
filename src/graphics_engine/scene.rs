@@ -41,6 +41,18 @@ impl Scene {
         }
     }
 
+    pub fn new_no_lights(pass: pipeline::RenderPass, 
+        viewer: Rc<RefCell<dyn Viewer>>) -> Scene 
+    {
+        Scene {
+            ibl_maps: None, lights: None,
+            main_light_dir: None,
+            entities: Vec::new(),
+            pass: Some(pass),
+            viewer,
+        }
+    }
+
     fn get_scene_data<'a>(viewer: shader::ViewerData, pass: shader::RenderPassType,
         ibl_maps: &'a Option<shader::PbrMaps>, lights: &'a Option<ssbo::SSBO<shader::LightData>>,
         light_dir: &'a Option<cgmath::Vector3<f32>>) -> shader::SceneData<'a>
@@ -202,7 +214,7 @@ impl AbstractScene for Scene {
         let entities = &self.entities;
         let res = self.pass.as_mut().unwrap().run_pass(&*viewer, shader, sd.clone(),
         &mut |fbo, viewer, typ, cache, _, _| {
-            fbo.clear_color_and_depth((0., 0., 0., 1.), 1.);
+            fbo.clear_color_and_depth((0., 0., 0., 0.), 1.);
             {
                 let mut sdm = sd.borrow_mut();
                 sdm.viewer = viewer_data_from(viewer);
@@ -225,7 +237,9 @@ impl AbstractScene for Scene {
 }
 
 use glium::*;
-use pipeline::texture_processor::{BlitTextureProcessor, CompositorProcessor};
+use pipeline::texture_processor::{BlitTextureProcessor, 
+    CompositorProcessor};
+use shader::BlendFn;
 pub struct CompositorScene<S : Surface,
     SHolder : std::ops::DerefMut<Target = S>,
     GetSHolder : Fn() -> (SHolder, BlitTarget),
@@ -253,7 +267,7 @@ pub fn compositor_scene_new<F : backend::Facade>(width : u32, height : u32,
 {
     CompositorScene {
         scenes,
-        blitter: BlitTextureProcessor::new(width, height, move || { 
+        blitter: BlitTextureProcessor::new(move || { 
             let mut surface = super::get_active_ctx().as_surface();
             surface.clear_color_and_depth((1., 0., 0., 1.), 1.);
             (surface, BlitTarget {
@@ -261,7 +275,8 @@ pub fn compositor_scene_new<F : backend::Facade>(width : u32, height : u32,
                 width: width as i32, height: height as i32,
             })
         }, |disp| disp.finish()),
-        compositor: CompositorProcessor::new(width, height, fac),
+        compositor: CompositorProcessor::new(width, height, 
+            BlendFn::Overlay, fac),
         viewer,
     }
 }

@@ -5,7 +5,7 @@ use glutin::event_loop::{ControlFlow, EventLoop};
 use glutin::platform::run_return::EventLoopExtRunReturn;
 use glium::{Display};
 use std::time::{Instant, Duration};
-use super::scene::{Scene, AbstractScene};
+use super::scene::{AbstractScene};
 use std::rc::Rc;
 use std::cell::{RefCell, RefMut};
 use super::shader;

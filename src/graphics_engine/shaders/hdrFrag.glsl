@@ -1,5 +1,6 @@
 #version 430 core
-#extension GL_ARB_bindless_texture : require
+//#extension GL_ARB_bindless_texture : require
+#extension GL_ARB_shader_subroutine : require
 const int MAX_TEXTURES = 10;
 
 in vec2 f_tex_coords;
@@ -11,6 +12,18 @@ out vec4 frag_color;
 
 const float gamma = 2.2;
 const float exposure = 0.5;
+
+subroutine vec4 fn_blend_t(vec4, vec4);
+subroutine uniform fn_blend_t blend_function; 
+
+
+subroutine(fn_blend_t) vec4 blendAdd(vec4 new, vec4 old) {
+    return new + old;
+}
+
+subroutine(fn_blend_t) vec4 blendOverlay(vec4 new, vec4 old) {
+    return vec4(new.rgb * new.a + old.rgb * (1.0 - new.a), max(new.a, old.a));
+}
 
 vec3 toneMap(vec3 color) {
     color = vec3(1.0) - exp(-color * exposure);
@@ -28,7 +41,8 @@ float textureLinearize(sampler2D tex, vec2 tex_coords) {
 void main() {
     frag_color = texture(textures[0], f_tex_coords);
     for (uint i = 1; i < tex_count; ++i) {
-        frag_color += texture(textures[i], f_tex_coords);
+        frag_color = 
+            blend_function(texture(textures[i], f_tex_coords), frag_color);
     }
     // tone mapping done automatically by sRGB framebuffer
 }

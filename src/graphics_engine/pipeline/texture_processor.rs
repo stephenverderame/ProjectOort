@@ -162,6 +162,7 @@ pub struct CompositorProcessor
     ebo: IndexBuffer<u16>,
     tex: Box<texture::Texture2d>,
     fbo: framebuffer::SimpleFrameBuffer<'static>,
+    mode: shader::BlendFn,
 }
 
 impl CompositorProcessor
@@ -170,8 +171,8 @@ impl CompositorProcessor
     /// `width` - width of input and output textures
     /// 
     /// `height` - height of input and output textures
-    pub fn new<Fac: backend::Facade>(width: u32, height: u32, facade: &Fac) 
-        -> CompositorProcessor 
+    pub fn new<Fac: backend::Facade>(width: u32, height: u32, 
+        mode: shader::BlendFn, facade: &Fac) -> CompositorProcessor 
     {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
         let tex = Box::new(glium::texture::Texture2d::empty_with_format(facade,
@@ -183,7 +184,7 @@ impl CompositorProcessor
             CompositorProcessor {
                 vbo, ebo, 
                 fbo: glium::framebuffer::SimpleFrameBuffer::new(facade, &*tex_ptr).unwrap(),
-                tex,
+                tex, mode,
             }
         }
     }
@@ -194,6 +195,7 @@ impl CompositorProcessor
         let args = shader::UniformInfo::CompositeInfo(shader::CompositeData {
             textures,
             model: cgmath::Matrix4::from_scale(1f32).into(),
+            blend_function: (self.mode, glium::program::ShaderStage::Fragment),
         });
         let (program, params, uniform) = shader.use_shader(&args, None, Some(cache));
         match uniform {
@@ -249,8 +251,6 @@ pub struct BlitTextureProcessor<S : Surface,
 
     get_surface: GetSHolder,
     clean_surface: CleanSHolder,
-    in_width: u32,
-    in_height: u32,
 }
 
 impl<S : Surface, 
@@ -266,15 +266,10 @@ impl<S : Surface,
     /// `clean_surface` - callable that accepts the returned surface and performs 
     /// any necessary cleanup after drawing is finished
     /// 
-    /// `in_width` - width of input texture
-    /// 
-    /// `in_height` - height of input texture
-    pub fn new(in_width: u32, in_height: u32,
-        get_surface: GetSHolder, clean_surface: CleanSHolder) 
+    pub fn new(get_surface: GetSHolder, clean_surface: CleanSHolder) 
         -> BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder> 
     {
-        BlitTextureProcessor { get_surface, clean_surface,
-            in_width, in_height }
+        BlitTextureProcessor { get_surface, clean_surface }
     }
 
     fn render<'a>(&self, texture: &'a texture::Texture2d, _: &PipelineCache,
@@ -284,15 +279,8 @@ impl<S : Surface,
         {
             let surface = &mut *surface_holder;
             surface.clear_color_and_depth((0., 0., 0., 1.), 1.);
-            /*let r = Rect {
-                left: 0, bottom: 0,
-                width: self.in_width,
-                height: self.in_height,
-            };*/
             texture.as_surface().blit_whole_color_to(surface, &dst_rect,
                 uniforms::MagnifySamplerFilter::Linear);
-            /*surface.blit_color(&r, &texture.as_surface(), &dst_rect, 
-                uniforms::MagnifySamplerFilter::Linear);*/
         }
         (self.clean_surface)(surface_holder);
     }

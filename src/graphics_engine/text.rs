@@ -41,15 +41,15 @@ pub struct Font {
 }
 
 impl Font {
-    fn parse_line_to_glyph(line: &str, param_regex: &Regex) -> (u8, Glyph) {
-        let mut x  = 0;
-        let mut y = 0;
-        let mut height = 0;
-        let mut width = 0;
-        let mut advance = 0;
-        let mut xoff = 0;
-        let mut yoff = 0;
-        let mut char_id = 0;
+    fn parse_line_to_glyph(line: &str, param_regex: &Regex) -> Option<(u8, Glyph)> {
+        let mut x : Option<i32> = None;
+        let mut y : Option<i32> = None;
+        let mut height : Option<i32> = None;
+        let mut width : Option<i32> = None;
+        let mut advance : Option<i32> = None;
+        let mut xoff : Option<i32> = None;
+        let mut yoff : Option<i32> = None;
+        let mut char_id : Option<i32> = None;
         for cap in param_regex.captures_iter(line.trim()) {
             let val = cap.get(2).expect("Unable to get numeric capture group")
                 .as_str().parse::<i32>().expect("Unable to parse value as i32");
@@ -57,33 +57,38 @@ impl Font {
                 .as_str();
 
             match key {
-                "x" => x = val,
-                "y" => y = val,
-                "height" => height = val,
-                "width" => width = val,
-                "advance" => advance = val,
-                "xoffset" => xoff = val,
-                "yoffset" => yoff = val,
-                "char id" => char_id = val,
-                x => panic!("Unknown label named: {}", x),
+                "x" => x = Some(val),
+                "y" => y = Some(val),
+                "height" => height = Some(val),
+                "width" => width = Some(val),
+                "xadvance" => advance = Some(val),
+                "xoffset" => xoff = Some(val),
+                "yoffset" => yoff = Some(val),
+                "char id" => char_id = Some(val),
+                _ => (),
             }
         }
-        (char_id as u8, Glyph {
-            x, y, height, width, advance, xoff, yoff
-        })
+        if let Some(char_id) = char_id {
+            Some((char_id as u8, Glyph {
+                x: x.unwrap(), y: y.unwrap(), 
+                height: height.unwrap(), width: width.unwrap(), 
+                advance: advance.unwrap(), xoff: xoff.unwrap(), 
+                yoff: yoff.unwrap()
+            }))
+        } else { None }
     }
 
     fn read_from_header(header: &str) -> (i32, i32, i32, String) {
         let get_integral_field = |key| {
             Regex::new(&format!("{}=([0-9]+)", key)).unwrap()
-            .captures(header).expect("No matching pattern found")
+            .captures(header).expect(&format!("No matching pattern found for {}", key))
             .get(1).expect("No capture group at index 1").as_str().parse::<i32>()
             .expect("Could not parse line height to an integer")
         };
         let line_height = get_integral_field("lineHeight");
         let width = get_integral_field("scaleW");
         let height = get_integral_field("scaleH");
-        let tex_path = Regex::new(r"file=([a-zA-Z\.]+)").unwrap().captures(header)
+        let tex_path = Regex::new(r#"file="([a-zA-Z\.]+)""#).unwrap().captures(header)
             .expect("No matching file pattern found").get(1)
             .expect("Unable to get file path capture group").as_str();
         (line_height, width, height, tex_path.to_owned())
@@ -100,11 +105,12 @@ impl Font {
         let (line_height, img_width, img_height, tex_path) = 
             Self::read_from_header(header);
 
-        let rg_param = Regex::new(r"([a-z\s]+)=(-?[0-9]+)").unwrap();
+        let rg_param = Regex::new(r#"([a-z][a-z\s]*)=(-?[0-9]+)"#).unwrap();
         let mut glyphs = HashMap::new();
         for line in char_data.split('\n') {
-            let (k, v) = Self::parse_line_to_glyph(line, &rg_param);
-            glyphs.insert(k, v);
+            if let Some((k, v)) = Self::parse_line_to_glyph(line, &rg_param) {
+                glyphs.insert(k, v);
+            }
         }
 
         let sdf = load_texture_2d(&format!("{}/{}", dir, tex_path), f);
@@ -149,9 +155,9 @@ impl Text {
         let fnt = self.font.clone();
         for c in txt.as_bytes().iter().filter_map(|c| fnt.glyphs.get(c))
         {
-            let p = Node::default().parent(pos.clone()).pos(point3(
-                last_x as f64, (-self.font.line_height - c.yoff) as f64, 0.0
-            ));
+            let pt = pos.borrow().transform_pt(
+                point3(last_x as f64, /*(-self.font.line_height - c.yoff) as f64*/0., 0.));
+            let p = Node::default().parent(pos.clone()).pos(pt);
             last_x += c.advance;
             self.positions.push(p);
             self.attribs.push(TextAttributes {
@@ -168,6 +174,8 @@ impl Drawable for Text {
     -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
         if self.dirty {
+            // TODO: will not work if we want to move text after adding it
+            // by changing the parent's transformation node
             let ctx = super::super::get_active_ctx();
             let ctx = ctx.ctx.borrow();
             self.instances.update_buffer(&self.attribs, &*ctx);

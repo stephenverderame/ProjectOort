@@ -300,10 +300,16 @@ impl<'s, T : AsUniformValue, R : Uniforms> Uniforms for UniformsArray<'s, T, R> 
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum BlendFn {
+    Add, Overlay
+}
+
 /// Shader inputs for Composite shader
 pub struct CompositeData<'a> {
     pub model: [[f32; 4]; 4],
     pub textures: Vec<&'a glium::texture::Texture2d>,
+    pub blend_function: (BlendFn, glium::program::ShaderStage),
 }
 
 /// A uniform struct named `name` enclosing the fields in `data`
@@ -476,8 +482,8 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, f32, UniformsStorage< 'a, f32, UniformsStorage<'a, f32, glium::uniforms::EmptyUniforms>>>>>>>>>>>>>>>>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     ExtractBrightUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
-    CompositeUniform(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], 
-        UniformsStorage<'a, u32, EmptyUniforms>>>),
+    CompositeUniform(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, (&'a str, glium::program::ShaderStage), UniformsStorage<'a, [[f32; 4]; 4], 
+        UniformsStorage<'a, u32, EmptyUniforms>>>>),
     SepConvUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     PrefilterHdrEnvUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], 
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
@@ -798,13 +804,18 @@ impl ShaderManager {
                     }
                 }})
             },
-            (CompositeInfo(CompositeData {model, textures}), _) => {
+            (CompositeInfo(CompositeData {model, textures, blend_function}), _) => {
+                let subroutine_name = match blend_function.0 {
+                    BlendFn::Overlay => "blendOverlay",
+                    BlendFn::Add => "blendAdd",
+                };
                 UniformType::CompositeUniform(UniformsArray {
                     vals: textures.iter().map(|tex| sample_linear_clamp!(tex)).collect(),
                     name: "textures",
                     rest: glium::uniform! {
                         tex_count: textures.len() as u32,
-                        model: *model
+                        model: *model,
+                        blend_function: (subroutine_name, blend_function.1),
                     },
                 })
             },

@@ -20,6 +20,8 @@ pub enum RenderOrder {
 /// An entity can be in many positions at once
 pub trait AbstractEntity {
     /// Gets the transformations for all locations for this entity
+    /// 
+    /// Returns `None` or a slice of at least 1 Transformation
     fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]>;
 
     /// Gets the drawable for this entity
