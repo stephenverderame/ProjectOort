@@ -28,7 +28,7 @@ impl PerspectiveCamera {
     /// `light_dir` - direction of light/angle to view the cascade at
     /// 
     /// `map_size` - shadow map size for texel snapping
-    pub fn get_cascade(&self, light_dir: Vector3<f32>, near: f32, far: f32, map_size: u32) -> Box<dyn Viewer> {
+    pub fn get_cascade(&self, light_dir: Vector3<f32>, near: f32, far: f32, map_size: u32) -> StaticCamera {
 
         let mut f = self.clone();
         f.near = near;
@@ -54,13 +54,13 @@ impl PerspectiveCamera {
         //right-handed system, positive z facing towards the camera (ortho expects positize z facing away)
 
         let z_factor = 6f32; // expand in the z-direction to include objects that might cast a shadow into the map
-        Box::new(StaticCamera {
+        StaticCamera {
             view,
             near: f.near,
             far: f.far,
             proj: ortho(-radius, radius, -radius, radius, -radius * z_factor, radius * z_factor),
             cam_pos: center + light_dir,
-        })
+        }
     }
 
     /// Gets the cameras for cascade splits of this frustum
@@ -71,9 +71,9 @@ impl PerspectiveCamera {
     /// 
     /// Returns the cameras specified from the first split to the last one
     #[allow(dead_code)]
-    pub fn get_cascades(&self, splits: Vec<(f32, u32)>, light_dir: Vector3<f32>) -> Vec<Box<dyn Viewer>> {
+    pub fn get_cascades(&self, splits: Vec<(f32, u32)>, light_dir: Vector3<f32>) -> Vec<StaticCamera> {
         let mut last_depth = self.near;
-        let mut cams = Vec::<Box<dyn Viewer>>::new();
+        let mut cams = Vec::<_>::new();
         for (split, map_size) in splits {
             cams.push(self.get_cascade(light_dir, last_depth, split, map_size));
             last_depth = split;

@@ -29,13 +29,14 @@ struct Glyph {
     height: i32,
     advance: i32,
     xoff: i32,
-    yoff: i32,
+    _yoff: i32,
 }
 
 pub struct Font {
     glyphs: HashMap<u8, Glyph>,
+    kernings: HashMap<u8, HashMap<u8, i32>>,
     sdf: glium::texture::Texture2d,
-    line_height: i32,
+    _line_height: i32,
     img_width: i32,
     img_height: i32,
 }
@@ -73,11 +74,36 @@ impl Font {
                 x: x.unwrap(), y: y.unwrap(), 
                 height: height.unwrap(), width: width.unwrap(), 
                 advance: advance.unwrap(), xoff: xoff.unwrap(), 
-                yoff: yoff.unwrap()
+                _yoff: yoff.unwrap()
             }))
         } else { None }
     }
 
+    fn parse_line_to_kerning(line: &str, regex: &Regex) -> Option<(u8, (u8, i32))> {
+        let mut first : Option<u8> = None;
+        let mut second : Option<u8> = None;
+        let mut amount : Option<i32> = None;
+        for cap in regex.captures_iter(line.trim()) {
+            let val = cap.get(2).expect("Unable to get numeric capture group")
+                .as_str().parse::<i32>().expect("Unable to parse value as i32");
+            let key = cap.get(1).expect("Unable to get label capture group")
+                .as_str();
+
+            match key {
+                "first" => first = Some(val as u8),
+                "second" => second = Some(val as u8),
+                "amount" => amount = Some(val),
+                _ => (),
+            }
+        }
+
+        if first.is_some() {
+            Some((first.unwrap(), (second.unwrap(), amount.unwrap())))
+        } else { None }
+    }
+
+    /// Gets the line height, image width, image height, and texture path from 
+    /// the header of the font file
     fn read_from_header(header: &str) -> (i32, i32, i32, String) {
         let get_integral_field = |key| {
             Regex::new(&format!("{}=([0-9]+)", key)).unwrap()
@@ -101,22 +127,33 @@ impl Font {
             &format!("Could not open font file: {}", path));
         let mut data = String::new();
         file.read_to_string(&mut data).expect("Could not read from font file");
-        let (header, char_data) = data.split_at(data.find("chars count").unwrap());
-        let (line_height, img_width, img_height, tex_path) = 
+        let (header, content) = data.split_at(data.find("chars count").unwrap());
+        let (char_data, kerning_data) = 
+            content.split_at(content.find("kernings count").unwrap());
+        let (_line_height, img_width, img_height, tex_path) = 
             Self::read_from_header(header);
 
         let rg_param = Regex::new(r#"([a-z][a-z\s]*)=(-?[0-9]+)"#).unwrap();
         let mut glyphs = HashMap::new();
+        let mut kernings = HashMap::new();
         for line in char_data.split('\n') {
             if let Some((k, v)) = Self::parse_line_to_glyph(line, &rg_param) {
                 glyphs.insert(k, v);
             }
         }
+        for line in kerning_data.split('\n') {
+            if let Some((first, (second, amount))) = 
+                Self::parse_line_to_kerning(line, &rg_param) 
+            {
+                kernings.entry(first).or_insert(HashMap::new())
+                    .insert(second, amount);
+            }
+        }
 
         let sdf = load_texture_2d(&format!("{}/{}", dir, tex_path), f);
         Font {
-            line_height, glyphs, sdf,
-            img_width, img_height
+            _line_height, glyphs, sdf,
+            img_width, img_height, kernings
         }
     }
 }
@@ -153,17 +190,24 @@ impl Text {
         use cgmath::*;
         let mut last_x = 0;
         let fnt = self.font.clone();
-        for c in txt.as_bytes().iter().filter_map(|c| fnt.glyphs.get(c))
+        let mut last_char : u8 = 0;
+        for (g, c) in txt.as_bytes().iter()
+            .filter_map(|c| fnt.glyphs.get(c).map(|g| (g, c)))
         {
+            let offset = 
+                if let Some(offsets) = fnt.kernings.get(&last_char) {
+                    offsets.get(c).map(|e| *e).unwrap_or(0)
+                } else { 0 };
             let pt = pos.borrow().transform_pt(
-                point3(last_x as f64, /*(-self.font.line_height - c.yoff) as f64*/0., 0.));
+                point3((last_x + offset) as f64, 0., 0.));
             let p = Node::default().parent(pos.clone()).pos(pt);
-            last_x += c.advance;
+            last_x += g.advance.min(9);
             self.positions.push(p);
             self.attribs.push(TextAttributes {
-                x_y_width_height: [c.x, c.y, c.width, c.height],
+                x_y_width_height: [g.x, g.y, g.width, g.height],
                 color,
             });
+            last_char = *c;
         }
         self.dirty = true;
     }

@@ -4,8 +4,6 @@ use super::super::drawable::*;
 use glium::*;
 use shader::RenderPassType;
 use shader::PipelineCache;
-use std::rc::Rc;
-use std::cell::RefCell;
 use super::*;
 use crate::cg_support::ssbo;
 use super::super::camera;
@@ -76,35 +74,47 @@ impl RenderTarget for MsaaRenderTarget {
 /// If a custom view getter is specified, then returns the depth texture with 
 /// the used viewer's viewproj matrix
 pub struct DepthRenderTarget {
-    viewer: Option<Rc<RefCell<dyn Viewer>>>,
-    getter: Option<Box<dyn Fn(&dyn Viewer) -> Box<dyn Viewer>>>,
     depth_tex: Box<texture::DepthTexture2d>,
     main_fbo: framebuffer::SimpleFrameBuffer<'static>,
     trans_fbo: Option<(framebuffer::SimpleFrameBuffer<'static>,
         Box<texture::DepthTexture2d>, Box<texture::Texture2d>)>,
+    render_cascades: bool,
 }
 
 impl DepthRenderTarget {
+
     /// `width` - width of depth texture
     /// 
     /// `height` - height of depth texture
     /// 
-    /// `viewer` - custom viewer for this render target or `None` to use whatever viewer
-    /// is being used in the rest of the pipeline
-    pub fn new(width: u32, height: u32, 
-        viewer: Option<Rc<RefCell<dyn Viewer>>>, 
-        view_getter: Option<Box<dyn Fn(&dyn Viewer) -> Box<dyn Viewer>>>,
-        transparency: bool) -> DepthRenderTarget
-    {
+    /// `transparency` - `true` to also render transparent objects (to a separate texture)
+    /// 
+    /// `render_cascades` - `true` if this depth target is part of a cascade
+    fn make(width: u32, height: u32, transparency: bool, render_cascades: bool) -> Self {
         let (main_fbo, depth_tex) = DepthRenderTarget::get_fbo_rbo(width, height);
         let trans_fbo = if transparency {
             Some(DepthRenderTarget::get_tex_fbo_rbo(width, height))
         } else { None };
         DepthRenderTarget {
-            viewer, getter: view_getter, 
             main_fbo, depth_tex,
-            trans_fbo
+            trans_fbo, render_cascades
         }
+    }
+    /// `width` - width of depth texture
+    /// 
+    /// `height` - height of depth texture
+    /// 
+    /// `transparency` - `true` to also render transparent objects (to a separate texture)
+    #[inline]
+    pub fn new(width: u32, height: u32, transparency: bool) -> DepthRenderTarget
+    {
+        Self::make(width, height, transparency, false)
+    }
+
+    #[inline]
+    pub fn new_cascade(width: u32, height: u32, transparency: bool) -> DepthRenderTarget
+    {
+        Self::make(width, height, transparency, true)
     }
 
     fn get_fbo_rbo<'b>(width: u32, height: u32) -> (framebuffer::SimpleFrameBuffer<'b>, Box<texture::DepthTexture2d>) {
@@ -144,9 +154,6 @@ impl RenderTarget for DepthRenderTarget {
             TargetType, &Option<Vec<&TextureType>>)) 
         -> Option<TextureType> 
     {
-        let maybe_view = self.viewer.as_ref().map(|x| x.borrow());
-        let maybe_processed_view = self.getter.as_ref().map(|f| f(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer)));
-        let viewer = maybe_processed_view.as_ref().map(|x| &**x).unwrap_or(maybe_view.as_ref().map(|x| &**x).unwrap_or(viewer));
         let vp : [[f32; 4]; 4] = (viewer.proj_mat() * viewer.view_mat()).into();
         func(&mut self.main_fbo, viewer, shader::RenderPassType::Depth, cache, TargetType::DepthTarget, &pipeline_inputs);
         let mut tex = TextureType::Depth2d(Ref(&*self.depth_tex));
@@ -156,7 +163,7 @@ impl RenderTarget for DepthRenderTarget {
                 Box::new(TextureType::Depth2d(Ref(&*depth))), 
                 Box::new(TextureType::Tex2d(Ref(&*facs)))]);
         }
-        if maybe_processed_view.is_some() {
+        if self.render_cascades {
             Some(TextureType::WithArg(Box::new(tex), StageArgs::CascadeArgs(vp, viewer.view_dist().1)))
         } else {
             Some(tex)
@@ -369,4 +376,49 @@ impl RenderTarget for MipCubemapRenderTarget {
         TargetType::MipcubeTarget
     }
 
+}
+
+/// A RenderTarget decorator wich supplies the target with an arbitrary view
+/// on draw
+pub struct CustomViewRenderTargetDecorator<
+    V : Viewer,
+    F : Fn(&dyn Viewer) -> V, 
+    Rt : RenderTarget> 
+{
+    target: Rt,
+    get_viewer: F
+}
+
+impl<
+    V : Viewer,
+    F : Fn(&dyn Viewer) -> V,
+    Rt : RenderTarget> CustomViewRenderTargetDecorator<V, F, Rt>
+{
+    /// `target` - the render target to supply the view to
+    /// 
+    /// `get_viewer` - a function which computes the view to use
+    pub fn new(target: Rt, get_viewer: F) -> Self {
+        Self {
+            target, get_viewer
+        }
+    }
+}
+
+impl<
+    V : Viewer,
+    F : Fn(&dyn Viewer) -> V,
+    Rt : RenderTarget> 
+    RenderTarget for CustomViewRenderTargetDecorator<V, F, Rt>
+{
+    fn draw(&mut self, v: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>, cache: &mut PipelineCache,
+        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, 
+            &dyn Viewer, RenderPassType, &PipelineCache, TargetType, &Option<Vec<&TextureType>>)) 
+        -> Option<TextureType>
+    {
+       self.target.draw(&(self.get_viewer)(v), pipeline_inputs, cache, func)
+    }
+
+    fn type_of(&self) -> TargetType {
+        self.target.type_of()
+    }
 }

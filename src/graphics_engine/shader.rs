@@ -118,6 +118,12 @@ impl ShaderType {
                     backface_culling: glium::BackfaceCullingMode::CullCounterClockwise,
                     .. Default::default()
                 },
+            Text => 
+                glium::DrawParameters {
+                    blend: glium::Blend::alpha_blending(),
+                    //polygon_mode: glium::PolygonMode::Line,
+                    .. Default::default()
+                },
             _ => glium::DrawParameters::default(),
         }
     }
@@ -429,7 +435,7 @@ impl<'a> UniformInfo<'a> {
             (LaserInfo, Depth) => ShaderType::DepthShader,
             (CollisionDebugInfo(_), Visual) => ShaderType::CollisionDebug,
             (CloudInfo(_), Visual) => ShaderType::Cloud,
-            (LineInfo, Visual) => ShaderType::Line,
+            (LineInfo, Visual) | (LineInfo, Transparent(_)) => ShaderType::Line,
             //(CloudInfo(_), Depth) => ShaderType::CloudDepth,
 
             // game objects
@@ -489,6 +495,7 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
     BrdfLutUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
     DepthUniform(UniformsStorage<'a, f32, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    ColorUniform(UniformsStorage<'a, [f32; 4], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     BillboardUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
         UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
     CloudUniform(UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], 
@@ -848,10 +855,10 @@ impl ShaderManager {
                     inv_fac: trans_data.as_ref().map(|x| *x.trans_fac.borrow()).unwrap_or(0.),
                 })
             },
-            (CollisionDebugInfo(model), _) => UniformType::DepthUniform(glium::uniform! {
+            (CollisionDebugInfo(model), _) => UniformType::ColorUniform(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
                 model: model.clone(),
-                inv_fac: 0.,
+                color: [1.0, 0.0, 0.0, 1.0],
             }),
             (BillboardInfo(tex, density), Visual) => UniformType::BillboardUniform(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
@@ -871,7 +878,7 @@ impl ShaderManager {
                 proj: scene_data.unwrap().viewer.proj,
                 cam_depth: sample_linear_clamp!(cache.unwrap().cam_depth.unwrap()),
             }),
-            (LineInfo, Visual) => UniformType::LineUniform(glium::uniform! {
+            (LineInfo, Visual) | (LineInfo, Transparent(_)) => UniformType::LineUniform(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
             }),
             (TextInfo(tex, tex_width_height), Visual) => UniformType::TextUniform(glium::uniform! {

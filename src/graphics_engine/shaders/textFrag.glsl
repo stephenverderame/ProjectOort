@@ -12,7 +12,7 @@ in vec2 tcoords;
 
 out vec4 frag_color;
 
-const float smoothing = 1.0/16.0;
+const float smoothing = 1.0/8.0;
 
 void main() {
     vec2 coords;

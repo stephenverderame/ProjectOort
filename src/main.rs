@@ -20,6 +20,18 @@ use std::rc::Rc;
 use std::cell::{RefCell};
 use cg_support::node;
 
+fn get_cascade_target(width: u32, height: u32, 
+    user: Rc<RefCell<player::Player>>, near: f32, far: f32) -> Box<dyn RenderTarget> 
+{
+    Box::new(render_target::CustomViewRenderTargetDecorator::new(
+        render_target::DepthRenderTarget::new_cascade(width, height, false),
+        move |_| {
+            user.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), near, far, 2048)
+        }
+    ))
+
+}
+
 fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<player::Player>>, wnd_ctx: &glium::Display) -> RenderPass {
     use pipeline::*;
     use graphics_engine::drawable::Viewer;
@@ -28,8 +40,7 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let blur = Box::new(texture_processor::SepConvProcessor::new(render_width, render_height, 10, wnd_ctx));
     let compose = Box::new(texture_processor::CompositorProcessor::new(render_width, render_height, 
         shader::BlendFn::Add, wnd_ctx));
-    let depth_render = Box::new(render_target::DepthRenderTarget::new(render_width, render_height, 
-        None, None, false));
+    let depth_render = Box::new(render_target::DepthRenderTarget::new(render_width, render_height, false));
     let cull_lights = Box::new(texture_processor::CullLightProcessor::new(render_width, render_height, 16));
     let to_cache = Box::new(texture_processor::ToCacheProcessor::new());
 
@@ -42,17 +53,12 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let trans_to_cache = Box::new(texture_processor::ToCacheProcessor::new());
     let cam_depth_to_cache = Box::new(texture_processor::ToCacheProcessor::new());
 
-    let user_clone = user.clone();
-    let render_cascade_1 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 0.1, 100., 2048) })), true));
-
-    let user_clone = user.clone();
-    let render_cascade_2 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 100., 400., 2048) })), true));
-
-    let user_clone = user.clone();
-    let render_cascade_3 = Box::new(render_target::DepthRenderTarget::new(2048, 2048, None, 
-    Some(Box::new(move |_| {user_clone.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), 400., 1000., 2048) })), true));
+    let render_cascade_1 = 
+        get_cascade_target(render_width, render_height, user.clone(), 0.1, 100.);
+    let render_cascade_2 = 
+        get_cascade_target(render_width, render_height, user.clone(), 100., 400.);
+    let render_cascade_3 = 
+        get_cascade_target(render_width, render_height, user.clone(), 400., 1000.);
 
     let user_clone = user.clone();
     pipeline::RenderPass::new(vec![depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency], 
@@ -114,7 +120,7 @@ fn main() {
     let mut test_text = graphics_engine::text::Text::new(
         Rc::new(text::Font::new("assets/fonts/SignedDistanceArial.fnt", &*wnd.ctx())),
         &*wnd.ctx());
-    test_text.add_text("Test", Rc::new(RefCell::new(node::Node::default().u_scale(0.1).pos(point3(-0.8, 0.8, 0.1)))),
+    test_text.add_text("Hello World", Rc::new(RefCell::new(node::Node::default().u_scale(0.1).pos(point3(-0.8, 0.8, 0.1)))),
         [1.0, 0., 0., 1.]);
     ui_scene.set_entities(vec![Rc::new(RefCell::new(test_text))]);
     
