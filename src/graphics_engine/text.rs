@@ -28,7 +28,7 @@ struct Glyph {
     width: i32,
     height: i32,
     advance: i32,
-    xoff: i32,
+    _xoff: i32,
     _yoff: i32,
 }
 
@@ -73,7 +73,7 @@ impl Font {
             Some((char_id as u8, Glyph {
                 x: x.unwrap(), y: y.unwrap(), 
                 height: height.unwrap(), width: width.unwrap(), 
-                advance: advance.unwrap(), xoff: xoff.unwrap(), 
+                advance: advance.unwrap(), _xoff: xoff.unwrap(), 
                 _yoff: yoff.unwrap()
             }))
         } else { None }

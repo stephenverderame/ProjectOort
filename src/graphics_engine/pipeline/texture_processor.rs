@@ -189,11 +189,11 @@ impl CompositorProcessor
         }
     }
 
-    fn render<'a>(&mut self, textures: Vec<&'a texture::Texture2d>, cache: &PipelineCache,
-        shader: &shader::ShaderManager) -> Option<TextureType>
+    fn render<'a>(&mut self, textures: Vec<&'a texture::Texture2d>, transforms: Vec<[[f32; 3]; 3]>,
+        cache: &PipelineCache, shader: &shader::ShaderManager) -> Option<TextureType>
     {
         let args = shader::UniformInfo::CompositeInfo(shader::CompositeData {
-            textures,
+            textures, transforms,
             model: cgmath::Matrix4::from_scale(1f32).into(),
             blend_function: (self.mode, glium::program::ShaderStage::Fragment),
         });
@@ -216,14 +216,20 @@ impl TextureProcessor for CompositorProcessor
         cache: &mut PipelineCache, _: Option<&shader::SceneData>) -> Option<TextureType>
     {
         let source = source.unwrap();
-        let v : Vec<_> = source.iter().filter_map(|tt| match tt {
-            TextureType::Tex2d(tex) => Some(tex.to_ref()),
+        let (textures, transforms) : (Vec<_>, Vec<_>) = source.iter().filter_map(|tt| match tt {
+            TextureType::Tex2d(tex) => Some((tex.to_ref(), 
+                [[1f32, 0., 0.], [0f32, 1., 0.], [0f32, 0., 1.]])),
+            TextureType::WithArg(tex, StageArgs::CompositorArgs(transform)) => {
+                if let TextureType::Tex2d(tex) = tex.as_ref() {
+                    Some((tex.to_ref(), *transform))
+                } else { None }
+            },
             _ => None,
-        }).collect();
-        if v.len() == 0 {
+        }).unzip();
+        if textures.len() == 0 {
             panic!("Not enough 2d textures input to compositor")
         } else {
-            self.render(v, cache, shader)
+            self.render(textures, transforms, cache, shader)
         }
     }
 }

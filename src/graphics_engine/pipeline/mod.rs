@@ -32,6 +32,7 @@ use Ownership::*;
 pub enum StageArgs {
     CascadeArgs([[f32; 4]; 4], f32),
     ObjectArgs(u32),
+    CompositorArgs([[f32; 3]; 3]),
 }
 
 /// The type of texture returned by a pipeline stage

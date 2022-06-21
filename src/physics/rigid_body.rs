@@ -34,6 +34,14 @@ impl BaseRigidBody {
                 self.transform.borrow().mat().transform_point(point3(0., 0., 0.))
             }
         }
+
+        /// Gets the maximum distance from the object center a point on the
+        /// object can be
+        pub fn extents(&self) -> Option<f64> {
+            if let Some(collider) = &self.collider {
+                Some(collider.bounding_sphere().1)
+            } else { None }
+        }
     
         /// Sets the density of this body. Uses this to recompute the mass from the
         /// supplied density and volume of the body

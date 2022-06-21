@@ -28,6 +28,7 @@ pub struct Scene {
     entities: Vec<Rc<RefCell<dyn AbstractEntity>>>,
     pass: Option<pipeline::RenderPass>,
     viewer: Rc<RefCell<dyn Viewer>>,
+    bg_color: (f32, f32, f32, f32),
 }
 
 impl Scene {
@@ -38,6 +39,7 @@ impl Scene {
             entities: Vec::new(),
             pass: Some(pass),
             viewer,
+            bg_color: (0., 0., 0., 0.),
         }
     }
 
@@ -50,7 +52,14 @@ impl Scene {
             entities: Vec::new(),
             pass: Some(pass),
             viewer,
+            bg_color: (0., 0., 0., 0.),
         }
+    }
+
+    /// Sets the clear color for this scene
+    pub fn bg(mut self, bg_color: (f32, f32, f32, f32)) -> Self {
+        self.bg_color = bg_color;
+        self
     }
 
     fn get_scene_data<'a>(viewer: shader::ViewerData, pass: shader::RenderPassType,
@@ -212,9 +221,10 @@ impl AbstractScene for Scene {
             &self.ibl_maps, &self.lights, &self.main_light_dir)));
         let viewer = self.viewer.borrow();
         let entities = &self.entities;
+        let clear_color = self.bg_color;
         let res = self.pass.as_mut().unwrap().run_pass(&*viewer, shader, sd.clone(),
         &mut |fbo, viewer, typ, cache, _, _| {
-            fbo.clear_color_and_depth((0., 0., 0., 0.), 1.);
+            fbo.clear_color_and_depth(clear_color, 1.);
             {
                 let mut sdm = sd.borrow_mut();
                 sdm.viewer = viewer_data_from(viewer);
@@ -237,6 +247,7 @@ impl AbstractScene for Scene {
 }
 
 use glium::*;
+use cgmath::*;
 use pipeline::texture_processor::{BlitTextureProcessor, 
     CompositorProcessor};
 use shader::BlendFn;
@@ -245,7 +256,7 @@ pub struct CompositorScene<S : Surface,
     GetSHolder : Fn() -> (SHolder, BlitTarget),
     CleanSHolder : Fn(SHolder)> 
 {
-    scenes: Vec<Box<dyn AbstractScene>>,
+    scenes: Vec<(Box<dyn AbstractScene>, Option<Matrix3<f32>>)>,
     compositor: CompositorProcessor,
     blitter: BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>,
     viewer: Rc<RefCell<dyn Viewer>>,
@@ -259,8 +270,13 @@ pub struct CompositorScene<S : Surface,
 /// `height` - height of input textures
 /// 
 /// `viewer` - viewer to get the projection and view matrices for compositing
+/// 
+/// `scenes` - vector of pairs of scenes and their model matrix to compose
+///     The final texture output will be composed in NDC with the specified
+///     model matrix to control placement of the texture
 pub fn compositor_scene_new<F : backend::Facade>(width : u32, height : u32, 
-    viewer: Rc<RefCell<dyn Viewer>>, scenes: Vec<Box<dyn AbstractScene>>, 
+    viewer: Rc<RefCell<dyn Viewer>>, 
+    scenes: Vec<(Box<dyn AbstractScene>, Option<Matrix3<f32>>)>, 
     fac: &F) -> CompositorScene<glium::Frame, super::MutCtx, 
         impl Fn() -> (super::MutCtx, BlitTarget), 
         impl Fn(super::MutCtx)>
@@ -292,11 +308,15 @@ impl<S : Surface,
         -> Option<pipeline::TextureType>
     {
         use super::shader::{PipelineCache, SceneData, RenderPassType};
-        use super::pipeline::TextureProcessor;
+        use super::pipeline::{TextureProcessor, TextureType, StageArgs};
         let mut new_inputs = Vec::new();
-        for scene in &mut self.scenes {
-            if let Some(comp) = scene.render(inputs, shader) {
-                new_inputs.push(comp);
+        for (scene, transform) in &mut self.scenes {
+            match (scene.render(inputs, shader), transform) {
+                (Some(comp), None) => new_inputs.push(comp),
+                (Some(comp), Some(mat)) => new_inputs.push(
+                    TextureType::WithArg(Box::new(comp), 
+                        StageArgs::CompositorArgs((*mat).into()))),
+                _ => (),
             }
         }
         let sd = SceneData {
@@ -323,7 +343,7 @@ impl<S : Surface,
     }
 
     fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
-        for scene in &mut self.scenes {
+        for (scene, _) in &mut self.scenes {
             scene.set_lights(lights);
         }
     }

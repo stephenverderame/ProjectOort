@@ -36,6 +36,7 @@ enum ShaderType {
     Cloud,
     Line,
     Text,
+    Minimap,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -106,7 +107,7 @@ impl ShaderType {
                     line_width: Some(2.),
                     .. Default::default()
                 },
-            Billboard =>
+            Billboard | Minimap =>
                 glium::DrawParameters {
                     blend: glium::Blend::alpha_blending(),
                     backface_culling: glium::BackfaceCullingMode::CullClockwise,
@@ -315,6 +316,7 @@ pub enum BlendFn {
 pub struct CompositeData<'a> {
     pub model: [[f32; 4]; 4],
     pub textures: Vec<&'a glium::texture::Texture2d>,
+    pub transforms: Vec<[[f32; 3]; 3]>,
     pub blend_function: (BlendFn, glium::program::ShaderStage),
 }
 
@@ -360,6 +362,10 @@ impl<'a> std::default::Default for PipelineCache<'a> {
     }
 }
 
+pub struct MinimapData<'a> {
+    pub textures: [&'a glium::texture::Texture2d; 3],
+}
+
 /// Shader inputs passed from a rendering object to the shader manager
 pub enum UniformInfo<'a> {
     PBRInfo(PBRData<'a>),
@@ -381,6 +387,7 @@ pub enum UniformInfo<'a> {
     LineInfo,
     /// Args - SDF texture, `[tex_width, tex_height]`
     TextInfo(&'a glium::texture::Texture2d, [i32; 2]),
+    MinimapInfo(MinimapData<'a>),
 }
 
 impl<'a> std::fmt::Debug for UniformInfo<'a> {
@@ -403,6 +410,7 @@ impl<'a> std::fmt::Debug for UniformInfo<'a> {
             CloudInfo(_) => "Cloud",
             LineInfo => "Line",
             TextInfo(_, _) => "Text",
+            MinimapInfo(_) => "Minimap",
         };
         f.write_str(name)
     }
@@ -445,6 +453,7 @@ impl<'a> UniformInfo<'a> {
             (SkyboxInfo(_), LayeredVisual) | (SkyboxInfo(_), Transparent(_)) => ShaderType::ParallelSky,
             (BillboardInfo(_, _), Visual) => ShaderType::Billboard,
             (TextInfo(_, _), Visual) => ShaderType::Text,
+            (MinimapInfo(_), Visual) => ShaderType::Minimap,
 
             // tex processors
             (CompositeInfo(_), Visual) => ShaderType::CompositeShader,
@@ -488,8 +497,8 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, f32, UniformsStorage< 'a, f32, UniformsStorage<'a, f32, glium::uniforms::EmptyUniforms>>>>>>>>>>>>>>>>>>>>>>>>),
     EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     ExtractBrightUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
-    CompositeUniform(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, (&'a str, glium::program::ShaderStage), UniformsStorage<'a, [[f32; 4]; 4], 
-        UniformsStorage<'a, u32, EmptyUniforms>>>>),
+    CompositeUniform(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, UniformsArray<'static, [[f32; 3]; 3], UniformsStorage<'a, (&'a str, glium::program::ShaderStage), UniformsStorage<'a, [[f32; 4]; 4], 
+        UniformsStorage<'a, u32, EmptyUniforms>>>>>),
     SepConvUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
     PrefilterHdrEnvUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], 
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
@@ -504,7 +513,8 @@ pub enum UniformType<'a> {
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
     LineUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
     TextUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [f32; 2], UniformsStorage<'a, [[f32; 4]; 4],
-        EmptyUniforms>>>)
+        EmptyUniforms>>>),
+    MinimapUniform(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, EmptyUniforms>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -553,6 +563,14 @@ macro_rules! sample_nearest_border {
     ($tex:expr) => {
         $tex.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Nearest)
         .minify_filter(glium::uniforms::MinifySamplerFilter::Nearest)
+        .wrap_function(glium::uniforms::SamplerWrapFunction::BorderClamp)
+    }
+}
+
+macro_rules! sample_linear_border {
+    ($tex:expr) => {
+        $tex.sampled().magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
+        .minify_filter(glium::uniforms::MinifySamplerFilter::Linear)
         .wrap_function(glium::uniforms::SamplerWrapFunction::BorderClamp)
     }
 }
@@ -659,6 +677,8 @@ impl ShaderManager {
             "shaders/lineVert.glsl", "shaders/lineFrag.glsl").unwrap();
         let text_shader = load_shader_source!(facade,
             "shaders/textVert.glsl", "shaders/textFrag.glsl").unwrap();
+        let minimap_shader = load_shader_source!(facade,
+            "shaders/minimapVert.glsl", "shaders/minimapFrag.glsl").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCullComp.glsl")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -690,6 +710,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::Cloud, cloud_shader);
         shaders.insert(ShaderType::Line, line_shader);
         shaders.insert(ShaderType::Text, text_shader);
+        shaders.insert(ShaderType::Minimap, minimap_shader);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -811,7 +832,7 @@ impl ShaderManager {
                     }
                 }})
             },
-            (CompositeInfo(CompositeData {model, textures, blend_function}), _) => {
+            (CompositeInfo(CompositeData {model, textures, blend_function, transforms}), _) => {
                 let subroutine_name = match blend_function.0 {
                     BlendFn::Overlay => "blendOverlay",
                     BlendFn::Add => "blendAdd",
@@ -819,10 +840,14 @@ impl ShaderManager {
                 UniformType::CompositeUniform(UniformsArray {
                     vals: textures.iter().map(|tex| sample_linear_clamp!(tex)).collect(),
                     name: "textures",
-                    rest: glium::uniform! {
-                        tex_count: textures.len() as u32,
-                        model: *model,
-                        blend_function: (subroutine_name, blend_function.1),
+                    rest: UniformsArray {
+                        name: "models",
+                        vals: transforms.clone(),
+                        rest: glium::uniform! {
+                            tex_count: textures.len() as u32,
+                            model: *model,
+                            blend_function: (subroutine_name, blend_function.1),
+                        },
                     },
                 })
             },
@@ -885,6 +910,11 @@ impl ShaderManager {
                 viewproj: scene_data.unwrap().viewer.viewproj,
                 tex_width_height: [tex_width_height[0] as f32, tex_width_height[1] as f32],
                 tex: sample_mip_clamp!(tex),
+            }),
+            (MinimapInfo(MinimapData{ textures }), Visual) => UniformType::MinimapUniform(UniformsArray {
+                name: "textures",
+                vals: textures.iter().map(|t| sample_linear_border!(t)).collect(),
+                rest: EmptyUniforms,
             }),
             (data, pass) => 
                 panic!("Invalid shader/shader data combination with shader (Args: `{:?}` '{:?}') during pass '{:?}'", data, typ, pass),

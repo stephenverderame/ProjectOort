@@ -38,6 +38,14 @@ pub struct TextAttributes {
 
 glium::implement_vertex!(TextAttributes, x_y_width_height, color);
 
+#[derive(Copy, Clone)]
+pub struct ParticleAttributes {
+    pub color: [f32; 4],
+    pub tex_idx: u32,
+}
+
+glium::implement_vertex!(ParticleAttributes, color, tex_idx);
+
 /// A dynamically resizing buffer of per-instance information
 /// If the amount of instances change, the buffer is resized
 pub struct InstanceBuffer<T : Copy + glium::Vertex> {

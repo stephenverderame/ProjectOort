@@ -9,6 +9,7 @@ mod controls;
 mod physics;
 mod game_map;
 mod game;
+mod minimap;
 extern crate gl;
 use graphics_engine::window::*;
 
@@ -117,6 +118,15 @@ fn main() {
         get_ui_render_pass(render_width, render_height, &*wnd.ctx()), 
         Rc::new(RefCell::new(camera::Camera2D::new(render_width, render_height))));
 
+    let mut map_scene = scene::Scene::new_no_lights(
+        get_ui_render_pass(render_width, render_height, &*wnd.ctx()), 
+        Rc::new(RefCell::new(camera::Camera2D::new(render_width, render_height))))
+        .bg((0., 0., 0., 0.6));
+    let map = minimap::Minimap::new(game.borrow().player.borrow().root().clone(), 
+        300., &*wnd.ctx());
+    let map = Rc::new(RefCell::new(map));
+    map_scene.set_entities(vec![map.clone()]);
+
     let mut test_text = graphics_engine::text::Text::new(
         Rc::new(text::Font::new("assets/fonts/SignedDistanceArial.fnt", &*wnd.ctx())),
         &*wnd.ctx());
@@ -128,9 +138,16 @@ fn main() {
     let mut entities = game.borrow().get_map().entities();
     entities.push(game.borrow().player.borrow().as_entity());
     main_scene.set_entities(entities);
+
+    let map_screen_location = 
+        Matrix3::from_translation(vec2(-2.0f32, 0.0)) * Matrix3::from_scale(3.0f32);
     let compositor_scene = scene::compositor_scene_new(render_width, render_height, 
         Rc::new(RefCell::new(camera::Camera2D::new(render_width, render_height))), 
-        vec![Box::new(main_scene), Box::new(ui_scene)], &*wnd.ctx());
+        vec![
+            (Box::new(main_scene), None), 
+            (Box::new(ui_scene), None),
+            (Box::new(map_scene), Some(map_screen_location))], 
+        &*wnd.ctx());
     wnd.scene_manager()
         .insert_scene("main", Box::new(RefCell::new(compositor_scene)))
         .change_scene("main");
@@ -143,6 +160,12 @@ fn main() {
 
     let mut draw_cb = 
     |dt, mut scene : std::cell::RefMut<dyn scene::AbstractScene>| {
+        map.borrow_mut().clear_items();
+        game.borrow().get_map().iter_bodies(Box::new(|bods| {
+            for bod in bods {
+                map.borrow_mut().add_item(bod);
+            }
+        }));
         game.borrow().on_draw(&mut sim.borrow_mut(), dt, &mut *scene, 
             &mut controller.borrow_mut());
         // will call on_hit, so cannot mutably borrow game

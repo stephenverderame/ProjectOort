@@ -7,6 +7,7 @@ in vec2 f_tex_coords;
 
 uniform uint tex_count;
 uniform sampler2D textures[MAX_TEXTURES];
+uniform mat3 models[MAX_TEXTURES];
 
 out vec4 frag_color;
 
@@ -39,10 +40,15 @@ float textureLinearize(sampler2D tex, vec2 tex_coords) {
 }
 
 void main() {
-    frag_color = texture(textures[0], f_tex_coords);
+    frag_color = texture(textures[0], (models[0] * vec3(f_tex_coords, 1.0)).xy);
     for (uint i = 1; i < tex_count; ++i) {
-        frag_color = 
-            blend_function(texture(textures[i], f_tex_coords), frag_color);
+        vec2 tex_coords = (models[i] * vec3(f_tex_coords, 1.0)).xy;
+        if (tex_coords.x >= 0 && tex_coords.x <= 1.0 
+            && tex_coords.y >= 0 && tex_coords.y <= 1)
+        {
+            frag_color = 
+                blend_function(texture(textures[i], tex_coords), frag_color);
+        }
     }
     // tone mapping done automatically by sRGB framebuffer
 }
