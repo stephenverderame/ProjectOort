@@ -82,6 +82,8 @@ impl AbstractEntity for Entity {
         self.order
     }
 }
+
+/// Constructs a new Entity
 pub struct EntityBuilder {
     drawable: Box<dyn Drawable>,
     locations: Vec<Rc<RefCell<dyn Transformation>>>,
@@ -99,22 +101,26 @@ impl EntityBuilder {
         }
     }
 
+    /// Adds a location to the entity
     #[allow(unused)]
     pub fn at(mut self, pos: crate::cg_support::node::Node) -> Self {
         self.locations.push(Rc::new(RefCell::new(pos)));
         self
     }
 
+    /// Sets the render passes for the entity
     pub fn with_pass(mut self, pass: shader::RenderPassType) -> Self {
         self.render_passes.push(pass);
         self
     }
 
+    /// Sets the render order for the entity
     pub fn render_order(mut self, order: RenderOrder) -> Self {
         self.order = order;
         self
     }
 
+    /// Builds the entity
     pub fn build(self) -> Entity {
         Entity {
             geometry: self.drawable,
@@ -160,7 +166,7 @@ impl AbstractEntity for ModelEntity {
         self.order
     }
 
-}
+} 
 
 /// Renders the entity to the given surface
 pub fn render_entity<S : glium::Surface>(entity: &mut dyn AbstractEntity, 

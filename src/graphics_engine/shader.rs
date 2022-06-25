@@ -620,69 +620,69 @@ impl ShaderManager {
     /// Initializes the shader manager and loads all shaders
     pub fn init<F : glium::backend::Facade>(facade: &F) -> ShaderManager {
         let laser_shader = load_shader_source!(facade, 
-            "shaders/laserVert.glsl", "shaders/laserFrag.glsl").unwrap();
+            "shaders/laser.vs", "shaders/laser.fs").unwrap();
         let skybox_shader = load_shader_source!(facade, 
-            "shaders/skyVert.glsl", "shaders/skyFrag.glsl").unwrap();
+            "shaders/sky.vs", "shaders/sky.fs").unwrap();
         let pbr_shader = load_shader_source!(facade,
-            "shaders/pbrVert.glsl", "shaders/pbrFrag.glsl").unwrap();
+            "shaders/pbr.vs", "shaders/pbr.fs").unwrap();
         let equirect_shader = load_shader_srgb!(facade, 
-            "shaders/skyVert.glsl", "shaders/eqRectFrag.glsl").unwrap();
+            "shaders/sky.vs", "shaders/eqRect.fs").unwrap();
         let ui_shader = load_shader_source!(facade, 
-            "shaders/hdrVert.glsl", "shaders/hdrFrag.glsl").unwrap();
+            "shaders/hdr.vs", "shaders/hdr.fs").unwrap();
         let bloom_shader = load_shader_source!(facade,
-            "shaders/hdrVert.glsl", "shaders/bloomFrag.glsl").unwrap();
+            "shaders/hdr.vs", "shaders/bloom.fs").unwrap();
         let blur_shader = load_shader_source!(facade,
-            "shaders/hdrVert.glsl", "shaders/blurFrag.glsl").unwrap();
+            "shaders/hdr.vs", "shaders/blur.fs").unwrap();
         let prefilter_shader = load_shader_source!(facade,
-            "shaders/skyVert.glsl", "shaders/prefilterEnvFrag.glsl").unwrap();
+            "shaders/sky.vs", "shaders/prefilterEnv.fs").unwrap();
         let brdf_lut_shader = load_shader_source!(facade,
-            "shaders/hdrVert.glsl", "shaders/specLutFrag.glsl").unwrap();
+            "shaders/hdr.vs", "shaders/specLut.fs").unwrap();
         let depth_shader = load_shader_source!(facade,
-            "shaders/depthVert.glsl", "shaders/depthFrag.glsl").unwrap();
+            "shaders/depth.vs", "shaders/depth.fs").unwrap();
         let depth_instanced = load_shader_source!(facade,
-            "shaders/instanceDepthVert.glsl", "shaders/depthFrag.glsl").unwrap();
+            "shaders/instanceDepth.vs", "shaders/depth.fs").unwrap();
         let pbr_instanced = load_shader_source!(facade,
-            "shaders/instancePbrVert.glsl", "shaders/pbrFrag.glsl").unwrap();
+            "shaders/instancePbr.vs", "shaders/pbr.fs").unwrap();
         let pbr_anim = load_shader_source!(facade,
-            "shaders/pbrAnimVert.glsl", "shaders/pbrFrag.glsl").unwrap();
+            "shaders/pbrAnim.vs", "shaders/pbr.fs").unwrap();
         let depth_anim = load_shader_source!(facade,
-            "shaders/depthAnimVert.glsl", "shaders/depthFrag.glsl").unwrap();
+            "shaders/depthAnim.vs", "shaders/depth.fs").unwrap();
         let debug = load_shader_source!(facade,
-            "shaders/depthVert.glsl", "shaders/constantColor.glsl").unwrap();
+            "shaders/depth.vs", "shaders/constantColor.fs").unwrap();
         let billboard = load_shader_source!(facade,
-            "shaders/billboardVert.glsl", "shaders/billboardFrag.glsl").unwrap();
+            "shaders/billboard.vs", "shaders/billboard.fs").unwrap();
         let parallel_pbr = load_shader_source!(facade,
-            "shaders/pbrVert.glsl", "shaders/pbrFrag.glsl", "shaders/parallelPbrGeom.glsl").unwrap();
+            "shaders/pbr.vs", "shaders/pbr.fs", "shaders/parallelPbr.gs").unwrap();
         let parallel_instance_pbr = load_shader_source!(facade,
-            "shaders/instancePbrVert.glsl", "shaders/pbrFrag.glsl", 
-            "shaders/parallelPbrGeom.glsl").unwrap();
+            "shaders/instancePbr.vs", "shaders/pbr.fs", 
+            "shaders/parallelPbr.gs").unwrap();
         let parallel_laser = load_shader_source!(facade,
-            "shaders/laserVert.glsl", "shaders/laserFrag.glsl",
-            "shaders/parallelLaserGeom.glsl").unwrap();
+            "shaders/laser.vs", "shaders/laser.fs",
+            "shaders/parallelLaser.gs").unwrap();
         let parallel_sky = load_shader_source!(facade,
-            "shaders/skyVert.glsl", "shaders/skyFrag.glsl",
-            "shaders/parallelSkyGeom.glsl").unwrap();
+            "shaders/sky.vs", "shaders/sky.fs",
+            "shaders/parallelSky.gs").unwrap();
         let parallel_eq_rect = load_shader_source!(facade,
-            "shaders/skyVert.glsl", "shaders/eqRectFrag.glsl",
-            "shaders/parallelSkyGeom.glsl").unwrap();
+            "shaders/sky.vs", "shaders/eqRect.fs",
+            "shaders/parallelSky.gs").unwrap();
         let parallel_anim_pbr = load_shader_source!(facade,
-            "shaders/pbrAnimVert.glsl", "shaders/pbrFrag.glsl",
-            "shaders/parallelPbrGeom.glsl").unwrap();
+            "shaders/pbrAnim.vs", "shaders/pbr.fs",
+            "shaders/parallelPbr.gs").unwrap();
         let parallel_prefilter = load_shader_source!(facade,
-            "shaders/skyVert.glsl", "shaders/prefilterEnvFrag.glsl",
-            "shaders/parallelSkyGeom.glsl").unwrap();
+            "shaders/sky.vs", "shaders/prefilterEnv.fs",
+            "shaders/parallelSky.gs").unwrap();
         let cloud_shader = load_shader_source!(facade,
-            "shaders/cloudVert.glsl", "shaders/cloudFrag.glsl").unwrap();
+            "shaders/cloud.vs", "shaders/cloud.fs").unwrap();
         let line_shader = load_shader_source!(facade,
-            "shaders/lineVert.glsl", "shaders/lineFrag.glsl").unwrap();
+            "shaders/line.vs", "shaders/line.fs").unwrap();
         let text_shader = load_shader_source!(facade,
-            "shaders/textVert.glsl", "shaders/textFrag.glsl").unwrap();
+            "shaders/text.vs", "shaders/text.fs").unwrap();
         let minimap_shader = load_shader_source!(facade,
-            "shaders/minimapVert.glsl", "shaders/minimapFrag.glsl").unwrap();
+            "shaders/minimap.vs", "shaders/minimap.fs").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
-           include_str!("shaders/lightCullComp.glsl")).unwrap();
+           include_str!("shaders/lightCull.comp")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
-            include_str!("shaders/triTriComp.glsl")).unwrap();
+            include_str!("shaders/triTriCollision.comp")).unwrap();
         let mut shaders = HashMap::<ShaderType, glium::Program>::new();
         shaders.insert(ShaderType::Laser, laser_shader);
         shaders.insert(ShaderType::Skybox, skybox_shader);
