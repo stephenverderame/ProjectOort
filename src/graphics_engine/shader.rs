@@ -37,6 +37,7 @@ enum ShaderType {
     Line,
     Text,
     Minimap,
+    Icon,
 }
 
 /// The type of objects that should be rendered to a render target
@@ -107,7 +108,7 @@ impl ShaderType {
                     line_width: Some(2.),
                     .. Default::default()
                 },
-            Billboard | Minimap =>
+            Billboard | Minimap | Icon =>
                 glium::DrawParameters {
                     blend: glium::Blend::alpha_blending(),
                     backface_culling: glium::BackfaceCullingMode::CullClockwise,
@@ -388,6 +389,8 @@ pub enum UniformInfo<'a> {
     /// Args - SDF texture, `[tex_width, tex_height]`
     TextInfo(&'a glium::texture::Texture2d, [i32; 2]),
     MinimapInfo(MinimapData<'a>),
+    /// Args - Icon texture, model matrix
+    IconInfo(&'a glium::texture::SrgbTexture2d, [[f32; 4]; 4]),
 }
 
 impl<'a> std::fmt::Debug for UniformInfo<'a> {
@@ -411,6 +414,7 @@ impl<'a> std::fmt::Debug for UniformInfo<'a> {
             LineInfo => "Line",
             TextInfo(_, _) => "Text",
             MinimapInfo(_) => "Minimap",
+            IconInfo(_, _) => "Icon",
         };
         f.write_str(name)
     }
@@ -454,6 +458,7 @@ impl<'a> UniformInfo<'a> {
             (BillboardInfo(_, _), Visual) => ShaderType::Billboard,
             (TextInfo(_, _), Visual) => ShaderType::Text,
             (MinimapInfo(_), Visual) => ShaderType::Minimap,
+            (IconInfo(_, _), Visual) => ShaderType::Icon,
 
             // tex processors
             (CompositeInfo(_), Visual) => ShaderType::CompositeShader,
@@ -515,6 +520,7 @@ pub enum UniformType<'a> {
     TextUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [f32; 2], UniformsStorage<'a, [[f32; 4]; 4],
         EmptyUniforms>>>),
     MinimapUniform(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, EmptyUniforms>),
+    IconUniform(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -679,6 +685,8 @@ impl ShaderManager {
             "shaders/text.vs", "shaders/text.fs").unwrap();
         let minimap_shader = load_shader_source!(facade,
             "shaders/minimap.vs", "shaders/minimap.fs").unwrap();
+        let icon_shader = load_shader_source!(facade,
+            "shaders/icon.vs", "shaders/icon.fs").unwrap();
         let light_cull = glium::program::ComputeShader::from_source(facade,
            include_str!("shaders/lightCull.comp")).unwrap();
         let triangle_test = glium::program::ComputeShader::from_source(facade, 
@@ -711,6 +719,7 @@ impl ShaderManager {
         shaders.insert(ShaderType::Line, line_shader);
         shaders.insert(ShaderType::Text, text_shader);
         shaders.insert(ShaderType::Minimap, minimap_shader);
+        shaders.insert(ShaderType::Icon, icon_shader);
         let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
@@ -915,6 +924,10 @@ impl ShaderManager {
                 name: "textures",
                 vals: textures.iter().map(|t| sample_linear_border!(t)).collect(),
                 rest: EmptyUniforms,
+            }),
+            (IconInfo(texture, model), Visual) => UniformType::IconUniform(glium::uniform! {
+                model: *model,
+                tex: sample_linear_clamp!(texture),
             }),
             (data, pass) => 
                 panic!("Invalid shader/shader data combination with shader (Args: `{:?}` '{:?}') during pass '{:?}'", data, typ, pass),

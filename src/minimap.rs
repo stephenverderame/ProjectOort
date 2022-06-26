@@ -62,23 +62,21 @@ impl Minimap {
     pub fn add_item(&mut self, body: &physics::RigidBody<object::ObjectType>) {
         use object::ObjectType::*;
         use cgmath::*;
-        let (color, tex_index) = match body.metadata {
-            Asteroid => ([0.517f32, 0.282, 0.082, 1.0], 0usize),
-            Laser => ([0.5451f32, 0.0, 0.5451, 1.0], 1usize),
-            Ship => ([0.960f32, 0.623, 0.141, 1.0], 2usize),
+        let (color, tex_index, scale) = match body.metadata {
+            Asteroid => ([0.517f32, 0.282, 0.082, 1.0], 0usize, 
+                (body.base.extents().unwrap_or(0.) / self.view_dist).max(0.05)),
+            Laser => ([0.5451f32, 0.0, 0.5451, 1.0], 1usize, 0.1),
+            Ship => ([0.960f32, 0.623, 0.141, 1.0], 2usize, 0.1),
             _ => return,
         };
         let center_inv = self.center.borrow().mat().invert().unwrap();
         let minimap_pos = center_inv.transform_point(body.base.center()) / self.view_dist;
-        let minimap_scale = body.base.extents().map(|e| e / (self.view_dist * 2.));
-        if let Some(scale) = minimap_scale {
-            let pos : [f64; 3] = minimap_pos.into();
-            self.blips.push(MinimapBlip {
-                color, tex_index, pos: node::Node::default()
-                    .pos(pos.into())
-                    .u_scale(scale)
-            })
-        }
+        let pos : [f64; 3] = minimap_pos.into();
+        self.blips.push(MinimapBlip {
+            color, tex_index, pos: node::Node::default()
+                .pos(pos.into())
+                .u_scale(scale)
+        })
     }
 
     /// Removes all items on the minimap

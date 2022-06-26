@@ -34,6 +34,7 @@ struct Glyph {
 
 pub struct Font {
     glyphs: HashMap<u8, Glyph>,
+    /// Map of horizontal spacing offsets when the second character follows the first
     kernings: HashMap<u8, HashMap<u8, i32>>,
     sdf: glium::texture::Texture2d,
     _line_height: i32,
@@ -211,12 +212,24 @@ impl Text {
         }
         self.dirty = true;
     }
+
+    /// Removes all text from this text object
+    #[inline]
+    pub fn clear_text(&mut self) {
+        self.attribs.clear();
+        self.positions.clear();
+        self.dirty = true;
+    }
+
 }
 
 impl Drawable for Text {
     fn render_args<'a>(&'a mut self, _positions: &[[[f32; 4]; 4]]) 
     -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
     {
+        if self.attribs.is_empty() || self.positions.is_empty() {
+            return Vec::new();
+        }
         if self.dirty {
             // TODO: will not work if we want to move text after adding it
             // by changing the parent's transformation node
@@ -266,4 +279,42 @@ impl AbstractEntity for Text {
     fn render_order(&self) -> RenderOrder {
         RenderOrder::Unordered
     }
+}
+
+pub struct Icon {
+    vertices: VertexBuffer<Vertex>,
+    indicies: IndexBuffer<u32>,
+    texture: glium::texture::SrgbTexture2d,
+}
+
+impl Icon {
+    pub fn new<F : backend::Facade>(
+        tex_path: &str, f: &F) -> Icon 
+    {
+        let tex = load_texture_srgb(tex_path, f);
+        Icon {
+            vertices: VertexBuffer::new(f, &RECT_VERTS).unwrap(),
+            indicies: IndexBuffer::new(f, 
+                glium::index::PrimitiveType::TrianglesList, &RECT_INDICES)
+                .unwrap(),
+            texture: tex,
+        }
+    }
+}
+
+impl Drawable for Icon {
+    fn render_args<'a>(&'a mut self, positions: &[[[f32; 4]; 4]]) 
+    -> Vec<(shader::UniformInfo, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
+    {
+        let verts = &self.vertices;
+        let indicies = &self.indicies;
+        let tex = &self.texture;
+        positions.iter().map(|pos| {
+            (shader::UniformInfo::IconInfo(tex, *pos), 
+                VertexHolder::new(VertexSourceData::Single(From::from(verts))),
+                From::from(indicies))
+        }).collect()
+    }
+
+    fn transparency(&self) -> Option<f32> { None }
 }

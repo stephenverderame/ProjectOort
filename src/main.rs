@@ -123,16 +123,24 @@ fn main() {
         Rc::new(RefCell::new(camera::Camera2D::new(render_width, render_height))))
         .bg((0., 0., 0., 0.6));
     let map = minimap::Minimap::new(game.borrow().player.borrow().root().clone(), 
-        300., &*wnd.ctx());
-    let map = Rc::new(RefCell::new(map));
-    map_scene.set_entities(vec![map.clone()]);
+        3000., &*wnd.ctx());
+    let minimap = Rc::new(RefCell::new(map));
+    map_scene.set_entities(vec![minimap.clone()]);
 
-    let mut test_text = graphics_engine::text::Text::new(
+    let stat_text = Rc::new(RefCell::new(graphics_engine::text::Text::new(
         Rc::new(text::Font::new("assets/fonts/SignedDistanceArial.fnt", &*wnd.ctx())),
-        &*wnd.ctx());
-    test_text.add_text("Hello World", Rc::new(RefCell::new(node::Node::default().u_scale(0.1).pos(point3(-0.8, 0.8, 0.1)))),
-        [1.0, 0., 0., 1.]);
-    ui_scene.set_entities(vec![Rc::new(RefCell::new(test_text))]);
+        &*wnd.ctx())));
+
+    let power_icon = entity::EntityBuilder::new(text::Icon::new("assets/icons/electric.png", &*wnd.ctx()))
+        .at(node::Node::default().u_scale(0.05).pos(point3(-0.9, 0.8, 0.0)))
+        .with_pass(shader::RenderPassType::Visual)
+        .build();
+    let shield_icon = entity::EntityBuilder::new(text::Icon::new("assets/icons/bubble-shield.png", &*wnd.ctx()))
+        .at(node::Node::default().u_scale(0.05).pos(point3(-0.9, 0.9, 0.0)))
+        .with_pass(shader::RenderPassType::Visual)
+        .build();
+    ui_scene.set_entities(vec![stat_text.clone(), Rc::new(RefCell::new(power_icon)), 
+        Rc::new(RefCell::new(shield_icon))]);
     
     // skybox must be rendered first, particles must be rendered last
     let mut entities = game.borrow().get_map().entities();
@@ -160,12 +168,21 @@ fn main() {
 
     let mut draw_cb = 
     |dt, mut scene : std::cell::RefMut<dyn scene::AbstractScene>| {
-        map.borrow_mut().clear_items();
+        minimap.borrow_mut().clear_items();
         game.borrow().get_map().iter_bodies(Box::new(|bods| {
             for bod in bods {
-                map.borrow_mut().add_item(bod);
+                minimap.borrow_mut().add_item(bod);
             }
         }));
+        stat_text.borrow_mut().clear_text();
+        stat_text.borrow_mut().add_text(
+            &format!("{}", game.borrow().player.borrow().shield().round() as u64),
+            Rc::new(RefCell::new(node::Node::default().u_scale(0.07).pos(point3(-0.78, 0.85, 0.1)))),
+            [0., 0., 1., 1.]);
+        stat_text.borrow_mut().add_text(
+            &format!("{}", game.borrow().player.borrow().energy().round() as u64), 
+            Rc::new(RefCell::new(node::Node::default().u_scale(0.07).pos(point3(-0.78, 0.75, 0.1)))),
+            [1., 1., 0., 1.]);
         game.borrow().on_draw(&mut sim.borrow_mut(), dt, &mut *scene, 
             &mut controller.borrow_mut());
         // will call on_hit, so cannot mutably borrow game

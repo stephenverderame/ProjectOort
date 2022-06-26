@@ -16,6 +16,14 @@ use cgmath::*;
 
 const FAR_PLANE : f32 = 1000.;
 
+const ENERGY_PER_SEC : f64 = 1.;
+
+/// Changes a player's statistic that is bounded between 0 and 100
+#[inline]
+fn change_stat(stat: f64, change: f64) -> f64 {
+    (stat + change).max(0.).min(100.)
+}
+
 /// The player is the combination of the player's entity and the player's camera
 pub struct Player {
     cam: Node,
@@ -24,6 +32,8 @@ pub struct Player {
     body: physics::RigidBody<object::ObjectType>,
     pub inv_fac: Rc<RefCell<f32>>,
     em_fac: Rc<RefCell<f32>>,
+    energy: f64,
+    shield: f64,
 }
 
 impl Player {
@@ -59,26 +69,32 @@ impl Player {
                 physics::BodyType::Controlled, object::ObjectType::Ship)
                     .with_density(0.88),
             inv_fac,
+            energy: 100.,
+            shield: 100.,
         }
     }
 
     /// Updates the players' forces based on the input controls and returns the rigid body
-    pub fn as_rigid_body(&mut self, input: &controls::PlayerControls) 
-        -> &mut physics::RigidBody<object::ObjectType> 
+    pub fn as_rigid_body(&mut self, input: &controls::PlayerControls, 
+        dt: std::time::Duration) -> &mut physics::RigidBody<object::ObjectType> 
     {
         use cgmath::*;
         {
             let model : cgmath::Matrix4<f64> = 
                 std::convert::From::from(&*self.body.base.transform.borrow());
             let forward = model.transform_vector(cgmath::vec3(0., 0., 1.));
+            let dt_sec = dt.as_secs_f64();
+            let energy_cost = 10. * dt_sec;
             self.body.base.velocity += 
                 match input.movement {
-                    controls::Movement::Forward => {
+                    controls::Movement::Forward if self.energy >= energy_cost => {
                         *self.em_fac.borrow_mut() = 4.;
+                        self.energy = change_stat(self.energy, -energy_cost);
                         forward
                     },
-                    controls::Movement::Backwards => {
+                    controls::Movement::Backwards if self.energy >= energy_cost => {
                         *self.em_fac.borrow_mut() = 4.;
+                        self.energy = change_stat(self.energy, -energy_cost);
                         -forward
                     },
                     _ => {
@@ -86,6 +102,8 @@ impl Player {
                         vec3(0., 0., 0.)
                     },
                 };
+            self.energy = change_stat(self.energy, ENERGY_PER_SEC * dt_sec);
+            self.shield = change_stat(self.shield, ENERGY_PER_SEC / 3. * dt_sec);
             self.body.base.rot_vel = vec3(input.pitch, 0., input.roll) / 10000.;
         }
         &mut self.body
@@ -139,6 +157,26 @@ impl Player {
     #[inline]
     pub fn trans_fac(&self) -> std::cell::RefMut<f32> {
         self.inv_fac.borrow_mut()
+    }
+
+    #[inline]
+    pub fn energy(&self) -> f64 {
+        self.energy
+    }
+
+    #[inline]
+    pub fn shield(&self) -> f64 {
+        self.shield
+    }
+
+    #[inline]
+    pub fn change_energy(&mut self, delta: f64) {
+        self.energy = change_stat(self.energy, delta)
+    }
+
+    #[inline]
+    pub fn change_shield(&mut self, delta: f64) {
+        self.shield = change_stat(self.shield, delta)
     }
 
 

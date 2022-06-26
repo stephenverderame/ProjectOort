@@ -10,6 +10,7 @@ use crate::collisions::*;
 use super::controls;
 use crate::graphics_engine::scene;
 use crate::graphics_engine::particles::*;
+use std::cell::Cell;
 
 /// Encapsulates the game map and handles the logic for base game mechanics
 pub struct Game<'c> {
@@ -18,6 +19,7 @@ pub struct Game<'c> {
     forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectType>>>>,
     dead_lasers: RefCell<Vec<Rc<RefCell<node::Node>>>>,
     new_forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectType>>>>,
+    delta_shield: Cell<f64>,
 }
 
 impl<'c> Game<'c> {
@@ -28,6 +30,7 @@ impl<'c> Game<'c> {
             forces: RefCell::default(),
             dead_lasers: RefCell::new(Vec::new()),
             new_forces: RefCell::new(Vec::new()),
+            delta_shield: Cell::new(0.),
         }
     }
 
@@ -83,6 +86,27 @@ impl<'c> Game<'c> {
         })));
     }
 
+    /// Checks if the player was involved in a collision, and if so,
+    /// reduces the player's health accordingly by setting `delta_shield`
+    fn check_player_hit(&self, a: &RigidBody<object::ObjectType>, 
+        b: &RigidBody<object::ObjectType>, player: &BaseRigidBody)
+    {
+        const SHIELD_DAMAGE_FAC : f64 = -0.01;
+        if let Some(other) = 
+        if Rc::ptr_eq(&a.base.transform, &player.transform) {
+            Some(b)
+        } else if Rc::ptr_eq(&b.base.transform, &player.transform) {
+            Some(a)
+        } else { None } {
+            if other.metadata == object::ObjectType::Laser {
+                self.delta_shield.set(-10.);
+            } else if other.metadata != object::ObjectType::Hook {
+                self.delta_shield.set(SHIELD_DAMAGE_FAC *
+                    (a.base.velocity - b.base.velocity).magnitude());
+            } 
+        }
+    }
+
     /// Callback function for when two objects collide
     pub fn on_hit(&self, a: &RigidBody<object::ObjectType>, 
         b: &RigidBody<object::ObjectType>, hit: &HitData, 
@@ -106,6 +130,7 @@ impl<'c> Game<'c> {
             else { &b.base.transform }.clone();
             self.dead_lasers.borrow_mut().push(lt);
         }
+        self.check_player_hit(a, b, player)
 
     }
 
@@ -133,17 +158,19 @@ impl<'c> Game<'c> {
         let forces = &self.forces.borrow();
         self.map.as_ref().iter_bodies(Box::new(|it| {
             let mut v : Vec<_> = it.collect();
-            v.push(u.as_rigid_body(controls));
+            v.push(u.as_rigid_body(controls, dt));
             let p_idx = v.len() - 1;
             sim.step(&mut v, forces, p_idx, dt);
         }));
+        u.change_shield(self.delta_shield.take())
     }
 
     /// Function thet should be called every frame to handle shooting lasers
-    fn handle_shots(user: &player::Player, controller: &controls::PlayerControls, 
+    fn handle_shots(user: &mut player::Player, controller: &controls::PlayerControls, 
         lasers: &mut object::GameObject) 
     {
-        if controller.fire {
+        const ENERGY_PER_SHOT : f64 = 1.;
+        if controller.fire && user.energy() > ENERGY_PER_SHOT {
             let mut transform = user.root().borrow().clone()
                 .scale(cgmath::vec3(0.3, 0.3, 1.));
             transform.translate(user.forward() * 10.);
@@ -153,6 +180,7 @@ impl<'c> Game<'c> {
                 { (object::ObjectType::Laser, 120.) };
             lasers.new_instance(transform, Some(user.forward() * speed))
                 .metadata = typ;
+            user.change_energy(-ENERGY_PER_SHOT);
         }
     }
 
@@ -170,8 +198,8 @@ impl<'c> Game<'c> {
                 self.map.as_ref().get_lines().borrow_mut().remove_line(0);
             }
             let mut lz = self.map.as_ref().get_lasers().borrow_mut();
-            let u = self.player.borrow();
-            Self::handle_shots(&*u, controller, &mut *lz);
+            let mut u = self.player.borrow_mut();
+            Self::handle_shots(&mut *u, controller, &mut *lz);
         }
         self.step_sim(sim, controller, dt);
         self.map.as_ref().get_lasers().borrow_mut().retain(|laser_ptr|
