@@ -101,7 +101,10 @@ impl AsteroidMap {
             .at_pos(Node::default().u_scale(5.)).with_depth()
             .with_collisions("assets/planet/planet1.obj", Default::default())
             .immobile().density(10.);
-        vec![asteroid, planet]
+        /*let test_floor = object::GameObject::new(
+            model::Model::new("assets/BlackMarble/floor.obj", ctx), object::ObjectType::Any) 
+            .at_pos(Node::new(Some(point3(0., -5., 0.)), None, Some(vec3(20., 1., 20.)), None)).with_depth();*/
+        vec![asteroid, planet/* , test_floor*/]
 
     }
 

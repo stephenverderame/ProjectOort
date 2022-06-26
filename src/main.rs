@@ -1,6 +1,7 @@
 extern crate cgmath;
 extern crate glium;
 mod cg_support;
+#[macro_use]
 mod graphics_engine;
 mod collisions;
 mod object;
@@ -55,24 +56,41 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let cam_depth_to_cache = Box::new(texture_processor::ToCacheProcessor::new());
 
     let render_cascade_1 = 
-        get_cascade_target(render_width, render_height, user.clone(), 0.1, 100.);
+        get_cascade_target(render_width, render_height, user.clone(), 0.1, 30.);
     let render_cascade_2 = 
-        get_cascade_target(render_width, render_height, user.clone(), 100., 400.);
+        get_cascade_target(render_width, render_height, user.clone(), 30., 200.);
     let render_cascade_3 = 
-        get_cascade_target(render_width, render_height, user.clone(), 400., 1000.);
+        get_cascade_target(render_width, render_height, user.clone(), 200., 600.);
 
     let user_clone = user.clone();
-    pipeline::RenderPass::new(vec![depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency], 
-        vec![cull_lights, eb, blur, compose, to_cache, trans_to_cache, cam_depth_to_cache], 
-        pipeline::Pipeline::new(vec![0], vec![
-            (0, (6, 0)), (0, (12, 0)), (12, (1, 0)), // depth map to light culling and main render
-            (6, (2, 0)), (6, (3, 0)), (6, (4, 0)), // cull -> render cascades
-            (2, (10, 0)), (3, (10, 1)), (4, (10, 2)), // cascade to cache
-            (10, (1, 0)), (10, (5, 0)), (5, (11, 0)), (11, (1, 1)), // translucency, and store in cache
-            (1, (7, 0)), (7, (8, 0)), (8, (9, 1)), (1, (9, 0)) // main pass w/ bloom
-        ])
+    pipeline! ([depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency],
+        {cull_lights, eb, blur, compose, to_cache, trans_to_cache, cam_depth_to_cache},
+
+        depth_render -> cull_lights.0, 
+        depth_render -> cam_depth_to_cache.0, 
+        cam_depth_to_cache -> msaa.0,
+
+        cull_lights -> render_cascade_1.0, 
+        cull_lights -> render_cascade_2.0, 
+        cull_lights -> render_cascade_3.0,
+
+        render_cascade_1 -> to_cache.0, 
+        render_cascade_2 -> to_cache.1, 
+        render_cascade_3 -> to_cache.2,
+
+        to_cache -> msaa.0, 
+        to_cache -> translucency.0, 
+        translucency -> trans_to_cache.0, 
+        trans_to_cache -> msaa.1,
+
+        msaa -> eb.0,
+        eb -> blur.0,
+        blur -> compose.1,
+        msaa -> compose.0
     ).with_active_pred(Box::new(move |stage| {
         match stage {
+            // translucency and trans_to_cache can be skipped if there is no transparent
+            // object
             5 | 11 if *user_clone.borrow().trans_fac() > f32::EPSILON => true,
             5 | 11 => false,
             _ => true,

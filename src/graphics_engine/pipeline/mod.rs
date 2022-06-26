@@ -158,3 +158,28 @@ impl Pipeline {
 
     }
 }
+
+#[allow(unused_assignments)]
+macro_rules! pipeline {
+    ([$($target:ident),+], {$($process:ident),*}, $($stage_a:ident -> $stage_b:ident.$b_in:expr),*) => {{
+        let mut map : std::collections::HashMap<String, u16> = 
+            std::collections::HashMap::new();
+        let mut id : u16 = 0;
+        $(
+            map.insert(stringify!($target).to_string(), id);
+            id += 1;
+        )*
+        $(
+            map.insert(stringify!($process).to_string(), id);
+            id += 1;
+        )*
+        let mut adj_list : Vec<(u16, (u16, usize))> = Vec::new();
+        $(
+            adj_list.push((map[stringify!($stage_a)], 
+            (map[stringify!($stage_b)], $b_in)));
+        )*
+        RenderPass::new(vec![$($target),*], vec![$($process),*], 
+            Pipeline::new(vec![0], adj_list))
+
+    }};
+}

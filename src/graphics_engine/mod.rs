@@ -1,5 +1,6 @@
 pub mod model;
 pub mod camera;
+#[macro_use]
 pub mod pipeline;
 pub mod scene;
 pub mod shader;
