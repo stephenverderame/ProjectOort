@@ -64,7 +64,7 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
 
     let user_clone = user.clone();
     pipeline! ([depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency],
-        {cull_lights, eb, blur, compose, to_cache, trans_to_cache, cam_depth_to_cache},
+        [cull_lights, eb, blur, compose, to_cache, trans_to_cache, cam_depth_to_cache],
 
         depth_render -> cull_lights.0, 
         depth_render -> cam_depth_to_cache.0, 
@@ -86,16 +86,10 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
         msaa -> eb.0,
         eb -> blur.0,
         blur -> compose.1,
-        msaa -> compose.0
-    ).with_active_pred(Box::new(move |stage| {
-        match stage {
-            // translucency and trans_to_cache can be skipped if there is no transparent
-            // object
-            5 | 11 if *user_clone.borrow().trans_fac() > f32::EPSILON => true,
-            5 | 11 => false,
-            _ => true,
-        }
-    }))
+        msaa -> compose.0,
+
+        { trans_to_cache | translucency if *user_clone.borrow().trans_fac() > f32::EPSILON }
+    )
 }
 
 fn get_ui_render_pass(render_width: u32, render_height: u32, 

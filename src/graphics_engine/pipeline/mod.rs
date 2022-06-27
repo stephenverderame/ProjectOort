@@ -159,27 +159,56 @@ impl Pipeline {
     }
 }
 
-#[allow(unused_assignments)]
-macro_rules! pipeline {
-    ([$($target:ident),+], {$($process:ident),*}, $($stage_a:ident -> $stage_b:ident.$b_in:expr),*) => {{
-        let mut map : std::collections::HashMap<String, u16> = 
-            std::collections::HashMap::new();
-        let mut id : u16 = 0;
+macro_rules! pipeline_map_and_list {
+    ([$($target:ident),+], [$($process:ident),*], $($stage_a:ident -> $stage_b:ident.$b_in:expr),*) => {{
+        let mut map = std::collections::HashMap::<String, u16>::new();
+        let mut _id : u16 = 0;
         $(
-            map.insert(stringify!($target).to_string(), id);
-            id += 1;
+            map.insert(stringify!($target).to_string(), _id);
+            _id += 1;
         )*
         $(
-            map.insert(stringify!($process).to_string(), id);
-            id += 1;
+            map.insert(stringify!($process).to_string(), _id);
+            _id += 1;
         )*
         let mut adj_list : Vec<(u16, (u16, usize))> = Vec::new();
         $(
             adj_list.push((map[stringify!($stage_a)], 
             (map[stringify!($stage_b)], $b_in)));
         )*
-        RenderPass::new(vec![$($target),*], vec![$($process),*], 
-            Pipeline::new(vec![0], adj_list))
+        (map, adj_list)
+    }};
+}
 
+/// Constructs a pipeline using a DSL
+/// 
+/// Expects `[<render_targets>], [<texture_processors>], <stage_a> -> <stage_b>.<b_in>`
+/// where `b_in` is the number of the input to put the output of `stage_a` into `stage_b`
+/// 
+/// The first render target will automatically be the starting stage
+/// 
+/// The stage flow block can be followed by `{}`, which can contain expressions for conditional stages
+/// For example: `{ stage_a | stage_b if 1 > var }` which will execute `stage_a` and `stage_b`
+/// only if `1 > var`. Any variables used in the if expression will be moved into the underlying active
+/// predicate closure
+macro_rules! pipeline {
+    ([$($target:ident),+], [$($process:ident),*], $($stage_a:ident -> $stage_b:ident.$b_in:expr),*) => {{
+            let (_, adj_list) = pipeline_map_and_list!([$($target),+], [$($process),*], $($stage_a -> $stage_b.$b_in),*);
+            RenderPass::new(vec![$($target),*], vec![$($process),*], 
+                Pipeline::new(vec![0], adj_list))
+    }};
+    ([$($target:ident),+], [$($process:ident),*], $($stage_a:ident -> $stage_b:ident.$b_in:expr),*,
+        {$($($conditional_stage:ident)|+ if $condition:expr),*}) => {{
+        let (map, adj_list) = pipeline_map_and_list!([$($target),+], [$($process),*], $($stage_a -> $stage_b.$b_in),*);
+        RenderPass::new(vec![$($target),*], vec![$($process),*], 
+            Pipeline::new(vec![0], adj_list)).with_active_pred(Box::new(move |stage| {
+                match stage {
+                    $(
+                        x if ($(x == map[stringify!($conditional_stage)] ||)* false) && $condition => true,
+                        x if ($(x == map[stringify!($conditional_stage)] ||)* false) => false,
+                    )*
+                    _ => true,
+                }
+            }))
     }};
 }
