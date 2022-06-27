@@ -26,7 +26,7 @@ fn get_cascade_target(width: u32, height: u32,
     user: Rc<RefCell<player::Player>>, near: f32, far: f32) -> Box<dyn RenderTarget> 
 {
     Box::new(render_target::CustomViewRenderTargetDecorator::new(
-        render_target::DepthRenderTarget::new_cascade(width, height, false),
+        render_target::DepthRenderTarget::new_cascade(width, height, true),
         move |_| {
             user.borrow().get_cam().get_cascade(vec3(-120., 120., 0.), near, far, 2048)
         }
@@ -56,11 +56,11 @@ fn get_main_render_pass(render_width: u32, render_height: u32, user: Rc<RefCell<
     let cam_depth_to_cache = Box::new(texture_processor::ToCacheProcessor::new());
 
     let render_cascade_1 = 
-        get_cascade_target(render_width, render_height, user.clone(), 0.1, 30.);
+        get_cascade_target(2048, 2048, user.clone(), 0.1, 40.);
     let render_cascade_2 = 
-        get_cascade_target(render_width, render_height, user.clone(), 30., 200.);
+        get_cascade_target(2048, 2048, user.clone(), 40., 200.);
     let render_cascade_3 = 
-        get_cascade_target(render_width, render_height, user.clone(), 200., 600.);
+        get_cascade_target(2048, 2048, user.clone(), 200., 600.);
 
     let user_clone = user.clone();
     pipeline! ([depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency],
