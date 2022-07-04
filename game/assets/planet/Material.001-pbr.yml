@@ -1,0 +1,3 @@
+roughness: planet2/planet_surface_Roughness.png
+metalness: planet2/planet_surface_Metallic.png
+ao: planet2/planet_surface-ao.png

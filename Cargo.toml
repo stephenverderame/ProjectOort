@@ -1,29 +1,7 @@
-[package]
-name = "rust-graphics"
-version = "0.1.0"
-authors = ["Stephen Verderame <stephenverderame@gmail.com>"]
-edition = "2018"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-glutin = "0.28.0"
-#glium = "0.31.0"
-glium = { path = "../GliumFork" }
-cgmath = "0.18.0"
-tobj = "3.2.0"
-image = "*"
-gl = "0.14.0"
-rand = "*"
-assimp = "*"
-assimp-sys = "*"
-arr_macro = "*"
-itertools = "*"
-noise = "*"
-regex = "*"
-
-[dev-dependencies]
-assertables = "*"
-assert_approx_eq = "*"
-once_cell = "*"
-serial_test = "*"
+members = [
+    "game",
+    "server",
+    "shared_types"
+]

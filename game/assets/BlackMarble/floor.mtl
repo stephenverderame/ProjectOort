@@ -1,0 +1,12 @@
+# Blender MTL File: 'None'
+# Material Count: 1
+
+newmtl pbrFloor
+Ns 500
+Ka 0.8 0.8 0.8
+Kd 0.8 0.8 0.8
+Ks 0.8 0.8 0.8
+d 1
+illum 2
+bump Textures_2K/black_marble_02_2k_normal.tga
+map_Kd Textures_2K/black_marble_02_2k_baseColor.tga

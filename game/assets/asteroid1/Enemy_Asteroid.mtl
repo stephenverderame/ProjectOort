@@ -1,0 +1,31 @@
+# 3ds Max Wavefront OBJ Exporter v0.97b - (c)2007 guruware
+# File Created: 27.11.2019 21:59:28
+
+newmtl Enemy
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 0.5880 0.5880 0.5880
+	Kd 0.5880 0.5880 0.5880
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Kd Textures_Mat_Enemy/Enemy_albedo.jpg
+	bump Textures_Mat_Enemy/Enemy_normal.png
+	map_Ke Textures_Mat_Enemy/Enemy_emissive.jpg
+
+newmtl Asteroid
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	Tr 0.0000
+	Tf 1.0000 1.0000 1.0000 
+	illum 2
+	Ka 0.5882 0.5882 0.5882
+	Kd 0.5882 0.5882 0.5882
+	Ks 0.0000 0.0000 0.0000
+	Ke 0.0000 0.0000 0.0000
+	map_Kd Textures_Asteroid/DefaultMaterial_albedo.jpg
+	bump Textures_Asteroid/DefaultMaterial_normal.png

@@ -1,0 +1,3 @@
+roughness: Textures_2K/black_marble_02_2k_roughness.tga
+metalness: Textures_2K/black_marble_02_2k_glossiness.tga
+ao: Textures_2K/black_marble_02_2k_height.tga
