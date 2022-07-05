@@ -2,65 +2,100 @@ mod argument_parser;
 use std::net::*;
 
 use argument_parser::ServerConfiguration;
-use shared_types::Serializeable;
 use std::error::Error;
 use shared_types::*;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{HashMap};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 
 #[cfg(test)]
 mod test;
 
-type ClientData = RemoteData<ClientCommandType>;
-type ClientBuffer = HashMap<SocketAddr, BTreeMap<CommandId, ClientData>>;
-
-/// Inserts `msg` into `cmd_buffer`
+/// The current state of the client
 /// 
-/// Requires `cmd_buffer` does not hold a ready command
+/// Cannot be created from multiple threads
 /// 
-/// If `cmd_buffer` already holds a command, the new command is inserted into the buffer
-fn insert_new_packet(packet_num: PacketNum, 
-    msg: &[u8], mut cmd_buffer: &mut ClientData) 
-{
-    match &mut cmd_buffer {
-        &mut ClientData::Buffering(buffer) => {
-            if buffer.contains_key(&packet_num) {
-                // Old command never received, new version of command coming in
-                *buffer = BTreeMap::new();
-            }
-            buffer.insert(packet_num, msg.to_vec());
-        },
-        _ => panic!("Msg already ready"),
-    }
+/// For implementing a state machine
+enum ClientState {
+    WaitingForAck,
+    WaitingForRequest,
 }
 
-fn recv_data(socket: &UdpSocket, data: &mut ClientBuffer) {
-    let mut buf = [0; MAX_DATAGRAM_SIZE];
-    if let Ok((amt, src)) = socket.recv_from(&mut buf) {
-        let msg = &buf[..amt];
-        let (cmd_id, packet_num) = get_cmd_id_and_packet_num(msg);
-        let client_data = data.entry(src).or_insert(BTreeMap::new());
-        let client_data_entry = client_data.entry(cmd_id)
-            .or_insert(ClientData::Buffering(BTreeMap::new()));
-        insert_new_packet(packet_num, msg, client_data_entry);
-        if client_data_entry.is_ready() {
-            let cmd = client_data.remove(&cmd_id).unwrap();
-            if let Ok(cmd) = cmd.to_ready() {
-                client_data.insert(cmd_id, cmd);
-            }
+/// The data for each client
+struct ClientData {
+    state: ClientState,
+    username: String,
+    id: u32,
+    last_msg_id: u32,
+}
+
+impl Default for ClientData {
+    fn default() -> Self {
+        use std::sync::atomic::AtomicU32;
+        static mut ID: AtomicU32 = AtomicU32::new(0);
+
+        // safe bc atomic
+        let id = unsafe { ID.fetch_add(1, Ordering::AcqRel) };
+        ClientData {
+            state: ClientState::WaitingForRequest,
+            username: String::new(),
+            id, last_msg_id: 0,
         }
     }
-    
 }
 
-fn run_game_server(config: ServerConfiguration) -> Result<(), Box<dyn Error>> {
-    let socket = UdpSocket::bind(("127.0.0.1", config.port))?;
-    let mut buf = [0; 1024];
-    loop {
-        let (amt, src) = socket.recv_from(&mut buf)?;
-        println!("Received {} bytes from {}", amt, src);
-        let response = format!("Hello {}!", src);
-        socket.send_to(response.as_bytes(), &src)?;
+/// The data for the server
+struct ServerState {
+    users: HashMap<SocketAddr, ClientData>,
+}
+
+impl Default for ServerState {
+    fn default() -> Self {
+        ServerState {
+            users: Default::default(),
+        }
     }
+}
+
+#[inline]
+fn respond_to_msg(msg: ClientCommandType, socket: &UdpSocket, 
+    addr: SocketAddr, mut state: ServerState) -> ServerState 
+{
+    use ClientCommandType::*;
+    use ClientState::*;
+    let mut user_state = state.users.entry(addr).or_insert(Default::default());
+    let response = match (msg, &mut user_state) {
+        (Login(username), user_state) => {
+            user_state.username = username;
+            user_state.state = WaitingForAck;
+            ServerCommandType::ReturnId(user_state.id)
+        }
+    };
+    if let Err(error) = send_data(socket, &addr, &response, user_state.last_msg_id) {
+        println!("Error sending data: {}", error);
+    } else {
+        user_state.last_msg_id += 1;
+    }
+    state
+}
+
+fn run_game_server(config: ServerConfiguration, stop_token: Arc<AtomicBool>) 
+    -> Result<(), Box<dyn Error>> 
+{
+    use std::time::Duration;
+    let socket = UdpSocket::bind(("127.0.0.1", config.port))?;
+    socket.set_read_timeout(Some(Duration::from_secs(3)))?;
+    let mut data : ClientBuffer<ClientCommandType> = ClientBuffer::new();
+    let mut state = ServerState::default();
+    while !stop_token.load(Ordering::SeqCst) {
+        state = match recv_data(&socket, &mut data) {
+            Some((cmd, src)) => {
+                clear_old_messages(&mut data, std::time::Duration::from_secs(10));
+                respond_to_msg(cmd, &socket, src, state)
+            },
+            None => state,
+        }
+    }
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -68,5 +103,5 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Starting server with config:\n{}", config);
 
-    run_game_server(config)
+    run_game_server(config, Arc::new(AtomicBool::new(false)))
 }

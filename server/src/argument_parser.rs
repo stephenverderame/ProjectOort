@@ -2,6 +2,8 @@ use std::env;
 use std::error::Error;
 use core::fmt::Display;
 
+pub const DEFAULT_PORT: u16 = 33200;
+
 #[derive(Debug)]
 pub struct ServerConfiguration {
     pub port: u16,
@@ -10,7 +12,7 @@ pub struct ServerConfiguration {
 impl Default for ServerConfiguration {
     fn default() -> Self {
         ServerConfiguration {
-            port: 33200,
+            port: DEFAULT_PORT,
         }
     }
 }

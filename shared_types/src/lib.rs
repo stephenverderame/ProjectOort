@@ -3,7 +3,8 @@
 use std::{error::Error};
 use itertools::{Itertools};
 use std::collections::BTreeMap;
-use std::net::{UdpSocket, SocketAddr};
+use std::net::{UdpSocket, SocketAddr, ToSocketAddrs};
+use std::cell::RefCell;
 
 pub const MAX_DATAGRAM_SIZE : usize = 1024;
 
@@ -54,6 +55,7 @@ pub enum ObjectType {
     Laser = 0, Ship, Asteroid, Any, Hook
 }
 
+/// A command that is sent from the client to the server
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ClientCommandType {
     Login(String)
@@ -142,8 +144,24 @@ fn dechunk_serialized_data(chunks: ChunkedMsg)
     Ok((res, last_cmd_id.unwrap(), last_msg_id.unwrap()))
 }
 
+/// A type that can be converted to a network message
 pub trait Serializeable {
+    /// Converts the object into a chunked message without the `END` token
+    /// 
+    /// `msg_id` - the message id of the message. Must be unique for each message, for
+    ///            each sender.
+    /// 
+    /// Fails if the object is not well-formed or violates invariants for the particular
+    ///     implementor of the trait.
     fn serialize(&self, msg_id: MsgId) -> Result<ChunkedMsg, Box<dyn Error>>;
+
+    /// Converts a chunked message without the `END` token into the object
+    /// 
+    /// Returns the object and its message id if its well-formed
+    /// 
+    /// Fails if `chunks` is missing packets, contains malformed packets, 
+    ///    contains packets of different commands or message ids, or its data
+    ///    cannot be deserialized as determined by the implementor of the trait.
     fn deserialize(chunks: ChunkedMsg) -> Result<(Self, MsgId), Box<dyn Error>>
         where Self: Sized;
 }
@@ -185,6 +203,7 @@ impl Serializeable for ClientCommandType {
 }
 
 
+/// Commands sent from the server to the client
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ServerCommandType {
     ReturnId(u32),
@@ -261,21 +280,26 @@ fn remove_end_chunk(mut chunks: ChunkedMsg) -> Result<ChunkedMsg, Box<dyn Error>
 /// 
 /// Requires `chunk` is a well-formed data chunk
 #[inline]
-pub fn get_cmd_id_and_packet_num(chunk: &[u8]) -> (u8, u8) {
-    (chunk[CHUNK_HEADER_SIZE], chunk[CHUNK_HEADER_SIZE + 1])
+pub fn get_cmd_ids_and_nums(chunk: &[u8]) -> (CommandId, MsgId, PacketNum) {
+    (chunk[CMD_ID_INDEX], 
+        u32::from_be_bytes(chunk[MSG_ID_INDEX .. MSG_ID_INDEX + 4].try_into().unwrap()), 
+        chunk[PKT_NM_INDEX])
 }
 
-pub fn send_data<T : Serializeable>(sock: &UdpSocket, addr: &SocketAddr, data: &T, msg_id: MsgId) 
+/// Sends a command to the specified socket
+/// 
+/// Adds an `END` token to the end of the data
+pub fn send_data<T : Serializeable, S : ToSocketAddrs>(sock: &UdpSocket, addr: S, data: &T, msg_id: MsgId) 
     -> Result<(), Box<dyn Error>> 
 {
     let chunks = add_end_chunk(data.serialize(msg_id)?);
     for (_, chunk) in chunks {
-        sock.send_to(&chunk, addr)?;
+        sock.send_to(&chunk, &addr)?;
     }
     Ok(())
 }
 
-/// A serizeable message fully or partially received from the socket
+/// A serizeable message that's fully or partially received from the socket
 pub enum RemoteData<T : Serializeable> {
     Buffering(ChunkedMsg),
     Ready(T),
@@ -289,7 +313,7 @@ impl<T : Serializeable> RemoteData<T> {
         use RemoteData::*;
         match self {
             Buffering(chunks) => {
-                let (cmd, _) = T::deserialize(chunks)?;
+                let (cmd, _) = T::deserialize(remove_end_chunk(chunks)?)?;
                 Ok(Ready(cmd))
             },
             Ready(_) => Ok(self),
@@ -308,6 +332,137 @@ impl<T : Serializeable> RemoteData<T> {
                         .is_some() && *last_pack_num as usize == msg.len() - 1
                 }).unwrap_or(false)
             },
+        }
+    }
+
+    /// Adds a new packet to a buffering message. If this new packet makes the buffering
+    /// message ready, converts the message to a ready message
+    /// 
+    /// Fails if the message is already ready or if the packet is too small
+    /// or if the packet number is a duplicate
+    pub fn add_packet(self, packet: Vec<u8>) -> Result<Self, Box<dyn Error>> {
+        use RemoteData::*;
+        match self {
+            Buffering(mut msg) if packet.len() >= CHUNK_METADATA_SIZE => {
+                let pk_id = packet[PKT_NM_INDEX];
+                if msg.contains_key(&pk_id) {
+                    Err("Duplicate packet")?
+                } else {
+                    msg.insert(pk_id, packet);
+                    let this = Buffering(msg);
+                    if this.is_ready() {
+                        Ok(this.to_ready()?)
+                    } else {
+                        Ok(this)
+                    }
+                }
+            },
+            Ready(_) => Err("Cannot add packet to ready message")?,
+            Buffering(_) => Err("Packet too small")?,
+        }
+    }
+}
+
+/// Encapsulates a `RemoteData<T>` and its last access time
+pub struct TimestampedRemoteData<T : Serializeable> {
+    pub data: RemoteData<T>,
+    last_access: std::time::Instant,
+}
+
+impl<T : Serializeable> Default for TimestampedRemoteData<T> {
+    fn default() -> Self {
+        TimestampedRemoteData {
+            data: RemoteData::Buffering(Default::default()),
+            last_access: std::time::Instant::now(),
+        }
+    }
+}
+
+impl<T : Serializeable> std::ops::Deref for TimestampedRemoteData<T> {
+    type Target = RemoteData<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.data
+    }
+}
+
+impl<T : Serializeable> std::ops::DerefMut for TimestampedRemoteData<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl<T : Serializeable> TimestampedRemoteData<T> {
+    pub fn from(data: RemoteData<T>) -> Self {
+        TimestampedRemoteData {
+            data,
+            last_access: std::time::Instant::now(),
+        }
+    }
+}
+
+impl<T : Serializeable> From<RemoteData<T>> for TimestampedRemoteData<T> {
+    fn from(data: RemoteData<T>) -> Self {
+        TimestampedRemoteData {
+            data,
+            last_access: std::time::Instant::now(),
+        }
+    }
+}
+
+pub type ClientData<T> = TimestampedRemoteData<T>;
+pub type ClientBuffer<T> = 
+    std::collections::HashMap<SocketAddr, BTreeMap<(CommandId, MsgId), ClientData<T>>>;
+
+/// Receives a single packet from `socket`. If the packet is well-formed,
+/// adds the packet to a buffering command. If the packet completes a buffering
+/// command, removes the buffering command and returns the deserialized command
+/// along with the sender address
+/// 
+/// The packet is dropped if it is malformed or the complete message cannot be deserialized
+pub fn recv_data<T : Serializeable>(socket: &UdpSocket, data: &mut ClientBuffer<T>) 
+    -> Option<(T, SocketAddr)> 
+{
+    use std::rc::Rc;
+    std::thread_local!(
+        static BUF : Rc<RefCell<[u8; MAX_DATAGRAM_SIZE]>> = Rc::new(RefCell::new([0; MAX_DATAGRAM_SIZE]))
+    );
+    if let Ok((amt, src)) = BUF.with(|buf| socket.recv_from(&mut *buf.borrow_mut())) {
+        if amt > CHUNK_METADATA_SIZE {
+            let msg = BUF.with(|buf| buf.clone());
+            let msg = msg.borrow();
+            let (cmd_id, msg_id, _pn) = get_cmd_ids_and_nums(&*msg);
+            let client_data = data.entry(src).or_insert(BTreeMap::new());
+            let id = (cmd_id, msg_id);
+            
+            if let Ok(new_data) = client_data.remove(&id).unwrap_or_default()
+                .data.add_packet(msg[..amt].to_vec()) 
+            {
+                match new_data {
+                    new_data @ RemoteData::Buffering(_) => {
+                        client_data.insert(id, new_data.into());
+                    },
+                    RemoteData::Ready(data) => 
+                        return Some((data, src)),
+                }
+            }
+        } 
+    }
+    None
+    
+}
+
+/// Removes any buffering message whose last access time is older than `timeout`
+pub fn clear_old_messages<T : Serializeable>(data: &mut ClientBuffer<T>, timeout: std::time::Duration) {
+    let now = std::time::Instant::now();
+    for (_, client_data) in data.iter_mut() {
+        let mut dead_ids = Vec::new();
+        for (id, client_data) in client_data.iter() {
+            if now.duration_since(client_data.last_access) > timeout {
+                dead_ids.push(*id);
+            }
+        }
+        for dead_id in dead_ids {
+            client_data.remove(&dead_id);
         }
     }
 }
