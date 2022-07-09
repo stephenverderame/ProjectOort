@@ -88,11 +88,11 @@ fn run_game_server(config: ServerConfiguration, stop_token: Arc<AtomicBool>)
     let mut state = ServerState::default();
     while !stop_token.load(Ordering::SeqCst) {
         state = match recv_data(&socket, &mut data) {
-            Some((cmd, src)) => {
+            Ok(Some((cmd, src))) => {
                 clear_old_messages(&mut data, std::time::Duration::from_secs(10));
                 respond_to_msg(cmd, &socket, src, state)
             },
-            None => state,
+            _ => state,
         }
     }
     Ok(())

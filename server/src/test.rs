@@ -56,7 +56,7 @@ fn login() {
             let _ = send_data(&sock, server_addr,  &cmd, 0);
             //println!("Client {} sent", id);
             let mut data : ClientBuffer<ServerCommandType> = Default::default();
-            if let Some((response, _)) = recv_data(&sock, &mut data) {
+            if let Ok(Some((response, _))) = recv_data(&sock, &mut data) {
                 #[allow(irrefutable_let_patterns)]
                 if let ServerCommandType::ReturnId(_) = response { }
                 else { panic!("Unexpected response: {:?}", response); }
@@ -64,6 +64,45 @@ fn login() {
                 panic!("Unexpected None");
             }
             //println!("Client {} got \"{}\"", id, String::from_utf8_lossy(&buf[..amt]));
+        }
+    };
+    let c1 = thread::spawn(make_client(1));
+    let c2 = thread::spawn(make_client(2));
+    let c3 = thread::spawn(make_client(3));
+    c1.join().unwrap();
+    c2.join().unwrap();
+    c3.join().unwrap();
+    make_client(4)();
+    done.store(true, Ordering::SeqCst);
+    server.join().unwrap();
+
+
+
+}
+
+#[test]
+fn login_important() {
+    let done = Arc::new(AtomicBool::new(false));
+    let d2 = done.clone();
+    let server = thread::spawn(move || {
+        let _ = run_game_server(Default::default(), d2);
+    });
+    let make_client = |id : u16| {
+        assert!(id > 0);
+        move || {
+            let client_addr = ("127.0.0.1", DEFAULT_PORT + id);
+            let server_addr = ("127.0.0.1", DEFAULT_PORT);
+            let sock = UdpSocket::bind(client_addr).unwrap();
+            sock.connect(server_addr).unwrap();
+            let cmd = ClientCommandType::Login(format!("Client_{}", id));
+            let mut data : ClientBuffer<ServerCommandType> = Default::default();
+            if let Ok(resp) = send_important(&sock, &cmd, 0, &mut data, Default::default()) {
+                #[allow(irrefutable_let_patterns)]
+                if let ServerCommandType::ReturnId(_) = resp { }
+                else { panic!("Unexpected response: {:?}", resp); }
+            } else {
+                panic!("Unexpected None");
+            }
         }
     };
     let c1 = thread::spawn(make_client(1));
