@@ -33,6 +33,8 @@ pub use serializeable::Serializeable;
 pub mod remote;
 pub use remote::*;
 
+pub mod game_controller;
+
 #[cfg(test)]
 mod test;
 
@@ -55,21 +57,57 @@ mod test;
  The packet_number is the order of the chunked packet in the message 
 */
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[repr(u8)]
 pub enum ObjectType {
     Laser = 0, Ship, Asteroid, Any, Hook
 }
 
+#[derive(Copy, Clone, Debug)]
+#[repr(C)]
+pub struct RemoteObject {
+    pub mat: [[f64; 4]; 4],
+    pub id: u32,
+    pub typ: ObjectType,
+}
+
+const REMOTE_OBJECT_SIZE : usize = 133;
+
+impl RemoteObject {
+    #[inline(always)]
+    fn base_eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.typ == other.typ
+    }
+}
+
+impl PartialEq for RemoteObject {
+    #[cfg(test)]
+    fn eq(&self, other: &Self) -> bool {
+        self.base_eq(other) &&
+        unsafe { std::mem::transmute_copy::<_, [u64; 16]>(&self.mat) } == 
+        unsafe { std::mem::transmute_copy::<_, [u64; 16]>(&other.mat) }
+    }
+
+    #[cfg(not(test))]
+    fn eq(&self, other: &Self) -> bool {
+        self.base_eq(other)
+    }
+}
+
+impl Eq for RemoteObject {}
+
+
 /// A command that is sent from the client to the server
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum ClientCommandType {
-    Login(String)
+    Login(String),
+    Update(Vec<RemoteObject>),
 }
 
 
 /// Commands sent from the server to the client
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ServerCommandType {
     ReturnId(u32),
+    Update(Vec<RemoteObject>),
 }

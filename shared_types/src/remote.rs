@@ -95,7 +95,7 @@ impl<T : Serializeable> RemoteData<T> {
     /// 
     /// Fails if the message is already ready or if the packet is too small
     /// or if the packet number is a duplicate
-    pub fn add_packet(self, packet: Vec<u8>) -> Result<Self, Box<dyn Error>> {
+    fn add_packet(self, packet: Vec<u8>) -> Result<Self, Box<dyn Error>> {
         use RemoteData::*;
         match self {
             Buffering(mut msg) if packet.len() >= CHUNK_METADATA_SIZE => {
@@ -168,7 +168,7 @@ impl<T : Serializeable> From<RemoteData<T>> for TimestampedRemoteData<T> {
 /// 
 /// Requires `chunk` is a well-formed data chunk
 #[inline]
-pub fn get_cmd_ids_and_nums(chunk: &[u8]) -> (CommandId, MsgId, PacketNum) {
+fn get_cmd_ids_and_nums(chunk: &[u8]) -> (CommandId, MsgId, PacketNum) {
     (chunk[CMD_ID_INDEX], 
         u32::from_be_bytes(chunk[MSG_ID_INDEX .. MSG_ID_INDEX + 4].try_into().unwrap()), 
         chunk[PKT_NM_INDEX])
@@ -185,6 +185,7 @@ pub type ClientBuffer<T> =
 /// along with the sender address
 /// 
 /// The packet is dropped if it is malformed or the complete message cannot be deserialized
+#[inline]
 fn recv_data_helper<T : Serializeable, F>(data: &mut ClientBuffer<T>, recv_func: F) 
     -> Result<Option<(T, SocketAddr)>, Box<dyn Error>>
     where F : Fn(&std::rc::Rc<RefCell<[u8; MAX_DATAGRAM_SIZE]>>) -> std::io::Result<(usize, SocketAddr)>
@@ -290,15 +291,11 @@ impl Default for ImportantArguments {
     }
 }
 
-/// Sends a packet to `socket`, and waits for a response
-/// Utilizes `args` to determine the timeouts and max send attempts
-/// 
-/// Requires `socket` is a connected socket and blocking
-pub fn send_important<S : Serializeable, R : Serializeable>(sock: &UdpSocket,
-    send_data: &S, send_msg_id: MsgId, recv_data: &mut ClientBuffer<R>, args: ImportantArguments) 
-    -> Result<R, Box<dyn Error>> 
+/// Helper for `send_important`
+#[inline]
+fn send_with_retries(chunks: ChunkedMsg, args: &ImportantArguments, sock: &UdpSocket) 
+    -> Result<(), Box<dyn Error>> 
 {
-    let chunks = add_end_chunk(send_data.serialize(send_msg_id)?);
     let mut total_send_attempts = 0;
     for (_, chunk) in chunks {
         let mut send_attempts = 0;
@@ -312,6 +309,14 @@ pub fn send_important<S : Serializeable, R : Serializeable>(sock: &UdpSocket,
             total_send_attempts += 1;
         }
     }
+    Ok(())
+}
+
+/// Helper for `send_important`
+#[inline]
+fn recv_with_retries<R : Serializeable>(sock: &UdpSocket, args: &ImportantArguments, 
+    recv_data: &mut ClientBuffer<R>) -> Result<R, Box<dyn Error>>
+{
     let mut recv_attempts = 0;
     let old_timeout = sock.read_timeout();
     let _ = sock.set_read_timeout(Some(args.trial_recv_timeout));
@@ -329,4 +334,17 @@ pub fn send_important<S : Serializeable, R : Serializeable>(sock: &UdpSocket,
             }
         }
     }
+}
+
+/// Sends a packet to `socket`, and waits for a response
+/// Utilizes `args` to determine the timeouts and max send attempts
+/// 
+/// Requires `socket` is a connected socket and blocking
+pub fn send_important<S : Serializeable, R : Serializeable>(sock: &UdpSocket,
+    send_data: &S, send_msg_id: MsgId, recv_data: &mut ClientBuffer<R>, args: ImportantArguments) 
+    -> Result<R, Box<dyn Error>> 
+{
+    let chunks = add_end_chunk(send_data.serialize(send_msg_id)?);
+    send_with_retries(chunks, &args, sock)?;
+    recv_with_retries(sock, &args, recv_data)
 }

@@ -26,6 +26,7 @@ struct ClientData {
     username: String,
     id: u32,
     last_msg_id: u32,
+    client_objects: Vec<RemoteObject>,
 }
 
 impl Default for ClientData {
@@ -39,6 +40,7 @@ impl Default for ClientData {
             state: ClientState::WaitingForRequest,
             username: String::new(),
             id, last_msg_id: 0,
+            client_objects: Vec::new(),
         }
     }
 }
@@ -46,6 +48,14 @@ impl Default for ClientData {
 /// The data for the server
 struct ServerState {
     users: HashMap<SocketAddr, ClientData>,
+}
+
+impl ServerState {
+    fn get_all_objects(&self, requesting_client: &SocketAddr) -> Vec<RemoteObject> {
+        self.users.iter().filter(|(client_addr, _)| requesting_client != *client_addr)
+            .flat_map(|(_, client_data)| client_data.client_objects.iter())
+            .map(|e| *e).collect()
+    }
 }
 
 impl Default for ServerState {
@@ -61,19 +71,22 @@ fn respond_to_msg(msg: ClientCommandType, socket: &UdpSocket,
     addr: SocketAddr, mut state: ServerState) -> ServerState 
 {
     use ClientCommandType::*;
-    use ClientState::*;
     let mut user_state = state.users.entry(addr).or_insert(Default::default());
-    let response = match (msg, &mut user_state) {
+    let last_msg_id = user_state.last_msg_id;
+    user_state.last_msg_id += 1;
+    let response = match (msg, user_state) {
         (Login(username), user_state) => {
             user_state.username = username;
-            user_state.state = WaitingForAck;
+            //user_state.state = WaitingForAck;
             ServerCommandType::ReturnId(user_state.id)
-        }
+        },
+        (Update(objects), user_state) => {
+            user_state.client_objects = objects;
+            ServerCommandType::Update(state.get_all_objects(&addr))
+        },
     };
-    if let Err(error) = send_data(socket, &addr, &response, user_state.last_msg_id) {
+    if let Err(error) = send_data(socket, &addr, &response, last_msg_id) {
         println!("Error sending data: {}", error);
-    } else {
-        user_state.last_msg_id += 1;
     }
     state
 }

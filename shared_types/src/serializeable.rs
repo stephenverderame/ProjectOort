@@ -106,10 +106,56 @@ fn dechunk_serialized_data(chunks: ChunkedMsg)
     Ok((res, last_cmd_id.unwrap(), last_msg_id.unwrap()))
 }
 
+fn serialize_objects(objects: &[RemoteObject]) -> (Vec<u8>, u8) {
+    (objects.iter().flat_map(|obj|
+        obj.mat.iter().flatten().flat_map(|flt| flt.to_be_bytes())
+        .chain(obj.id.to_be_bytes()).chain([obj.typ as u8])
+    ).collect(), b'U')
+}
+
+fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>> {
+    if data.len() % REMOTE_OBJECT_SIZE != 0 {
+        return Err("Invalid update length")?;
+    } else {
+        let objs = data.into_iter().chunks(REMOTE_OBJECT_SIZE).into_iter()
+            .map(|chunk| {
+                let vec : Vec<_> = chunk.collect();
+                const MAT_SIZE : usize = std::mem::size_of::<[[f64; 4]; 4]>();
+                let floats = vec.iter().map(|e| *e).take(MAT_SIZE)
+                    .chunks(std::mem::size_of::<f64>()).into_iter()
+                    .map(|flt| {
+                        let flt_bytes : Vec<u8> = flt.collect();
+                        match flt_bytes.try_into() {
+                            Ok(flt) => Ok(f64::from_be_bytes(flt)),
+                            Err(_) => Err("Could not parse bytes to f64"),
+                        }
+                    }).collect::<Result<Vec<f64>, _>>()?;
+                    
+                let mat : [[f64; 4]; 4] = floats.chunks(4).into_iter().map(|row| {
+                    if row.len() != 4 {
+                        Err("Invalid matrix row length")
+                    } else {
+                        Ok([row[0], row[1], row[2], row[3]])
+                    }
+                }).collect::<Result<Vec<_>, _>>()?.try_into()
+                    .map_err(|_| "Invalid # matrix rows")?;
+                let id = u32::from_be_bytes(vec[MAT_SIZE .. MAT_SIZE + 4].try_into()?);
+                // safe bc ObjectType has repr(u8)
+                let typ = unsafe { *(&vec[MAT_SIZE + 4] as *const u8 as *const ObjectType) };
+                Ok(RemoteObject {
+                    mat,
+                    id,
+                    typ,
+                })
+            }).collect::<Result<Vec<_>, Box<dyn Error>>>()?;
+        Ok(objs)
+    }
+}
+
 
 impl Serializeable for ClientCommandType {
     fn serialize(&self, msg_id: MsgId) -> Result<ChunkedMsg, Box<dyn Error>> {
-        let (cmd_id, data) = match self {
+        let (data, cmd_id) = match self {
             ClientCommandType::Login(name) => {
                 if name.len() > 255 {
                     return Err("Login name too long")?;
@@ -117,8 +163,9 @@ impl Serializeable for ClientCommandType {
                 let mut data = Vec::new();
                 data.push(name.len() as u8);
                 data.extend(name.bytes());
-                (b'L', data)
+                (data, b'L')
             },
+            ClientCommandType::Update(objects) => serialize_objects(objects),
         };
         
         Ok(chunk_serialized_data(cmd_id, data.into_iter(), msg_id))
@@ -138,6 +185,7 @@ impl Serializeable for ClientCommandType {
                 let name = std::str::from_utf8(&data[1..])?;
                 Ok((ClientCommandType::Login(name.to_string()), msg_id))
             },
+            b'U' => Ok((ClientCommandType::Update(deserialize_update(data)?), msg_id)),
             _ => Err("Unknown command")?,
         }
     }
@@ -149,6 +197,9 @@ impl Serializeable for ServerCommandType {
             ServerCommandType::ReturnId(id) => {
                 (id.to_be_bytes().to_vec(), b'I')
             },
+            ServerCommandType::Update(objects) => {
+                serialize_objects(objects)
+            }
         };
         Ok(chunk_serialized_data(cmd_id, data.into_iter(), msg_id))
     }
@@ -163,6 +214,7 @@ impl Serializeable for ServerCommandType {
                 let id = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                 Ok((ServerCommandType::ReturnId(id), msg_id))
             },
+            b'U' => Ok((ServerCommandType::Update(deserialize_update(data)?), msg_id)),
             _ => Err("Unknown command")?,
         }
     }

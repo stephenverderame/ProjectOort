@@ -16,6 +16,44 @@ fn sct_serialize_deserialize() {
     let chunks = sct.serialize(msg_id).unwrap();
     let sct2 = ServerCommandType::deserialize(chunks).unwrap();
     assert_eq!((sct, msg_id), sct2);
+
+    let objs = vec![
+        RemoteObject {
+            mat: [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+            id: 0x12345678,
+            typ: ObjectType::Asteroid,
+        },
+        RemoteObject {
+            mat: [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0]],
+            id: 0x12345679,
+            typ: ObjectType::Ship,
+        },
+    ];
+    let sct = ServerCommandType::Update(objs);
+    let msg_id = 0x2A458;
+    let chunks = sct.serialize(msg_id).unwrap();
+    let sct2 = ServerCommandType::deserialize(chunks).unwrap();
+    assert_eq!((sct, msg_id), sct2);
+
+    let mut objs = Vec::new();
+    for i in 0 .. 20 {
+        let idx = i as f64;
+        objs.push(RemoteObject {
+            mat: [[1.0 * idx, 2.0 * idx, 3.0 * idx, 4.0 * idx], 
+                [-5.0 * idx, 6.0 * idx, 7.0 * idx, 8.0 * idx], 
+                [9.0, 10.0, 11.0, 12.0], 
+                [13.0 * idx, 14.0 * idx, 15.0 * idx, 16.0 * idx]],
+            id: 0x12345678 + i as u32,
+            typ: ObjectType::Asteroid,
+        });
+    }
+
+    let sct = ServerCommandType::Update(objs);
+    let msg_id = 0x2A458;
+    let chunks = sct.serialize(msg_id).unwrap();
+    let sct2 = ServerCommandType::deserialize(chunks).unwrap();
+    assert_eq!((sct, msg_id), sct2);
+
 }
 
 #[test]
