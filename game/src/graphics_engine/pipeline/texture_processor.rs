@@ -2,6 +2,7 @@ use super::*;
 use Vertex2D as Vertex;
 use glium::framebuffer::ToColorAttachment;
 use crate::cg_support::ssbo;
+use std::pin::Pin;
 
 /// Gets the vertex and index buffer for a rectangle
 fn get_rect_vbo_ebo<F : glium::backend::Facade>(facade: &F) 
@@ -24,7 +25,7 @@ fn get_rect_vbo_ebo<F : glium::backend::Facade>(facade: &F)
 /// ### Outputs
 /// 2D RGBA F16 texture
 pub struct ExtractBrightProcessor {
-    bright_color_tex: Box<glium::texture::Texture2d>,
+    bright_color_tex: Pin<Box<glium::texture::Texture2d>>,
     bright_color_fbo: framebuffer::SimpleFrameBuffer<'static>,
     vbo: VertexBuffer<Vertex>,
     ebo: IndexBuffer<u16>,
@@ -32,7 +33,7 @@ pub struct ExtractBrightProcessor {
 
 impl ExtractBrightProcessor {
     pub fn new<F : backend::Facade>(facade: &F, width: u32, height: u32) -> ExtractBrightProcessor {
-        let bright_color_tex = Box::new(glium::texture::Texture2d::empty_with_format(facade,
+        let bright_color_tex = Box::pin(glium::texture::Texture2d::empty_with_format(facade,
             glium::texture::UncompressedFloatFormat::F16F16F16F16, glium::texture::MipmapsOption::NoMipmap,
             width, height).unwrap());
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
@@ -79,7 +80,7 @@ impl TextureProcessor for ExtractBrightProcessor {
 /// ### Outputs
 /// 2D RGBA F16 Texture
 pub struct SepConvProcessor {
-    ping_pong_tex: [Box<texture::Texture2d>; 2],
+    ping_pong_tex: [Pin<Box<texture::Texture2d>>; 2],
     ping_pong_fbo: [framebuffer::SimpleFrameBuffer<'static>; 2],
     iterations: usize,
     ebo: IndexBuffer<u16>,
@@ -91,23 +92,26 @@ impl SepConvProcessor {
     /// for `iterations` performs a multiple of `1/2` convolutions
     pub fn new<F : backend::Facade>(width: u32, height: u32, iterations: usize, facade: &F) -> SepConvProcessor {
         use std::mem::MaybeUninit;
-        let mut ping_pong_tex: [MaybeUninit<Box<texture::Texture2d>>; 2] = unsafe { MaybeUninit::uninit().assume_init() };
-        let mut ping_pong_fbo: [MaybeUninit<framebuffer::SimpleFrameBuffer<'static>>; 2] = unsafe { MaybeUninit::uninit().assume_init() };
+        const UNINIT_TEX : MaybeUninit<Pin<Box<texture::Texture2d>>> = MaybeUninit::uninit();
+        const UNINIT_FBO : MaybeUninit<framebuffer::SimpleFrameBuffer<'static>> = MaybeUninit::uninit();
+        let mut ping_pong_tex = [UNINIT_TEX; 2];
+        let mut ping_pong_fbo = [UNINIT_FBO; 2];
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
         for i in 0 .. 2 {
-            let tex_box = Box::new(glium::texture::Texture2d::empty_with_format(facade,
+            let tex_box = Box::pin(glium::texture::Texture2d::empty_with_format(facade,
                 glium::texture::UncompressedFloatFormat::F16F16F16F16, glium::texture::MipmapsOption::NoMipmap,
                 width, height).unwrap());
             let tex_ptr = &*tex_box as *const texture::Texture2d;
+            ping_pong_tex[i].write(tex_box);
             unsafe {
-                ping_pong_tex[i].write(tex_box);
                 ping_pong_fbo[i].write(glium::framebuffer::SimpleFrameBuffer::new(facade, &*tex_ptr).unwrap());
             }
         }
         unsafe {
             SepConvProcessor {
-                iterations, ping_pong_fbo: std::mem::transmute::<_, [framebuffer::SimpleFrameBuffer<'static>; 2]>(ping_pong_fbo), 
-                ping_pong_tex: std::mem::transmute::<_, [Box<texture::Texture2d>; 2]>(ping_pong_tex),
+                iterations, 
+                ping_pong_fbo: std::mem::transmute::<_, [framebuffer::SimpleFrameBuffer<'static>; 2]>(ping_pong_fbo), 
+                ping_pong_tex: std::mem::transmute::<_, [Pin<Box<texture::Texture2d>>; 2]>(ping_pong_tex),
                 vbo, ebo
             }
         }
@@ -160,7 +164,7 @@ pub struct CompositorProcessor
 {
     vbo: VertexBuffer<Vertex>,
     ebo: IndexBuffer<u16>,
-    tex: Box<texture::Texture2d>,
+    tex: Pin<Box<texture::Texture2d>>,
     fbo: framebuffer::SimpleFrameBuffer<'static>,
     mode: shader::BlendFn,
 }
@@ -175,7 +179,7 @@ impl CompositorProcessor
         mode: shader::BlendFn, facade: &Fac) -> CompositorProcessor 
     {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
-        let tex = Box::new(glium::texture::Texture2d::empty_with_format(facade,
+        let tex = Box::pin(glium::texture::Texture2d::empty_with_format(facade,
             glium::texture::UncompressedFloatFormat::F16F16F16F16, glium::texture::MipmapsOption::NoMipmap,
             width, height).unwrap());
         

@@ -7,6 +7,7 @@ use shader::PipelineCache;
 use super::*;
 use crate::cg_support::ssbo;
 use super::super::camera;
+use std::pin::*;
 
 /// RenderTarget which renders to an MSAA color and depth buffer
 /// 
@@ -14,20 +15,20 @@ use super::super::camera;
 /// 2D RGBA F16 texture with multisampling already resolved
 pub struct MsaaRenderTarget {
     fbo: framebuffer::SimpleFrameBuffer<'static>,
-    _tex: Box<texture::Texture2dMultisample>,
-    _depth_tex: Box<texture::DepthTexture2dMultisample>,
+    _tex: Pin<Box<texture::Texture2dMultisample>>,
+    _depth_tex: Pin<Box<texture::DepthTexture2dMultisample>>,
     out_fbo: framebuffer::SimpleFrameBuffer<'static>,
-    out_tex: Box<texture::Texture2d>,
+    out_tex: Pin<Box<texture::Texture2d>>,
     width: u32,
     height: u32,
 }
 
 impl MsaaRenderTarget {
     pub fn new<F : glium::backend::Facade>(samples: u32, width: u32, height: u32, facade: &F) -> MsaaRenderTarget {
-        let _depth_tex = Box::new(glium::texture::DepthTexture2dMultisample::empty(facade, width, height, samples).unwrap());
-        let _tex = Box::new(glium::texture::Texture2dMultisample::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16F16,
-            glium::texture::MipmapsOption::NoMipmap, width, height, samples).unwrap());
-        let out_tex = Box::new(glium::texture::Texture2d::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16F16,
+        let _depth_tex = Box::pin(glium::texture::DepthTexture2dMultisample::empty(facade, width, height, samples).unwrap());
+        let _tex = Box::pin(glium::texture::Texture2dMultisample::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16F16,
+                    glium::texture::MipmapsOption::NoMipmap, width, height, samples).unwrap());
+        let out_tex = Box::pin(glium::texture::Texture2d::empty_with_format(facade, glium::texture::UncompressedFloatFormat::F16F16F16F16,
             glium::texture::MipmapsOption::NoMipmap, width, height).unwrap());
         let ms_tex = &*_tex as *const glium::texture::Texture2dMultisample;
         let rbo_ptr = &*_depth_tex as *const glium::texture::DepthTexture2dMultisample;
@@ -74,10 +75,10 @@ impl RenderTarget for MsaaRenderTarget {
 /// If a custom view getter is specified, then returns the depth texture with 
 /// the used viewer's viewproj matrix
 pub struct DepthRenderTarget {
-    depth_tex: Box<texture::DepthTexture2d>,
+    depth_tex: Pin<Box<texture::DepthTexture2d>>,
     main_fbo: framebuffer::SimpleFrameBuffer<'static>,
     trans_fbo: Option<(framebuffer::SimpleFrameBuffer<'static>,
-        Box<texture::DepthTexture2d>, Box<texture::Texture2d>)>,
+        Pin<Box<texture::DepthTexture2d>>, Pin<Box<texture::Texture2d>>)>,
     render_cascades: bool,
 }
 
@@ -117,9 +118,9 @@ impl DepthRenderTarget {
         Self::make(width, height, transparency, true)
     }
 
-    fn get_fbo_rbo<'b>(width: u32, height: u32) -> (framebuffer::SimpleFrameBuffer<'b>, Box<texture::DepthTexture2d>) {
+    fn get_fbo_rbo<'b>(width: u32, height: u32) -> (framebuffer::SimpleFrameBuffer<'b>, Pin<Box<texture::DepthTexture2d>>) {
         let ctx = super::super::get_active_ctx();
-        let rbo = Box::new(texture::DepthTexture2d::empty_with_format(&*ctx.ctx.borrow(), texture::DepthFormat::F32, 
+        let rbo = Box::pin(texture::DepthTexture2d::empty_with_format(&*ctx.ctx.borrow(), texture::DepthFormat::F32, 
             texture::MipmapsOption::NoMipmap, width, height).unwrap());
         let rbo_ptr = &*rbo as *const texture::DepthTexture2d;
         unsafe {
@@ -129,12 +130,12 @@ impl DepthRenderTarget {
     }
 
     fn get_tex_fbo_rbo<'b>(width: u32, height: u32) -> (framebuffer::SimpleFrameBuffer<'b>, 
-        Box<texture::DepthTexture2d>, Box<texture::Texture2d>)
+        Pin<Box<texture::DepthTexture2d>>, Pin<Box<texture::Texture2d>>)
     {
         let ctx = super::super::get_active_ctx();
-        let rbo = Box::new(texture::DepthTexture2d::empty_with_format(&*ctx.ctx.borrow(), texture::DepthFormat::F32, 
+        let rbo = Box::pin(texture::DepthTexture2d::empty_with_format(&*ctx.ctx.borrow(), texture::DepthFormat::F32, 
             texture::MipmapsOption::NoMipmap, width, height).unwrap());
-        let tex = Box::new(texture::Texture2d::empty_with_format(&*ctx.ctx.borrow(), 
+        let tex = Box::pin(texture::Texture2d::empty_with_format(&*ctx.ctx.borrow(), 
             texture::UncompressedFloatFormat::F16,
             texture::MipmapsOption::NoMipmap, width, height).unwrap());
         let tex_ptr = &*tex as *const texture::Texture2d;
@@ -239,8 +240,8 @@ impl CubemapRenderBase {
 /// F16 RGB cubemap
 pub struct CubemapRenderTarget {
     cubemap: CubemapRenderBase,
-    cbo_tex: Box<texture::Cubemap>,
-    _depth_buffer: Box<texture::DepthCubemap>,
+    cbo_tex: Pin<Box<texture::Cubemap>>,
+    _depth_buffer: Pin<Box<texture::DepthCubemap>>,
     _size: u32,
     pass_type: RenderPassType,
     get_trans_id: Option<Box<dyn Fn() -> u32>>,
@@ -258,10 +259,10 @@ impl CubemapRenderTarget {
         get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>, facade: &F) 
         -> CubemapRenderTarget 
     {
-        let _depth_buffer = Box::new(texture::DepthCubemap::empty_with_format(facade,
+        let _depth_buffer = Box::pin(texture::DepthCubemap::empty_with_format(facade,
             texture::DepthFormat::I24, texture::MipmapsOption::NoMipmap,
             size).unwrap());
-        let cbo_tex = Box::new(texture::Cubemap::empty_with_format(facade, 
+        let cbo_tex = Box::pin(texture::Cubemap::empty_with_format(facade, 
             texture::UncompressedFloatFormat::F16F16F16,
             texture::MipmapsOption::NoMipmap, size).unwrap());
         let color_ptr = &*cbo_tex as *const texture::Cubemap;
