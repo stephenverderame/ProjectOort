@@ -6,21 +6,22 @@ use std::collections::BTreeMap;
 use std::net::{UdpSocket, SocketAddr, ToSocketAddrs};
 use std::cell::RefCell;
 
-pub const MAX_DATAGRAM_SIZE : usize = 1024;
+const MAX_DATAGRAM_SIZE : usize = 1024;
 
-pub const CHUNK_HEADER : [u8; 1] = [b'S'];
-pub const CHUNK_HEADER_SIZE : usize = CHUNK_HEADER.len();
+const CHUNK_HEADER : [u8; 1] = [b'S'];
+const CHUNK_HEADER_SIZE : usize = CHUNK_HEADER.len();
 
-pub const CMD_ID_INDEX : usize = CHUNK_HEADER_SIZE;
-pub const MSG_ID_INDEX : usize = CMD_ID_INDEX + 1;
-pub const PKT_NM_INDEX : usize = MSG_ID_INDEX + 4;
+const CMD_ID_INDEX : usize = CHUNK_HEADER_SIZE;
+const MSG_ID_INDEX : usize = CMD_ID_INDEX + 1;
+const PKT_NM_INDEX : usize = MSG_ID_INDEX + 4;
 
-pub const CHUNK_TITLE_SIZE : usize = CHUNK_HEADER_SIZE + 6;
+const CHUNK_TITLE_SIZE : usize = CHUNK_HEADER_SIZE + 6;
 
-pub const CHUNK_FOOTER : [u8; 1] = [b'\n'];
-pub const CHUNK_FOOTER_SIZE : usize = CHUNK_FOOTER.len();
+const CHUNK_FOOTER : [u8; 1] = [b'\n'];
+const CHUNK_FOOTER_SIZE : usize = CHUNK_FOOTER.len();
 
-pub const CHUNK_METADATA_SIZE : usize = CHUNK_TITLE_SIZE + CHUNK_FOOTER_SIZE;
+
+const CHUNK_METADATA_SIZE : usize = CHUNK_TITLE_SIZE + CHUNK_FOOTER_SIZE;
 
 pub type PacketNum = u8;
 pub type CommandId = u8;
@@ -63,6 +64,30 @@ pub enum ObjectType {
     Laser = 0, Ship, Asteroid, Any, Hook
 }
 
+impl TryFrom<u8> for ObjectType {
+    type Error = String;
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
+        match val {
+            0 => Ok(ObjectType::Laser),
+            1 => Ok(ObjectType::Ship),
+            2 => Ok(ObjectType::Asteroid),
+            3 => Ok(ObjectType::Any),
+            4 => Ok(ObjectType::Hook),
+            _ => Err(format!("Invalid object type byte representation: {}", val))
+        }
+    }
+}
+
+impl ObjectType {
+    /// Returns the byte representation of the object type
+    /// 
+    /// Requires `val` is a valid representation for an `ObjectType`
+    /// Undefined behavior if this condition is not met
+    pub unsafe fn from_unchecked(val: u8) -> Self {
+        std::mem::transmute(val)
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct RemoteObject {
@@ -71,6 +96,9 @@ pub struct RemoteObject {
     pub typ: ObjectType,
 }
 
+/// The packed size for a RemoteObject
+/// 
+/// This is the amount of bytes sent over the network for a RemoteObject
 const REMOTE_OBJECT_SIZE : usize = 133;
 
 impl RemoteObject {

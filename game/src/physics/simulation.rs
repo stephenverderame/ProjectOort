@@ -88,7 +88,9 @@ pub struct Simulation<'a, 'b, T> {
     on_hit: Cell<Option<Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, 
         &HitData, &BaseRigidBody) + 'a>>>,
     do_resolve: Cell<Option<Box<dyn Fn(&RigidBody<T>, 
-        &RigidBody<T>, &HitData) -> bool + 'b>>>
+        &RigidBody<T>, &HitData) -> bool + 'b>>>,
+    scene_size: f64,
+    scene_center: Point3<f64>,
 }
 
 /// Inserts any uninserted objects into the octree
@@ -176,6 +178,85 @@ fn resolve_collisions<T>(objects: &mut [&mut RigidBody<T>],
     }
 }
 
+type HitCb<'a, T> = Option<Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, &HitData, &BaseRigidBody) + 'a>>;
+
+/// Keeps the centers of all objects within the scene bounds specified by the center
+/// and half width of the scene in each dimension
+/// 
+/// If a rigid body is moved to stay within the scene, calls `on_hit` with the rigid body
+fn apply_bounds<'a, T>(objs: &mut [&mut RigidBody<T>], 
+    scene_size: f64, scene_center: Point3<f64>, player_idx: usize, on_hit: &mut Cell<HitCb<'a, T>>)
+{
+    let objs_len = objs.len();
+    // safe bc player_idx is an index in objs
+    let player_ptr = unsafe { objs.as_ptr().add(player_idx) };
+    for (obj, obj_idx) in objs.iter_mut().zip(0 .. objs_len) {
+        let p = obj.base.center();
+        let mut hit = false;
+        let mut hit_data = HitData {
+            pos_norm_a: (p, vec3(0., 0., 0.)),
+            pos_norm_b: (p, vec3(0., 0., 0.))
+        };
+        if p.x < scene_center.x - scene_size && obj.base.velocity.x < 0. {
+            hit = true;
+            let diff = scene_center.x - scene_size - p.x;
+            obj.base.velocity += vec3(diff, 0., 0.);
+            hit_data.pos_norm_a.1.x += diff;
+            hit_data.pos_norm_b.1.x += diff;
+        } if p.x > scene_center.x + scene_size && obj.base.velocity.x > 0. {
+            hit = true;
+            let diff = scene_center.x + scene_size - p.x;
+            obj.base.velocity += vec3(diff, 0., 0.);
+            hit_data.pos_norm_a.1.x += diff;
+            hit_data.pos_norm_b.1.x += diff;
+        } if p.y < scene_center.y - scene_size && obj.base.velocity.y < 0. {
+            hit = true;
+            let diff = scene_center.y - scene_size - p.y;
+            obj.base.velocity += vec3(0., diff, 0.);
+            hit_data.pos_norm_a.1.y += diff;
+            hit_data.pos_norm_b.1.y += diff;
+        } if p.y > scene_center.y + scene_size && obj.base.velocity.y > 0. {
+            hit = true;
+            let diff = scene_center.y + scene_size - p.y;
+            obj.base.velocity += vec3(0., diff, 0.);
+            hit_data.pos_norm_a.1.y += diff;
+            hit_data.pos_norm_b.1.y += diff;
+        } if p.z < scene_center.z - scene_size && obj.base.velocity.z < 0. {
+            hit = true;
+            let diff = scene_center.z - scene_size - p.z;
+            obj.base.velocity += vec3(0., 0., diff);
+            hit_data.pos_norm_a.1.z += diff;
+            hit_data.pos_norm_b.1.z += diff;
+        } if p.z > scene_center.z + scene_size && obj.base.velocity.z > 0. {
+            hit = true;
+            let diff = scene_center.z + scene_size - p.z;
+            obj.base.velocity += vec3(0., 0., diff);
+            hit_data.pos_norm_a.1.z += diff;
+            hit_data.pos_norm_b.1.z += diff;
+        }
+
+        let cb = on_hit.take();
+        match (hit, cb) {
+            (true, Some(mut cb)) => {
+                hit_data.pos_norm_a.1 = hit_data.pos_norm_a.1.normalize();
+                hit_data.pos_norm_b.1 = hit_data.pos_norm_b.1.normalize();
+                if obj_idx == player_idx {
+                    cb(obj, obj, &hit_data, &obj.base);
+                } else {
+                    // safe bc mutable borrowed obj is not the player
+                    cb(obj, obj, &hit_data, unsafe { &(*player_ptr).base });
+                }
+                on_hit.set(Some(cb));
+            },
+            (false, Some(cb)) => {
+                on_hit.set(Some(cb));
+            },
+            _ => (),
+        }
+
+    }
+}
+
 /// Updates every dynamic object in `objs` in the octree
 fn update_octree<T>(objs: &[&mut RigidBody<T>]) {
     for o in objs {
@@ -200,6 +281,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
             collision_methods,
             on_hit: Cell::default(),
             do_resolve: Cell::default(),
+            scene_size, scene_center,
         }
     }
 
@@ -217,6 +299,8 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
             collision_methods: self.collision_methods,
             on_hit: Cell::new(Some(Box::new(f))),
             do_resolve: self.do_resolve,
+            scene_size: self.scene_size,
+            scene_center: self.scene_center,
         }
     }
 
@@ -232,6 +316,8 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
                 collision_methods: self.collision_methods,
                 on_hit: self.on_hit,
                 do_resolve: Cell::new(Some(Box::new(f))),
+                scene_size: self.scene_size,
+                scene_center: self.scene_center,
             }
         }
 
@@ -328,6 +414,8 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         move_objects(objects, dt_sec);
         resolve_collisions(objects, 
             self.get_resolving_forces(objects, player_idx), dt_sec);
+        apply_bounds(objects, self.scene_size, self.scene_center, 
+            player_idx, &mut self.on_hit);
         update_octree(objects);
     }
 }

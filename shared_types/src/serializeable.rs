@@ -140,8 +140,7 @@ fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>
                 }).collect::<Result<Vec<_>, _>>()?.try_into()
                     .map_err(|_| "Invalid # matrix rows")?;
                 let id = u32::from_be_bytes(vec[MAT_SIZE .. MAT_SIZE + 4].try_into()?);
-                // safe bc ObjectType has repr(u8)
-                let typ = unsafe { *(&vec[MAT_SIZE + 4] as *const u8 as *const ObjectType) };
+                let typ = vec[MAT_SIZE + 4].try_into()?;
                 Ok(RemoteObject {
                     mat,
                     id,
