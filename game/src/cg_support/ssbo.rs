@@ -358,12 +358,23 @@ mod test {
     use serial_test::*;
     use crate::shader;
 
+    #[cfg(unix)]
+    fn get_event_loop() -> glutin::event_loop::EventLoop<()> {
+        use glutin::platform::unix::EventLoopExtUnix;
+        glutin::event_loop::EventLoop::new_any_thread()
+    }
+
+    #[cfg(windows)]
+    fn get_event_loop() -> glutin::event_loop::EventLoop<()> {
+        use glutin::platform::windows::EventLoopExtWindows;
+        glutin::event_loop::EventLoop::new_any_thread()
+    }
+
     fn init() -> (shader::ShaderManager, glium::Display) {
         use glium::*;
         use glutin::window::{WindowBuilder};
         use glutin::ContextBuilder;
-        use glutin::platform::windows::EventLoopExtWindows;
-        let e_loop : glutin::event_loop::EventLoop<()> = glutin::event_loop::EventLoop::new_any_thread();
+        let e_loop = get_event_loop();
         let window_builder = WindowBuilder::new().with_visible(false).with_inner_size(glium::glutin::dpi::PhysicalSize::<u32>{
             width: 128, height: 128,
         });

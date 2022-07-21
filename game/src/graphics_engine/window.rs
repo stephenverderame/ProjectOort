@@ -223,8 +223,17 @@ impl WindowMaker {
     }
 
     #[cfg(test)]
+    #[cfg(windows)]
     pub fn any_thread(mut self) -> Self {
         use glutin::platform::windows::EventLoopExtWindows;
+        self.e_loop = Some(glutin::event_loop::EventLoop::new_any_thread());
+        self
+    }
+
+    #[cfg(test)]
+    #[cfg(unix)]
+    pub fn any_thread(mut self) -> Self {
+        use glutin::platform::unix::EventLoopExtUnix;
         self.e_loop = Some(glutin::event_loop::EventLoop::new_any_thread());
         self
     }

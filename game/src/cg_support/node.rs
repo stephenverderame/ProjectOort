@@ -335,7 +335,9 @@ mod test {
         let a = Euler::new(Deg(0.), Deg(0.), Deg(90f64));
         let t = Node::new(None, Some(Quaternion::from(a)), None, Some(point3(8., 10., 10.)));
         let p = t.mat().transform_point(point3(10., 10., 10.));
-        assert_eq!(p, point3(8f64, 12., 10.));
+        assert_approx_eq!(p.x, 8.);
+        assert_approx_eq!(p.y, 12.);
+        assert_approx_eq!(p.z, 10.);
         let mut t = Node::default();
         t.set_pos(point3(10., 0., 0.));
         t.set_rot(From::from(Euler::new(Deg(0.), Deg(0f64), Deg(-60.))));
