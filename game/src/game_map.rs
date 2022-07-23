@@ -1,4 +1,3 @@
-use crate::graphics_engine::map;
 use std::rc::Rc;
 use std::cell::{RefCell, Cell};
 use super::object::*;
@@ -13,8 +12,24 @@ use crate::collisions;
 use crate::physics;
 use std::ops::Range;
 
+/// A Map contains the entities and lighting information of a scene
+pub trait Map<T> {
+    /// Gets the entities in this map
+    fn entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>>;
 
-pub trait GameMap : map::Map<object::ObjectType> {
+    /// Gets the lights in this map
+    fn lights(&self) -> Vec<shader::LightData>;
+
+    /// Gets the rigid bodies in this map
+    fn iter_bodies<'a>(&self, 
+        func: Box<dyn FnMut(&mut dyn Iterator<Item = &mut physics::RigidBody<T>>) + 'a>);
+
+    /// Gets the map's IBL maps and directional light direction
+    fn lighting_info(&self) -> (shader::PbrMaps, cgmath::Vector3<f32>);
+}
+
+
+pub trait GameMap : Map<object::ObjectType> {
     fn get_lasers(&self) -> &Rc<RefCell<GameObject>>;
 
     fn get_lines(&self) -> &Rc<RefCell<primitives::Lines>>;
@@ -162,7 +177,7 @@ impl AsteroidMap {
     }
 }
 
-impl map::Map<object::ObjectType> for AsteroidMap {
+impl Map<object::ObjectType> for AsteroidMap {
         fn entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>> {
             let obj = self.objects.borrow();
             let it = obj.iter().map(|b| 

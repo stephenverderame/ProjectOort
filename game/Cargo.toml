@@ -1,5 +1,5 @@
 [package]
-name = "rust-graphics"
+name = "oort-client"
 version = "0.1.0"
 authors = ["Stephen Verderame <stephenverderame@gmail.com>"]
 edition = "2018"
@@ -12,19 +12,19 @@ glutin = "0.28.0"
 glium = { path = "../../GliumFork" }
 cgmath = "0.18.0"
 tobj = "3.2.0"
-image = "*"
+image = "0.23.14"
 gl = "0.14.0"
-rand = "*"
-assimp = "*"
-assimp-sys = "*"
-arr_macro = "*"
-itertools = "*"
-noise = "*"
-regex = "*"
+rand = "0.8.5"
+assimp = "0.3.1"
+assimp-sys = "0.3.1"
+arr_macro = "0.1.3"
+itertools = "0.10.3"
+noise = "0.7.0"
+regex = "1.6.0"
 shared_types = { path = "../shared_types" }
 
 [dev-dependencies]
-assertables = "*"
-assert_approx_eq = "*"
-once_cell = "*"
-serial_test = "*"
+assertables = "5.2.0"
+assert_approx_eq = "1.1.0"
+once_cell = "1.13.0"
+serial_test = "0.8.0"
