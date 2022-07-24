@@ -32,6 +32,7 @@ mod serializeable;
 pub use serializeable::Serializeable;
 
 pub mod remote;
+pub mod node;
 pub use remote::*;
 
 pub mod game_controller;
@@ -61,7 +62,7 @@ mod test;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[repr(u8)]
 pub enum ObjectType {
-    Laser = 0, Ship, Asteroid, Any, Hook
+    Laser = 0, Ship, Asteroid, Any, Hook, Planet
 }
 
 impl TryFrom<u8> for ObjectType {
@@ -88,10 +89,12 @@ impl ObjectType {
     }
 }
 
+type ObjectData = [[f64; 4]; 5];
+
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct RemoteObject {
-    pub mat: [[f64; 4]; 4],
+    pub mat: ObjectData,
     pub id: u32,
     pub typ: ObjectType,
 }
@@ -99,7 +102,16 @@ pub struct RemoteObject {
 /// The packed size for a RemoteObject
 /// 
 /// This is the amount of bytes sent over the network for a RemoteObject
-const REMOTE_OBJECT_SIZE : usize = 133;
+const REMOTE_OBJECT_SIZE : usize = std::mem::size_of::<ObjectData>() +
+                                   std::mem::size_of::<u32>() +
+                                   std::mem::size_of::<ObjectType>();
+
+#[derive(Copy, Clone, Debug)]                                   
+pub struct RemoteObjectUpdate {
+    pub delta_vel: [f64; 3],
+    pub delta_rot: [f64; 3],
+    pub id: u32,
+}
 
 impl RemoteObject {
     #[inline(always)]

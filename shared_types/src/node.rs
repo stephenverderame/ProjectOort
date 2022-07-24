@@ -328,24 +328,23 @@ impl Into<Matrix4<f32>> for Node {
 mod test {
     use cgmath::*;
     use super::*;
-    use assert_approx_eq::assert_approx_eq;
 
     #[test]
     fn anchor_rotation() {
         let a = Euler::new(Deg(0.), Deg(0.), Deg(90f64));
         let t = Node::new(None, Some(Quaternion::from(a)), None, Some(point3(8., 10., 10.)));
         let p = t.mat().transform_point(point3(10., 10., 10.));
-        assert_approx_eq!(p.x, 8.);
-        assert_approx_eq!(p.y, 12.);
-        assert_approx_eq!(p.z, 10.);
+        assert_relative_eq!(p.x, 8.);
+        assert_relative_eq!(p.y, 12.);
+        assert_relative_eq!(p.z, 10.);
         let mut t = Node::default();
         t.set_pos(point3(10., 0., 0.));
         t.set_rot(From::from(Euler::new(Deg(0.), Deg(0f64), Deg(-60.))));
         let  p = t.mat().transform_point(point3(0., 2., 0.));
         let q = point3(10. + f64::cos(30. * std::f64::consts::PI / 180.0) * 2.0, 1.0, 0.);
-        assert_approx_eq!(p.x, q.x);
-        assert_approx_eq!(p.y, q.y);
-        assert_approx_eq!(p.z, q.z);
+        assert_relative_eq!(p.x, q.x);
+        assert_relative_eq!(p.y, q.y);
+        assert_relative_eq!(p.z, q.z);
     }
 
     #[test]
@@ -374,4 +373,35 @@ mod test {
         assert_eq!(c.mat().transform_point(point3(1., 0., 1.)),
             point3(8., 0., 4.));
     }
+}
+
+/// Converts a node, 
+pub fn to_remote_object(node: &Node, 
+    vel: &cgmath::Vector3<f64>, rot_vel: &cgmath::Vector3<f64>,
+    typ: super::ObjectType, id: u32) -> super::RemoteObject 
+{
+    assert!(node.parent.is_none(), "Node cannot have a parent");
+    let mat  = [
+        [node.orientation.s, node.orientation.v.x, node.orientation.v.y, node.orientation.v.z],
+        [node.pos.x, node.pos.y, node.pos.z, vel.x],
+        [node.scale.x, node.scale.y, node.scale.z, vel.y],
+        [node.anchor.x, node.anchor.y, node.anchor.z, vel.z],
+        [rot_vel.x, rot_vel.y, rot_vel.z, 0.0],
+    ];
+    super::RemoteObject { mat, id, typ }
+}
+
+/// Converts a remote object into a node, velocity, rotational velocity, 
+/// object type and id
+pub fn from_remote_object(obj: &super::RemoteObject) 
+    -> (Node, cgmath::Vector3<f64>, cgmath::Vector3<f64>, super::ObjectType, u32) 
+{
+    let node = Node::default()
+        .rot(From::from(obj.mat[0]))
+        .pos(From::<[f64; 3]>::from(obj.mat[1][..3].try_into().unwrap()))
+        .scale(From::<[f64; 3]>::from(obj.mat[2][..3].try_into().unwrap()))
+        .anchor(From::<[f64; 3]>::from(obj.mat[3][..3].try_into().unwrap()));
+    let rot_vel = vec3(obj.mat[4][0], obj.mat[4][1], obj.mat[4][2]);
+    let vel = vec3(obj.mat[1][3], obj.mat[2][3], obj.mat[3][3]);
+    (node, vel, rot_vel, obj.typ, obj.id)
 }

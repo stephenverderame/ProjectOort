@@ -120,7 +120,7 @@ fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>
         let objs = data.into_iter().chunks(REMOTE_OBJECT_SIZE).into_iter()
             .map(|chunk| {
                 let vec : Vec<_> = chunk.collect();
-                const MAT_SIZE : usize = std::mem::size_of::<[[f64; 4]; 4]>();
+                const MAT_SIZE : usize = std::mem::size_of::<ObjectData>();
                 let floats = vec.iter().map(|e| *e).take(MAT_SIZE)
                     .chunks(std::mem::size_of::<f64>()).into_iter()
                     .map(|flt| {
@@ -131,7 +131,7 @@ fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>
                         }
                     }).collect::<Result<Vec<f64>, _>>()?;
                     
-                let mat : [[f64; 4]; 4] = floats.chunks(4).into_iter().map(|row| {
+                let mat : ObjectData = floats.chunks(4).into_iter().map(|row| {
                     if row.len() != 4 {
                         Err("Invalid matrix row length")
                     } else {

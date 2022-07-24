@@ -10,6 +10,7 @@ mod controls;
 mod physics;
 mod game_map;
 mod game;
+mod game_mediator;
 mod minimap;
 extern crate gl;
 use graphics_engine::window::*;
