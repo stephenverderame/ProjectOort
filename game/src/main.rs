@@ -1,5 +1,9 @@
 extern crate cgmath;
 extern crate glium;
+#[macro_use]
+extern crate static_assertions;
+#[macro_use]
+extern crate lazy_static;
 mod cg_support;
 #[macro_use]
 mod graphics_engine;

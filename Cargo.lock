@@ -1140,12 +1140,14 @@ dependencies = [
  "glutin",
  "image",
  "itertools",
+ "lazy_static",
  "noise",
  "once_cell",
  "rand 0.8.5",
  "regex",
  "serial_test",
  "shared_types",
+ "static_assertions",
  "tobj",
 ]
 
@@ -1529,7 +1531,9 @@ dependencies = [
 name = "shared_types"
 version = "0.1.0"
 dependencies = [
+ "cgmath",
  "itertools",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -1565,6 +1569,12 @@ dependencies = [
  "wayland-cursor",
  "wayland-protocols",
 ]
+
+[[package]]
+name = "static_assertions"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strsim"

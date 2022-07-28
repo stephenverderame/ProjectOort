@@ -378,7 +378,7 @@ mod test {
 /// Converts a node, 
 pub fn to_remote_object(node: &Node, 
     vel: &cgmath::Vector3<f64>, rot_vel: &cgmath::Vector3<f64>,
-    typ: super::ObjectType, id: u32) -> super::RemoteObject 
+    typ: super::ObjectType, id: super::ObjectId) -> super::RemoteObject 
 {
     assert!(node.parent.is_none(), "Node cannot have a parent");
     let mat  = [
@@ -394,14 +394,38 @@ pub fn to_remote_object(node: &Node,
 /// Converts a remote object into a node, velocity, rotational velocity, 
 /// object type and id
 pub fn from_remote_object(obj: &super::RemoteObject) 
-    -> (Node, cgmath::Vector3<f64>, cgmath::Vector3<f64>, super::ObjectType, u32) 
+    -> (Node, cgmath::Vector3<f64>, cgmath::Vector3<f64>, super::ObjectType, super::ObjectId) 
 {
     let node = Node::default()
-        .rot(From::from(obj.mat[0]))
+        .rot(Quaternion::from_sv(obj.mat[0][0], 
+            From::<[f64; 3]>::from(obj.mat[0][1..].try_into().unwrap())))
         .pos(From::<[f64; 3]>::from(obj.mat[1][..3].try_into().unwrap()))
         .scale(From::<[f64; 3]>::from(obj.mat[2][..3].try_into().unwrap()))
         .anchor(From::<[f64; 3]>::from(obj.mat[3][..3].try_into().unwrap()));
     let rot_vel = vec3(obj.mat[4][0], obj.mat[4][1], obj.mat[4][2]);
     let vel = vec3(obj.mat[1][3], obj.mat[2][3], obj.mat[3][3]);
     (node, vel, rot_vel, obj.typ, obj.id)
+}
+
+#[test]
+fn remote_conversion() {
+    let node = Node::default()
+        .rot(From::from(Euler::new(Deg(0.), Deg(0.), Deg(90.))))
+        .pos(point3(10., 10., 10.))
+        .scale(vec3(2., 2., 2.))
+        .anchor(point3(0., 0., 0.));
+    let vel = vec3(10., 1., 0.76);
+    let rot_vel = vec3(1., 2., 3.);
+    let id = super::ObjectId::new(10);
+    let typ = super::ObjectType::Ship;
+    let remote_obj = to_remote_object(&node, &vel, &rot_vel, typ, id);
+    let (node2, vel2, rot_vel2, typ2, id2) = from_remote_object(&remote_obj);
+    assert_relative_eq!(node.pos, node2.pos);
+    assert_eq!(node.anchor, node2.anchor);
+    assert_eq!(node.scale, node2.scale);
+    assert_eq!(node.orientation, node2.orientation);
+    assert_eq!(vel, vel2);
+    assert_eq!(rot_vel, rot_vel2);
+    assert_eq!(typ, typ2);
+    assert_eq!(id, id2);
 }

@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use std::cell::{RefCell, Cell};
+use std::cell::{RefCell, Cell, Ref};
 use super::object::*;
 use crate::graphics_engine::entity::*;
 use crate::graphics_engine::{primitives, cubes, model, entity, shader, 
@@ -8,9 +8,10 @@ use crate::cg_support::node::*;
 use glium;
 use super::object;
 use cgmath::*;
-use crate::physics;
+use crate::physics::{self, RigidBody};
 use std::collections::HashMap;
 use crate::collisions;
+use shared_types::id_list::IdList;
 
 pub trait GameMediator {
     fn get_entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>>;
@@ -19,13 +20,15 @@ pub trait GameMediator {
     fn get_lights(&self) -> Vec<shader::LightData>;
 
     /// Gets the rigid bodies in this map
-    fn get_bodies(&self) -> Vec<physics::RigidBody<object::ObjectType>>;
+    fn get_bodies(&self) -> &[RigidBody<object::ObjectType>];
 
-    fn get_lasers(&self) -> &Rc<RefCell<GameObject>>;
+    fn get_lasers(&self) -> &[RigidBody<object::ObjectType>];
 
-    fn get_lines(&self) -> &Rc<RefCell<primitives::Lines>>;
+    fn get_lines(&self) -> Ref<primitives::Lines>;
 
-    fn get_particles(&self) -> &Rc<RefCell<particles::ParticleSystem>>;
+    fn get_particles(&self) -> Ref<particles::ParticleSystem>;
+
+    fn add_laser(&self, pos: Vector3<f64>, dir: Vector3<f64>);
 
 }
 
@@ -34,6 +37,7 @@ struct GameMediatorBase {
     entity: HashMap<ObjectType, Rc<RefCell<dyn AbstractEntity>>>,
     lines: Rc<RefCell<primitives::Lines>>,
     particles: Rc<RefCell<particles::ParticleSystem>>,
+    ids: IdList,
 }
 
 fn init_objs<F : glium::backend::Facade>(sm: &shader::ShaderManager, ctx: &F)
@@ -79,6 +83,7 @@ impl GameMediatorBase {
             entity: init_entities(sm, ctx),
             lines,
             particles,
+            ids: IdList::new(),
         }
     }
 }

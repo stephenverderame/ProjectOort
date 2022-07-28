@@ -20,12 +20,12 @@ fn sct_serialize_deserialize() {
     let objs = vec![
         RemoteObject {
             mat: [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0], [17., 18., 19., 20.]],
-            id: 0x12345678,
+            id: ObjectId::new(0x12345678),
             typ: ObjectType::Asteroid,
         },
         RemoteObject {
             mat: [[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0], [9.0, 10.0, 11.0, 12.0], [13.0, 14.0, 15.0, 16.0], [17., 18., 19., 20.]],
-            id: 0x12345679,
+            id: ObjectId::new(0x12345679),
             typ: ObjectType::Ship,
         },
     ];
@@ -44,7 +44,7 @@ fn sct_serialize_deserialize() {
                 [9.0, 10.0, 11.0, 12.0], 
                 [13.0 * idx, 14.0 * idx, 15.0 * idx, 16.0 * idx],
                 [17., 18., 19., 20.]],
-            id: 0x12345678 + i as u32,
+            id: ObjectId::new(0x12345678 + i as super::ObjectIdType),
             typ: ObjectType::Asteroid,
         });
     }

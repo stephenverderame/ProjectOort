@@ -27,12 +27,12 @@ pub trait GameController {
 
     fn update_objects(&mut self, updates: &[RemoteObjectUpdate]);
 
-    fn remove_objects(&mut self, ids: &[u32]);
+    fn remove_objects(&mut self, ids: &[ObjectId]);
 
     /// Get `n` ids to use for objects
     /// Returns the first and last id in the range, note that the last
     /// id may be less than the first if the ids wrap around
-    fn get_n_ids(&mut self, n: u32) -> (u32, u32);
+    fn get_n_ids(&mut self, n: u32) -> (ObjectId, ObjectId);
 }
 
 pub trait Map {
@@ -92,13 +92,13 @@ impl Map for AsteroidMap {
     fn initial_objects(&self) -> Vec<RemoteObject> {
         let mut vec = Vec::new();
         use std::f64::consts::PI;
-        let mut ids = 0;
+        let mut ids = ObjectId::default();
         Self::randomize_spherical(point3(0., 0., 0.), 120. .. 600., 0. .. 2. * PI, 
             0. .. PI, 0.002 .. 0.8, 100, 
             |t| { 
                 vec.push(to_remote_object(&t, &vec3(0., 0., 0.), 
                     &vec3(0., 0., 0.), ObjectType::Asteroid, ids));
-                ids += 1;
+                ids = ids.incr(1);
             });
         vec.push(to_remote_object(&Node::default().u_scale(10.), 
             &vec3(0., 0., 0.), &vec3(0., 0., 0.), ObjectType::Planet, ids));
@@ -106,19 +106,19 @@ impl Map for AsteroidMap {
     }
 }
 
-pub struct LocalGameController{
-    last_id: u32,
+pub struct LocalGameController {
+    last_id: ObjectId,
     objects: Vec<RemoteObject>,
-    indices: HashMap<u32, usize>,
+    indices: HashMap<ObjectId, usize>,
     start_time: std::time::Instant,
 }
 
 impl LocalGameController {
-    pub fn new<M : Map>(map: &M) -> LocalGameController {
+    pub fn new<M: Map, Dm : std::ops::Deref<Target = M>>(map: Dm) -> LocalGameController {
         let objs = map.initial_objects();
         let indices = (0 .. objs.len()).map(|i| (objs[i].id, i)).collect();
         LocalGameController {
-            last_id: objs.last().map(|o| o.id).unwrap_or(0),
+            last_id: objs.last().map(|o| o.id).unwrap_or(Default::default()),
             objects: objs,
             start_time: std::time::Instant::now(),
             indices,
@@ -169,7 +169,7 @@ impl GameController for LocalGameController {
         }
     }
 
-    fn remove_objects(&mut self, ids: &[u32]) {
+    fn remove_objects(&mut self, ids: &[ObjectId]) {
         for id in ids {
             if let Some(index) = self.indices.remove(id) {
                 if self.objects.len() > 1 {
@@ -183,9 +183,9 @@ impl GameController for LocalGameController {
         }
     }
 
-    fn get_n_ids(&mut self, n: u32) -> (u32, u32) {
+    fn get_n_ids(&mut self, n: u32) -> (ObjectId, ObjectId) {
         let id = self.last_id;
-        self.last_id += n;
+        self.last_id = self.last_id.incr(n);
         (id, self.last_id)
     }
 }

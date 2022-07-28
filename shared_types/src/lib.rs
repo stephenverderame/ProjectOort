@@ -36,6 +36,7 @@ pub mod node;
 pub use remote::*;
 
 pub mod game_controller;
+pub mod id_list;
 
 #[cfg(test)]
 mod test;
@@ -89,13 +90,58 @@ impl ObjectType {
     }
 }
 
+type ObjectIdType = u32;
+#[repr(transparent)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub struct ObjectId {
+    id: ObjectIdType,
+}
+
+impl ObjectId {
+    #[inline]
+    pub fn new(id: ObjectIdType) -> Self {
+        ObjectId { id }
+    }
+
+    /// Gets the next object ID after this one
+    #[inline]
+    pub fn next(&self) -> Self {
+        ObjectId { id: self.id.wrapping_add(1) }
+    }
+
+    /// Converts this ID to the ID n ids after this one
+    #[inline]
+    pub fn incr(self, n: u32) -> Self {
+        ObjectId { id: self.id.wrapping_add(n) }
+    }
+
+    /// Converts this ID to its big endian byte representation
+    #[inline]
+    pub fn to_be_bytes(&self) -> [u8; std::mem::size_of::<ObjectIdType>()] {
+        self.id.to_be_bytes()
+    }
+
+    /// Creates an `ObjectId` from its big endian byte representation
+    #[inline]
+    pub fn from_be_bytes(bytes: [u8; std::mem::size_of::<ObjectIdType>()]) -> Self {
+        ObjectId { id: u32::from_be_bytes(bytes) }
+    }
+}
+
+impl Default for ObjectId {
+    fn default() -> Self {
+        ObjectId { id: 0 }
+    }
+}
+
+
 type ObjectData = [[f64; 4]; 5];
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct RemoteObject {
     pub mat: ObjectData,
-    pub id: u32,
+    pub id: ObjectId,
     pub typ: ObjectType,
 }
 
@@ -103,14 +149,14 @@ pub struct RemoteObject {
 /// 
 /// This is the amount of bytes sent over the network for a RemoteObject
 const REMOTE_OBJECT_SIZE : usize = std::mem::size_of::<ObjectData>() +
-                                   std::mem::size_of::<u32>() +
+                                   std::mem::size_of::<ObjectId>() +
                                    std::mem::size_of::<ObjectType>();
 
 #[derive(Copy, Clone, Debug)]                                   
 pub struct RemoteObjectUpdate {
     pub delta_vel: [f64; 3],
     pub delta_rot: [f64; 3],
-    pub id: u32,
+    pub id: ObjectId,
 }
 
 impl RemoteObject {

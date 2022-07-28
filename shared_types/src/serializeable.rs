@@ -94,7 +94,7 @@ fn dechunk_serialized_data(chunks: ChunkedMsg)
             return Err(format!("Invalid chunk footer: {:?}", &chunk[chunk_len - CHUNK_FOOTER_SIZE..]).into());
         }
         let cmd_id = chunk[CMD_ID_INDEX];
-        let msg_id = u32::from_be_bytes(chunk[MSG_ID_INDEX..MSG_ID_INDEX + 4].try_into()?);
+        let msg_id = MsgId::from_be_bytes(chunk[MSG_ID_INDEX..MSG_ID_INDEX + 4].try_into()?);
         check_option_equals(&mut last_cmd_id, cmd_id)?;
         check_option_equals(&mut last_msg_id, msg_id)?;
         if expected_packet_num != chunk[PKT_NM_INDEX] {
@@ -139,7 +139,7 @@ fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>
                     }
                 }).collect::<Result<Vec<_>, _>>()?.try_into()
                     .map_err(|_| "Invalid # matrix rows")?;
-                let id = u32::from_be_bytes(vec[MAT_SIZE .. MAT_SIZE + 4].try_into()?);
+                let id = ObjectId::from_be_bytes(vec[MAT_SIZE .. MAT_SIZE + 4].try_into()?);
                 let typ = vec[MAT_SIZE + 4].try_into()?;
                 Ok(RemoteObject {
                     mat,
@@ -156,7 +156,7 @@ impl Serializeable for ClientCommandType {
     fn serialize(&self, msg_id: MsgId) -> Result<ChunkedMsg, Box<dyn Error>> {
         let (data, cmd_id) = match self {
             ClientCommandType::Login(name) => {
-                if name.len() > 255 {
+                if name.len() > 256 {
                     return Err("Login name too long")?;
                 }
                 let mut data = Vec::new();

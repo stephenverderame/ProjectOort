@@ -176,6 +176,12 @@ impl CollisionObject {
     pub fn forall_verts<F : FnMut(&bvh::CollisionVertex<f32>)>(&self, mut func: F) {
         self.mesh.borrow().forall_verts(&mut func)
     }
+
+    /// Gets an id that uniquely identifies this collision objects's shared geometry
+    pub fn geometry_id(&self) -> usize {
+        assert_eq_size!(usize, *mut collision_mesh::CollisionMesh);
+        self.mesh.as_ptr() as usize
+    }
 }
 
 impl std::hash::Hash for CollisionObject {

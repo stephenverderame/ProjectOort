@@ -364,7 +364,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
             .map(|(body, idx)| (body, body.base.collider.as_ref().unwrap(), idx)) 
         {
             let mut temp_map = HashMap::new();
-            let method = &**self.collision_methods.get(&body.base.col_type).unwrap();
+            let method = &**self.collision_methods.get(&body.base.col_meth()).unwrap();
             for other in self.obj_tree.get_colliders(collider)
             {
                 let other_body = objects.iter().find(|x| 
