@@ -29,7 +29,7 @@ pub struct Player {
     cam: Node,
     entity: Rc<RefCell<entity::Entity>>,
     pub aspect: f32,
-    body: physics::RigidBody<object::ObjectType>,
+    body: physics::RigidBody<object::ObjectData>,
     pub inv_fac: Rc<RefCell<f32>>,
     em_fac: Rc<RefCell<f32>>,
     energy: f64,
@@ -44,7 +44,7 @@ impl Player {
     /// `view_aspect` - the screen aspect ratio to control the player perspective camera
     /// 
     /// `c_str` - collision string, the path of the collision mesh
-    pub fn new(model: Model, view_aspect: f32, c_str: &str) -> Player {
+    pub fn new(model: Model, view_aspect: f32, c_str: &str, id: object::ObjectId) -> Player {
         let root_node = Rc::new(RefCell::new(Node::default().pos(point3(100., 100., 100.))));
         let mut cam = Node::new(Some(point3(0., 15., -25.)), None, None, None);
         cam.set_parent(root_node.clone());
@@ -66,7 +66,7 @@ impl Player {
             body: physics::RigidBody::new(root_node.clone(), Some(
                 collisions::CollisionObject::new(root_node, c_str, 
                     collisions::TreeStopCriteria::default())),
-                physics::BodyType::Controlled, object::ObjectType::Ship)
+                physics::BodyType::Controlled, (object::ObjectType::Ship, id))
                     .with_density(0.88),
             inv_fac,
             energy: 100.,
@@ -76,7 +76,7 @@ impl Player {
 
     /// Updates the players' forces based on the input controls and returns the rigid body
     pub fn as_rigid_body(&mut self, input: &controls::PlayerControls, 
-        dt: std::time::Duration) -> &mut physics::RigidBody<object::ObjectType> 
+        dt: std::time::Duration) -> &mut physics::RigidBody<object::ObjectData> 
     {
         use cgmath::*;
         {

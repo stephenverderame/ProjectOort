@@ -177,7 +177,7 @@ fn main() {
         .insert_scene("main", Box::new(RefCell::new(compositor_scene)))
         .change_scene("main");
 
-    let sim = RefCell::new(physics::Simulation::<object::ObjectType>::new(point3(0., 0., 0.), 1500.)
+    let sim = RefCell::new(physics::Simulation::<object::ObjectData>::new(point3(0., 0., 0.), 1500.)
         .with_do_resolve(game::Game::should_resolve)
         .with_on_hit(|a, b, hit, player| {
             game.borrow().on_hit(a, b, hit, player)

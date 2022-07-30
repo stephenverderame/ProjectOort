@@ -135,12 +135,12 @@ impl Default for ObjectId {
 }
 
 
-type ObjectData = [[f64; 4]; 5];
+type ObjData = [[f64; 4]; 5];
 
 #[derive(Copy, Clone, Debug)]
 #[repr(C)]
 pub struct RemoteObject {
-    pub mat: ObjectData,
+    pub mat: ObjData,
     pub id: ObjectId,
     pub typ: ObjectType,
 }
@@ -148,7 +148,7 @@ pub struct RemoteObject {
 /// The packed size for a RemoteObject
 /// 
 /// This is the amount of bytes sent over the network for a RemoteObject
-const REMOTE_OBJECT_SIZE : usize = std::mem::size_of::<ObjectData>() +
+const REMOTE_OBJECT_SIZE : usize = std::mem::size_of::<ObjData>() +
                                    std::mem::size_of::<ObjectId>() +
                                    std::mem::size_of::<ObjectType>();
 
@@ -169,9 +169,10 @@ impl RemoteObject {
 impl PartialEq for RemoteObject {
     #[cfg(test)]
     fn eq(&self, other: &Self) -> bool {
+        const ARRAY_SIZE : usize = std::mem::size_of::<ObjData>() / std::mem::size_of::<f64>();
         self.base_eq(other) &&
-        unsafe { std::mem::transmute_copy::<_, [u64; 16]>(&self.mat) } == 
-        unsafe { std::mem::transmute_copy::<_, [u64; 16]>(&other.mat) }
+        unsafe { std::mem::transmute_copy::<_, [u64; ARRAY_SIZE]>(&self.mat) } == 
+        unsafe { std::mem::transmute_copy::<_, [u64; ARRAY_SIZE]>(&other.mat) }
     }
 
     #[cfg(not(test))]

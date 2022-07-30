@@ -11,21 +11,22 @@ use super::controls;
 use crate::graphics_engine::scene;
 use crate::graphics_engine::particles::*;
 use std::cell::Cell;
+use super::game_mediator::*;
 
 /// Encapsulates the game map and handles the logic for base game mechanics
 pub struct Game<'c> {
-    map: Box<dyn GameMap + 'c>,
+    mediator: Box<dyn GameMediator + 'c>,
     pub player: Rc<RefCell<player::Player>>,
-    forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectType>>>>,
-    dead_lasers: RefCell<Vec<Rc<RefCell<node::Node>>>>,
-    new_forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectType>>>>,
+    forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectData>>>>,
+    dead_lasers: RefCell<Vec<shared_types::ObjectId>>,
+    new_forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectData>>>>,
     delta_shield: Cell<f64>,
 }
 
 impl<'c> Game<'c> {
-    pub fn new<M : GameMap + 'c>(map: M, player: player::Player) -> Self {
+    pub fn new<M : GameMediator + 'c>(mediator: M, player: player::Player) -> Self {
         Self {
-            map: Box::new(map),
+            mediator: Box::new(mediator),
             player: Rc::new(RefCell::new(player)),
             forces: RefCell::default(),
             dead_lasers: RefCell::new(Vec::new()),
@@ -35,8 +36,8 @@ impl<'c> Game<'c> {
     }
 
     /// Creates a new particle emitter from an emitter factory function
-    fn create_emitter<Func>(&self, emitter_factory: Func, 
-        a: &RigidBody<object::ObjectType>, b: &RigidBody<object::ObjectType>, 
+    fn create_emitter<Func>(&mut self, emitter_factory: Func, 
+        a: &RigidBody<object::ObjectData>, b: &RigidBody<object::ObjectData>, 
         hit: &HitData, emitter_id: usize)
         where Func : Fn(Point3<f64>,Vector3<f64>,
                 Vector3<f64>, &glium::Display) -> Box<dyn Emitter>
@@ -46,7 +47,7 @@ impl<'c> Game<'c> {
         if relative_vel.magnitude() > 1. {
             let ctx = graphics_engine::get_active_ctx();
             let facade = ctx.ctx.borrow();
-            self.map.as_ref().get_particles().borrow_mut().new_emitter(
+            self.mediator.add_particle_emitter(
                 emitter_factory(hit.pos_norm_b.0, 
                     hit.pos_norm_b.1, relative_vel, &*facade), emitter_id
             );
@@ -55,21 +56,21 @@ impl<'c> Game<'c> {
 
     /// Callback function for when a tether shot collides with
     /// an object
-    fn on_hook(&self, a: &RigidBody<object::ObjectType>, 
-        b: &RigidBody<object::ObjectType>, hit: &HitData, 
+    fn on_hook(&mut self, a: &RigidBody<object::ObjectData>, 
+        b: &RigidBody<object::ObjectData>, hit: &HitData, 
         player: &BaseRigidBody)
     {
         use crate::graphics_engine::primitives;
         use crate::physics;
 
-        let target = if a.metadata == object::ObjectType::Hook 
+        let target = if a.metadata.0 == object::ObjectType::Hook 
             { b } else { a };
-        let hit_point = if a.metadata == object::ObjectType::Hook 
+        let hit_point = if a.metadata.0 == object::ObjectType::Hook 
             { hit.pos_norm_b.0 } else { hit.pos_norm_a.0 };
         let ship_front = player.transform.borrow().transform_point(point3(0., 0., 8.));
         let hit_local = target.base.transform.borrow().mat()
             .invert().unwrap().transform_point(hit_point);
-        self.map.as_ref().get_lines().borrow_mut().add_line(0, primitives::LineData {
+        self.mediator.add_line(0, primitives::LineData {
             color: [1., 0., 0., 1.],
             start: node::Node::default().parent(player.transform.clone())
                 .pos(point3(0., 0., 10.)),
@@ -88,8 +89,8 @@ impl<'c> Game<'c> {
 
     /// Checks if the player was involved in a collision, and if so,
     /// reduces the player's health accordingly by setting `delta_shield`
-    fn check_player_hit(&self, a: &RigidBody<object::ObjectType>, 
-        b: &RigidBody<object::ObjectType>, player: &BaseRigidBody)
+    fn check_player_hit(&self, a: &RigidBody<object::ObjectData>, 
+        b: &RigidBody<object::ObjectData>, player: &BaseRigidBody)
     {
         const SHIELD_DAMAGE_FAC : f64 = -0.01;
         if let Some(other) = 
@@ -98,9 +99,9 @@ impl<'c> Game<'c> {
         } else if Rc::ptr_eq(&b.base.transform, &player.transform) {
             Some(a)
         } else { None } {
-            if other.metadata == object::ObjectType::Laser {
+            if other.metadata.0 == object::ObjectType::Laser {
                 self.delta_shield.set(-10.);
-            } else if other.metadata != object::ObjectType::Hook {
+            } else if other.metadata.0 != object::ObjectType::Hook {
                 self.delta_shield.set(SHIELD_DAMAGE_FAC *
                     (a.base.velocity - b.base.velocity).magnitude());
             } 
@@ -108,26 +109,26 @@ impl<'c> Game<'c> {
     }
 
     /// Callback function for when two objects collide
-    pub fn on_hit(&self, a: &RigidBody<object::ObjectType>, 
-        b: &RigidBody<object::ObjectType>, hit: &HitData, 
+    pub fn on_hit(&self, a: &RigidBody<object::ObjectData>, 
+        b: &RigidBody<object::ObjectData>, hit: &HitData, 
         player: &BaseRigidBody)
     {
         use object::ObjectType::*;
-        if a.metadata == Laser || b.metadata == Laser {
+        if a.metadata.0 == Laser || b.metadata.0 == Laser {
             self.create_emitter(laser_hit_emitter::<glium::Display>, 
                 a, b, hit, 0);
-            let lt = if a.metadata == Laser { &a.base.transform }
-            else { &b.base.transform }.clone();
+            let lt = if a.metadata.0 == Laser { a.metadata.1 }
+            else { b.metadata.1 };
             self.dead_lasers.borrow_mut().push(lt);
         }
-        if a.metadata == Asteroid || b.metadata == Asteroid {
+        if a.metadata.0 == Asteroid || b.metadata.0 == Asteroid {
             self.create_emitter(asteroid_hit_emitter::<glium::Display>, 
                 a, b, hit, 1);
         }
-        if a.metadata == Hook || b.metadata == Hook {
+        if a.metadata.0 == Hook || b.metadata.0 == Hook {
             self.on_hook(a, b, hit, player);
-            let lt = if a.metadata == Hook { &a.base.transform }
-            else { &b.base.transform }.clone();
+            let lt = if a.metadata.0 == Hook { a.metadata.1 }
+            else { b.metadata.1 }.clone();
             self.dead_lasers.borrow_mut().push(lt);
         }
         self.check_player_hit(a, b, player)
@@ -138,11 +139,11 @@ impl<'c> Game<'c> {
     /// 
     /// Returns `true` if the simulation should do physical collision
     /// resolution
-    pub fn should_resolve(a: &RigidBody<object::ObjectType>, 
-        b: &RigidBody<object::ObjectType>, _: &HitData) -> bool 
+    pub fn should_resolve(a: &RigidBody<object::ObjectData>, 
+        b: &RigidBody<object::ObjectData>, _: &HitData) -> bool 
     {
         use object::ObjectType::*;
-        match (a.metadata, b.metadata) {
+        match (a.metadata.0, b.metadata.0) {
             (Hook, _) | (_, Hook) | (Laser, _) | (_, Laser) => false,
             _ => true,
         }
@@ -150,13 +151,13 @@ impl<'c> Game<'c> {
 
     /// Steps the simulation `sim`, `dt` into the future
     fn step_sim<'a, 'b>(&self, 
-        sim: &mut Simulation<'a, 'b, object::ObjectType>,
+        sim: &mut Simulation<'a, 'b, object::ObjectData>,
         controls: &controls::PlayerControls, dt: std::time::Duration) 
     {
         self.forces.borrow_mut().append(&mut self.new_forces.borrow_mut());
         let mut u = self.player.borrow_mut();
         let forces = &self.forces.borrow();
-        self.map.as_ref().iter_bodies(Box::new(|it| {
+        self.mediator.update_bodies(Box::new(|it| {
             let mut v : Vec<_> = it.collect();
             v.push(u.as_rigid_body(controls, dt));
             let p_idx = v.len() - 1;
@@ -167,7 +168,7 @@ impl<'c> Game<'c> {
 
     /// Function thet should be called every frame to handle shooting lasers
     fn handle_shots(user: &mut player::Player, controller: &controls::PlayerControls, 
-        lasers: &mut object::GameObject) 
+        mediator: &mut dyn GameMediator) 
     {
         const ENERGY_PER_SHOT : f64 = 1.;
         if controller.fire && user.energy() > ENERGY_PER_SHOT {
@@ -178,15 +179,14 @@ impl<'c> Game<'c> {
                 { (object::ObjectType::Hook, 200.) }
             else 
                 { (object::ObjectType::Laser, 120.) };
-            lasers.new_instance(transform, Some(user.forward() * speed))
-                .metadata = typ;
+            mediator.add_laser(transform, user.forward() * speed);
             user.change_energy(-ENERGY_PER_SHOT);
         }
     }
 
     /// Callback function for when a frame is drawn
     pub fn on_draw<'a, 'b>(&self,
-        sim: &mut Simulation<'a, 'b, object::ObjectType>,
+        sim: &mut Simulation<'a, 'b, object::ObjectData>,
         dt : std::time::Duration, scene : &mut dyn scene::AbstractScene,
         controller: &mut controls::PlayerControls)
     {
@@ -195,20 +195,18 @@ impl<'c> Game<'c> {
         {
             if controller.cut_rope {
                 self.forces.borrow_mut().clear();
-                self.map.as_ref().get_lines().borrow_mut().remove_line(0);
+                self.mediator.remove_line(0);
             }
-            let mut lz = self.map.as_ref().get_lasers().borrow_mut();
             let mut u = self.player.borrow_mut();
-            Self::handle_shots(&mut *u, controller, &mut *lz);
+            Self::handle_shots(&mut *u, controller, self.mediator.as_mut());
         }
         self.step_sim(sim, controller, dt);
-        self.map.as_ref().get_lasers().borrow_mut().retain(|laser_ptr|
-            !self.dead_lasers.borrow().iter().any(
-                |dead| dead.as_ptr() as *const () == laser_ptr));
-        self.map.as_ref().get_particles().borrow_mut().emit(dt);
-        scene.set_lights(&self.map.as_ref().lights());
+
+        self.mediator.remove_lasers(&self.dead_lasers.borrow());
+        self.mediator.emit_particles(dt);
+        scene.set_lights(&self.mediator.get_lights());
     }
 
-    pub fn get_map(&self) -> &dyn GameMap
-    { self.map.as_ref() }
+    pub fn get_mediator(&self) -> &dyn GameMediator
+    { self.mediator.as_ref() }
 }

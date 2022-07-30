@@ -5,82 +5,6 @@ use std::collections::{HashMap};
 use collisions::*;
 use std::cell::Cell;
 
-/// Data to resolve a collision
-/// Sum of all collision resolving forces for a single object
-/// Allows a single object to collide with multiple other objects
-#[derive(Clone)]
-struct CollisionResolution {
-    vel: Vector3<f64>,
-    rot: Vector3<f64>,
-    is_collide: bool,
-}
-
-impl CollisionResolution {
-    fn identity() -> Self {
-        Self {
-            vel: vec3(0., 0., 0.),
-            rot: vec3(0., 0., 0.),
-            is_collide: false,
-        }
-    }
-
-    /// Performs a collision between `body` and `colliding_body`
-    /// where this instance is the resolution object for `body`
-    fn do_collision<T>(&mut self, norm: Vector3<f64>, pt: Point3<f64>, 
-        body: &RigidBody<T>, colliding_body: &RigidBody<T>)
-    {
-        let body = &body.base;
-        let colliding_body = &colliding_body.base;
-        let body_inertia = body.moment_inertia();
-        let colliding_inertia = colliding_body.moment_inertia();
-        let body_lever = pt - body.center();
-        let colliding_lever = pt - colliding_body.center();
-
-        let m_eff = 1.0 / body.mass + 1.0 / colliding_body.mass;
-        let impact_speed = norm.dot(body.velocity - colliding_body.velocity);
-        let impact_angular_speed = body_lever.cross(norm).dot(body.rot_vel) - 
-            colliding_lever.cross(norm).dot(colliding_body.rot_vel);
-        let body_angular_denom_term = body_lever.cross(norm)
-            .dot(body_inertia.invert().unwrap() * body_lever.cross(norm));
-        let colliding_angular_denom_term = colliding_lever.cross(norm)
-            .dot(colliding_inertia.invert().unwrap() * colliding_lever.cross(norm));
-        let impulse = 1.52 * (impact_speed + impact_angular_speed) / 
-            (m_eff + body_angular_denom_term + colliding_angular_denom_term);
-        // (1 + coeff of resitution) * effective mass * impact speed
-        // impulse = kg * m/s = Ns
-        self.vel -= impulse / body.mass * norm;
-        self.rot += body_inertia.invert().unwrap() * (impulse * norm).cross(body_lever);
-    }
-
-
-    /// Performs a collision between `body` and `colliding_body`
-    /// if the two objects are positioned in such a way to allow one
-    /// 
-    /// Uses a different collision resolution method if objects are overlapping
-    fn add_collision<T>(&mut self, norm: Vector3<f64>, pt: Point3<f64>, 
-        body: &RigidBody<T>, colliding_body: &RigidBody<T>) 
-    {
-        // Assumes eleastic collisions
-        let relative_vel = body.base.velocity - colliding_body.base.velocity;
-        let v = relative_vel.dot(norm) * norm;
-        if colliding_body.base.center().dot(v) / v.dot(v) > 
-            body.base.center().dot(v) / v.dot(v) {
-            //self.vel -= v;
-            self.do_collision(norm, pt, body, colliding_body)
-            
-        }
-        if body.base.velocity.magnitude() < 0.00001 && 
-            colliding_body.base.velocity.magnitude() < 0.00001 {
-            // two objects spawned in a collission
-            self.vel -= norm * 5.;
-        }
-        if !self.is_collide {
-            self.is_collide = true;
-            //self.rot = body.rot_vel.invert();
-        }
-    }
-}
-
 /// A simulation handles the collision detection, resolution, and movement of all objects
 pub struct Simulation<'a, 'b, T> {
     obj_tree: collisions::CollisionTree,
@@ -99,7 +23,7 @@ pub struct Simulation<'a, 'b, T> {
 /// transformation. This allows fast lookup of rigid bodies without iterating through
 /// all of them again
 fn insert_into_octree<T>(tree: &mut collisions::CollisionTree, 
-    objs: &[&mut RigidBody<T>]) -> HashMap<*const node::Node, u32> 
+    objs: &[&RigidBody<T>]) -> HashMap<*const node::Node, u32> 
 {
     let mut m = HashMap::new();
     let mut idx = 0;
@@ -136,12 +60,12 @@ fn rot_vel_to_quat(rot_vel: Vector3<f64>, dt: f64) -> Quaternion<f64> {
 }
 
 /// Applies all the manipulators to the rigid bodies
-fn apply_forces<T>(objs: &mut [&mut RigidBody<T>], 
+fn apply_forces<T>(objs: &[&RigidBody<T>], resolvers: &mut [CollisionResolution],
     obj_indices: &HashMap<*const node::Node, u32>, forces: &[Box<dyn Manipulator<T>>],
     dt: std::time::Duration)
 {
     for f in forces {
-        f.affect_bodies(objs, obj_indices, dt);
+        f.affect_bodies(objs, resolvers, obj_indices, dt);
     }
 }
 
@@ -184,13 +108,13 @@ type HitCb<'a, T> = Option<Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, &HitData,
 /// and half width of the scene in each dimension
 /// 
 /// If a rigid body is moved to stay within the scene, calls `on_hit` with the rigid body
-fn apply_bounds<'a, T>(objs: &mut [&mut RigidBody<T>], 
+fn apply_bounds<'a, T>(objs: &[&RigidBody<T>], resolvers: &mut [CollisionResolution],
     scene_size: f64, scene_center: Point3<f64>, player_idx: usize, on_hit: &mut Cell<HitCb<'a, T>>)
 {
     let objs_len = objs.len();
     // safe bc player_idx is an index in objs
     let player_ptr = unsafe { objs.as_ptr().add(player_idx) };
-    for (obj, obj_idx) in objs.iter_mut().zip(0 .. objs_len) {
+    for (obj, obj_idx) in objs.iter().zip(0 .. objs_len) {
         let p = obj.base.center();
         let mut hit = false;
         let mut hit_data = HitData {
@@ -200,37 +124,37 @@ fn apply_bounds<'a, T>(objs: &mut [&mut RigidBody<T>],
         if p.x < scene_center.x - scene_size && obj.base.velocity.x < 0. {
             hit = true;
             let diff = scene_center.x - scene_size - p.x;
-            obj.base.velocity += vec3(diff, 0., 0.);
+            resolvers[obj_idx].vel += vec3(diff, 0., 0.);
             hit_data.pos_norm_a.1.x += diff;
             hit_data.pos_norm_b.1.x += diff;
         } if p.x > scene_center.x + scene_size && obj.base.velocity.x > 0. {
             hit = true;
             let diff = scene_center.x + scene_size - p.x;
-            obj.base.velocity += vec3(diff, 0., 0.);
+            resolvers[obj_idx].vel += vec3(diff, 0., 0.);
             hit_data.pos_norm_a.1.x += diff;
             hit_data.pos_norm_b.1.x += diff;
         } if p.y < scene_center.y - scene_size && obj.base.velocity.y < 0. {
             hit = true;
             let diff = scene_center.y - scene_size - p.y;
-            obj.base.velocity += vec3(0., diff, 0.);
+            resolvers[obj_idx].vel += vec3(0., diff, 0.);
             hit_data.pos_norm_a.1.y += diff;
             hit_data.pos_norm_b.1.y += diff;
         } if p.y > scene_center.y + scene_size && obj.base.velocity.y > 0. {
             hit = true;
             let diff = scene_center.y + scene_size - p.y;
-            obj.base.velocity += vec3(0., diff, 0.);
+            resolvers[obj_idx].vel += vec3(0., diff, 0.);
             hit_data.pos_norm_a.1.y += diff;
             hit_data.pos_norm_b.1.y += diff;
         } if p.z < scene_center.z - scene_size && obj.base.velocity.z < 0. {
             hit = true;
             let diff = scene_center.z - scene_size - p.z;
-            obj.base.velocity += vec3(0., 0., diff);
+            resolvers[obj_idx].vel += vec3(0., 0., diff);
             hit_data.pos_norm_a.1.z += diff;
             hit_data.pos_norm_b.1.z += diff;
         } if p.z > scene_center.z + scene_size && obj.base.velocity.z > 0. {
             hit = true;
             let diff = scene_center.z + scene_size - p.z;
-            obj.base.velocity += vec3(0., 0., diff);
+            resolvers[obj_idx].vel += vec3(0., 0., diff);
             hit_data.pos_norm_a.1.z += diff;
             hit_data.pos_norm_b.1.z += diff;
         }
@@ -258,7 +182,7 @@ fn apply_bounds<'a, T>(objs: &mut [&mut RigidBody<T>],
 }
 
 /// Updates every dynamic object in `objs` in the octree
-fn update_octree<T>(objs: &[&mut RigidBody<T>]) {
+fn update_octree<T>(objs: &[&RigidBody<T>]) {
     for o in objs {
         if let Some(collider) = &o.base.collider {
             if o.base.body_type == BodyType::Dynamic {
@@ -352,7 +276,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     /// needed to resolve each object of collisions
     /// 
     /// Each CollisionResolution struct handles the collision for a single rigid body
-    fn get_resolving_forces(&self, objects: &[&mut RigidBody<T>], player_idx: usize) 
+    fn get_resolving_forces(&self, objects: &[&RigidBody<T>], player_idx: usize) 
         -> Vec<CollisionResolution> 
     {
         let mut resolvers = Vec::<CollisionResolution>::new();
@@ -404,18 +328,24 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     /// Steps the simulation `dt` into the future
     /// 
     /// `player_idx` - the index of the player's rigid body in `objects`
-    pub fn step(&mut self, objects: &mut [&mut RigidBody<T>], 
+    /// 
+    /// Returns a vector of the change in position/rotation needed to resolve any forces
+    ///  and collisions. The resolution at index `idx` is the change for the body at index
+    /// `idx` in `objects`
+    pub fn step(&mut self, objects: &[&RigidBody<T>], 
         forces: &[Box<dyn Manipulator<T>>], player_idx: usize,
-        dt: std::time::Duration) 
+        dt: std::time::Duration) -> Vec<CollisionResolution>
     {
         let dt_sec = dt.as_secs_f64();
         let body_map = insert_into_octree(&mut self.obj_tree, objects);
-        apply_forces(objects, &body_map, forces, dt);
-        move_objects(objects, dt_sec);
-        resolve_collisions(objects, 
-            self.get_resolving_forces(objects, player_idx), dt_sec);
-        apply_bounds(objects, self.scene_size, self.scene_center, 
-            player_idx, &mut self.on_hit);
         update_octree(objects);
+        let mut resolvers = self.get_resolving_forces(objects, player_idx);
+        apply_forces(objects, &mut resolvers, &body_map, forces, dt);
+        /*move_objects(objects, dt_sec);
+        resolve_collisions(objects, 
+            self.get_resolving_forces(objects, player_idx), dt_sec);*/
+        apply_bounds(objects, &mut resolvers, self.scene_size, self.scene_center, 
+            player_idx, &mut self.on_hit);
+        resolvers
     }
 }

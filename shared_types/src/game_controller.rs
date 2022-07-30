@@ -29,10 +29,16 @@ pub trait GameController {
 
     fn remove_objects(&mut self, ids: &[ObjectId]);
 
-    /// Get `n` ids to use for objects
+    /// Requests `n` ids to use for objects
+    fn request_n_ids(&mut self, n: u32);
+
     /// Returns the first and last id in the range, note that the last
     /// id may be less than the first if the ids wrap around
-    fn get_n_ids(&mut self, n: u32) -> (ObjectId, ObjectId);
+    /// Returns `None` if there are no requested ids received
+    fn get_requested_ids(&mut self) -> Option<(ObjectId, ObjectId)>;
+
+    /// Called every loop to update state
+    fn sync(&mut self);
 }
 
 pub trait Map {
@@ -111,6 +117,7 @@ pub struct LocalGameController {
     objects: Vec<RemoteObject>,
     indices: HashMap<ObjectId, usize>,
     start_time: std::time::Instant,
+    requested_ids: std::collections::VecDeque<(ObjectId, ObjectId)>,
 }
 
 impl LocalGameController {
@@ -122,6 +129,7 @@ impl LocalGameController {
             objects: objs,
             start_time: std::time::Instant::now(),
             indices,
+            requested_ids: Default::default(),
         }
     }
 }
@@ -183,9 +191,17 @@ impl GameController for LocalGameController {
         }
     }
 
-    fn get_n_ids(&mut self, n: u32) -> (ObjectId, ObjectId) {
+    fn request_n_ids(&mut self, n: u32) {
         let id = self.last_id;
         self.last_id = self.last_id.incr(n);
-        (id, self.last_id)
+        self.requested_ids.push_back((id, self.last_id));
+    }
+
+    fn get_requested_ids(&mut self) -> Option<(ObjectId, ObjectId)> {
+        self.requested_ids.pop_front()
+    }
+
+    fn sync(&mut self) {
+        
     }
 }

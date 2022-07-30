@@ -1,4 +1,4 @@
-use crate::graphics_engine::model;
+use crate::{graphics_engine::model, collisions::TreeStopCriteria};
 use crate::cg_support::node;
 use crate::graphics_engine::entity::*;
 use std::rc::Rc;
@@ -6,25 +6,39 @@ use std::cell::RefCell;
 use crate::collisions;
 use crate::graphics_engine::shader;
 use crate::physics::*;
-pub use shared_types::ObjectType;
+pub use shared_types::{ObjectType, ObjectId};
+
+pub type ObjectData = (ObjectType, ObjectId);
+
+/// Gets the collision mesh path, bvh tree stop criteria, and the density of the object type
+pub fn col_data_of_obj_type(typ: &ObjectType) -> Option<(&'static str, TreeStopCriteria, f64)>
+{
+    match typ {
+        ObjectType::Asteroid => Some(("assets/asteroid1/Asteroid.obj", TreeStopCriteria::default(), 2.71)),
+        ObjectType::Planet => Some(("assets/planet/planet1.obj", TreeStopCriteria::default(), 10.)),
+        ObjectType::Laser | ObjectType::Hook => Some(("assets/laser2.obj", TreeStopCriteria::default(), 0.5)),
+        ObjectType::Ship => Some(("assets/Ships/StarSparrow01.obj", TreeStopCriteria::default(), 0.88)),
+        _ => None,
+    }
+}
 
 /// A game object that only stores a model
 /// and gives access to model animation 
 pub struct AnimGameObject {
-    pub data: RigidBody<ObjectType>,
+    pub data: RigidBody<ObjectData>,
     entity: Rc<RefCell<ModelEntity>>,
 }
 
 impl AnimGameObject {
     #[allow(dead_code)]
     pub fn new(model: model::Model) -> Self {
-        AnimGameObject::from(model, node::Node::default())
+        AnimGameObject::from(model, node::Node::default(), Default::default())
     }
 
-    pub fn from(model: model::Model, transform: node::Node) -> Self {
+    pub fn from(model: model::Model, transform: node::Node, id: ObjectId) -> Self {
         let transform = Rc::new(RefCell::new(transform));
         Self {
-            data: RigidBody::new(transform.clone(), None, BodyType::Dynamic, ObjectType::Any),
+            data: RigidBody::new(transform.clone(), None, BodyType::Dynamic, (ObjectType::Any, id)),
             entity: Rc::new(RefCell::new(ModelEntity {
                 geometry: Box::new(model),
                 locations: vec![transform],
@@ -78,7 +92,7 @@ impl AnimGameObject {
 /// a node in the scene graph
 /// A game object is a flyweight
 pub struct GameObject {
-    instances: Vec<RigidBody<ObjectType>>,
+    instances: Vec<RigidBody<ObjectData>>,
     entity: Rc<RefCell<Entity>>,
     collision_prototype: Option<collisions::CollisionObject>,
     bod_type: BodyType,
@@ -90,7 +104,7 @@ impl GameObject {
     /// Creates a new game object with the specified graphics model
     pub fn new(model: model::Model, typ: ObjectType) -> Self {
         Self {
-            instances: Vec::<RigidBody<ObjectType>>::new(),
+            instances: Vec::<RigidBody<ObjectData>>::new(),
             entity: Rc::new(RefCell::new(Entity {
                 geometry: Box::new(model),
                 locations: Vec::new(),
@@ -134,12 +148,12 @@ impl GameObject {
     }
 
     /// Sets the initial position of an instance of this object
-    pub fn at_pos(mut self, transform: node::Node) -> Self {
+    pub fn at_pos(mut self, transform: node::Node, id: ObjectId) -> Self {
         let transform = Rc::new(RefCell::new(transform));
         self.entity.borrow_mut().locations.push(transform.clone());
         self.instances.push(RigidBody::new(transform.clone(),
             self.collision_prototype.as_ref().map(|x| collisions::CollisionObject::from(transform, x)),
-            self.bod_type, self.typ));
+            self.bod_type, (self.typ, id)));
         self
     }
 
@@ -147,12 +161,12 @@ impl GameObject {
     /// 
     /// Returns a mutable reference to this new instance
     pub fn new_instance(&mut self, transform: node::Node, 
-        initial_vel: Option<cgmath::Vector3<f64>>) -> &mut RigidBody<ObjectType> {
+        initial_vel: Option<cgmath::Vector3<f64>>, id: ObjectId) -> &mut RigidBody<ObjectData> {
         let transform = Rc::new(RefCell::new(transform));
         self.entity.borrow_mut().locations.push(transform.clone());
         self.instances.push(RigidBody::new(transform.clone(),
             self.collision_prototype.as_ref().map(|x| collisions::CollisionObject::from(transform, x)),
-            self.bod_type, self.typ).with_density(self.density));  
+            self.bod_type, (self.typ, id)).with_density(self.density));  
         if let Some(vel) = initial_vel {
             self.instances.last_mut().unwrap().base.velocity = vel;
         }
@@ -194,15 +208,20 @@ impl GameObject {
     /// Requires there are more instances than `idx`
     #[inline(always)]
     #[allow(unused)]
-    pub fn body(&mut self, idx: usize) -> &mut RigidBody<ObjectType>
+    pub fn body(&mut self, idx: usize) -> &mut RigidBody<ObjectData>
     {
         &mut self.instances[idx]
     }
 
     /// Gets a vector of mutable references to the rigid bodies
     #[inline(always)]
-    pub fn bodies_ref(&mut self) -> Vec<&mut RigidBody<ObjectType>> {
+    pub fn bodies_ref(&mut self) -> Vec<&mut RigidBody<ObjectData>> {
         self.instances.iter_mut().collect()
+    }
+
+    #[inline]
+    pub fn bodies_slice(&self) -> &[RigidBody<ObjectData>] {
+        &self.instances
     }
 
     /// Retains all instances (both visual and rigid body) whose transformation pointer satisfies the given
