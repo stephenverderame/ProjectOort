@@ -110,11 +110,15 @@ impl<M : GameMediator> Game<M> {
             else { b.metadata.1 };
             self.dead_lasers.borrow_mut().push(lt);
         }
-        if a.metadata.0 == Asteroid || b.metadata.0 == Asteroid {
+        if a.metadata.0 == Ship && b.metadata.0 == Asteroid ||
+            a.metadata.0 == Asteroid && b.metadata.0 == Ship 
+        {
+            println!("Ship hit asteroid");
             self.create_emitter(asteroid_hit_emitter::<glium::Display>, 
                 a, b, hit, 1);
         }
         if a.metadata.0 == Hook || b.metadata.0 == Hook {
+            println!("Hook hit");
             self.on_hook(a, b, hit, player);
             let lt = if a.metadata.0 == Hook { a.metadata.1 }
             else { b.metadata.1 }.clone();
@@ -146,16 +150,16 @@ impl<M : GameMediator> Game<M> {
         self.forces.borrow_mut().append(&mut self.new_forces.borrow_mut());
         let mut u = self.player.borrow_mut();
         let forces = &self.forces.borrow();
-        self.mediator.borrow_mut().update_bodies(|it| {
-            let mut v : Vec<_> = it.collect();
-            v.push(u.as_rigid_body(controls, dt));
-            let p_idx = v.len() - 1;
-            let resolvers = {
-                let v = unsafe { std::mem::transmute::<_, &[& _]>(v.as_slice()) };
-                sim.calc_resolvers(&v[..], forces, p_idx, dt)
-            };
-            sim.apply_resolvers(&mut v, &resolvers, dt);
-        });
+        let objects : Vec<_> = self.mediator.borrow().game_objects().collect();
+        let mut borrows : Vec<_> = objects.iter().map(|o| o.borrow_mut()).collect();
+        let mut bodies : Vec<_> = borrows.iter_mut().flat_map(|o| o.bodies_ref().into_iter()).collect();
+        bodies.push(u.as_rigid_body(controls, dt));
+        let p_idx = bodies.len() - 1;
+        let resolvers = {
+            let v = unsafe { std::mem::transmute::<_, &[& _]>(bodies.as_slice()) };
+            sim.calc_resolvers(&v[..], forces, p_idx, dt)
+        };
+        sim.apply_resolvers(&mut bodies, &resolvers, dt);
         u.change_shield(self.delta_shield.take())
     }
 
@@ -168,11 +172,11 @@ impl<M : GameMediator> Game<M> {
             let mut transform = user.root().borrow().clone()
                 .scale(cgmath::vec3(0.3, 0.3, 1.));
             transform.translate(user.forward() * 10.);
-            let (_, speed) = if controller.fire_rope 
+            let (typ, speed) = if controller.fire_rope 
                 { (object::ObjectType::Hook, 200.) }
             else 
                 { (object::ObjectType::Laser, 120.) };
-            mediator.add_laser(transform, user.forward() * speed);
+            mediator.add_laser(transform, user.forward() * speed, typ);
             user.change_energy(-ENERGY_PER_SHOT);
         }
     }
@@ -183,6 +187,7 @@ impl<M : GameMediator> Game<M> {
         dt : std::time::Duration, scene : &mut dyn scene::AbstractScene,
         controller: &mut controls::PlayerControls)
     {
+        self.mediator.borrow_mut().sync();
         *self.player.borrow().trans_fac() = controller.compute_transparency_fac();
         self.dead_lasers.borrow_mut().clear();
         {

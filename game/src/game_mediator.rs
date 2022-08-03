@@ -39,13 +39,15 @@ pub trait GameMediator {
     /// See `ParticleSystem::new_emitter`
     fn add_particle_emitter(&mut self, emitter: Box<dyn particles::Emitter>, emitter_id: usize);
 
-    fn add_laser(&mut self, transform: Node, vel: Vector3<f64>);
+    fn add_laser(&mut self, transform: Node, vel: Vector3<f64>, typ: ObjectType);
 
     fn remove_lasers(&mut self, ids: &[ObjectId]);
 
     fn sync(&mut self);
 
     fn emit_particles(&self, dt: std::time::Duration);
+
+    fn game_objects<'a>(&'a self) -> Box<dyn Iterator<Item = Rc<RefCell<GameObject>>> + 'a>;
 
     /*fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a>;
 
@@ -243,10 +245,10 @@ impl<State> GameMediatorBase<State> {
 
     /// Adds a new laser to lasers
     #[inline]
-    fn add_laser(&mut self, transform: Node, vel: Vector3<f64>) {
+    fn add_laser(&mut self, transform: Node, vel: Vector3<f64>, typ: ObjectType) {
         if let Some(id) = self.ids.next() {
             self.objs[&ObjectType::Laser].borrow_mut()
-                .new_instance(transform, Some(vel), id);
+                .new_instance(transform, Some(vel), id).metadata.0 = typ;
         } else {
             println!("No more IDs!");
         }
@@ -277,6 +279,10 @@ impl<State> GameMediatorBase<State> {
     #[inline]
     fn emit_particles(&self, dt: std::time::Duration) {
         self.particles.borrow_mut().emit(dt);
+    }
+
+    fn game_objects<'a>(&'a self) -> Box<dyn Iterator<Item = Rc<RefCell<GameObject>>> + 'a> {
+        Box::new(self.objs.iter().map(|(_, obj)| obj.clone()))
     }
 }
 
@@ -353,8 +359,9 @@ impl<State> GameMediator for LocalGameMediator<State> {
         self.base.particles.borrow()
     }
 
-    fn add_laser(&mut self, transform: Node, vel: Vector3<f64>) {
-        self.base.add_laser(transform, vel);
+    fn add_laser(&mut self, transform: Node, vel: Vector3<f64>, typ: ObjectType) {
+        assert!(typ == ObjectType::Laser || typ == ObjectType::Hook);
+        self.base.add_laser(transform, vel, typ);
     }
 
     fn update_bodies<F>(&mut self, func: F) 
@@ -381,6 +388,10 @@ impl<State> GameMediator for LocalGameMediator<State> {
 
     fn emit_particles(&self, dt: std::time::Duration) {
         self.base.emit_particles(dt);
+    }
+
+    fn game_objects<'a>(&'a self) -> Box<dyn Iterator<Item = Rc<RefCell<GameObject>>> + 'a> {
+        self.base.game_objects()
     }
 
     /*fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a> {
