@@ -336,7 +336,6 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         forces: &[Box<dyn Manipulator<T>>], player_idx: usize,
         dt: std::time::Duration) -> Vec<CollisionResolution>
     {
-        let dt_sec = dt.as_secs_f64();
         let body_map = insert_into_octree(&mut self.obj_tree, objects);
         update_octree(objects);
         let mut resolvers = self.get_resolving_forces(objects, player_idx);

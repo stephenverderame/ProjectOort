@@ -192,9 +192,11 @@ fn main() {
     let mut draw_cb = 
     |dt, mut scene : std::cell::RefMut<dyn scene::AbstractScene>| {
         minimap.borrow_mut().clear_items();
-        for bod in game.borrow().get_mediator().bodies_iter() {
-            minimap.borrow_mut().add_item(bod);
-        }
+        game.borrow().get_mediator().iter_bodies(|bods| {
+            for bod in bods {
+                minimap.borrow_mut().add_item(bod);
+            }
+        });
         stat_text.borrow_mut().clear_text();
         stat_text.borrow_mut().add_text(
             &format!("{}", game.borrow().player.borrow().shield().round() as u64),

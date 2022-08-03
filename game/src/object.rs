@@ -35,9 +35,10 @@ impl AnimGameObject {
         AnimGameObject::from(model, node::Node::default(), Default::default())
     }
 
-    pub fn from(model: model::Model, transform: node::Node, id: ObjectId) -> Self {
-        let transform = Rc::new(RefCell::new(transform));
+    pub fn from(_model: model::Model, _transform: node::Node, _id: ObjectId) -> Self {
         todo!();
+        /*
+        let transform = Rc::new(RefCell::new(transform));
         Self {
             data: RigidBody::new(transform.clone(), None, BodyType::Dynamic, (ObjectType::Cloud, id)),
             entity: Rc::new(RefCell::new(ModelEntity {
@@ -47,7 +48,7 @@ impl AnimGameObject {
                     shader::RenderPassType::transparent_tag()],
                 order: RenderOrder::Unordered,
             })),
-        }
+        }*/
     }
 
     /// Indicates the entity should be rendered during a depth pass

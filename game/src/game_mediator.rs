@@ -12,7 +12,6 @@ use crate::physics::{self, RigidBody, };
 use std::collections::HashMap;
 use crate::collisions;
 use shared_types::{id_list::IdList, game_controller::*};
-use object::*;
 
 pub trait GameMediator {
     fn get_entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>>;
@@ -21,9 +20,11 @@ pub trait GameMediator {
     fn get_lights(&self) -> Vec<shader::LightData>;
 
     /// Gets the rigid bodies in this map
-    fn iter_bodies(&self, func: Box<dyn FnMut(&dyn Iterator<Item = &RigidBody<ObjectData>>)>);
+    fn iter_bodies<F>(&self, func: F)
+        where F : FnMut(&mut dyn Iterator<Item = &RigidBody<ObjectData>>);
 
-    fn update_bodies(&mut self, func: Box<dyn FnMut(&mut dyn Iterator<Item = &mut RigidBody<ObjectData>>)>);
+    fn update_bodies<F>(&mut self, func: F)
+        where F : FnMut(&mut dyn Iterator<Item = &mut RigidBody<ObjectData>>);
 
     fn get_lasers(&self) -> Ref<GameObject>;
 
@@ -46,9 +47,9 @@ pub trait GameMediator {
 
     fn emit_particles(&self, dt: std::time::Duration);
 
-    fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a>;
+    /*fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a>;
 
-    fn bodies_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut RigidBody<ObjectData>> + 'a>;
+    fn bodies_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut RigidBody<ObjectData>> + 'a>;*/
 
 }
 
@@ -73,7 +74,7 @@ struct GameMediatorBase<State> {
 }
 
 fn init_objs<F : glium::backend::Facade, C : GameController>
-    (sm: &shader::ShaderManager, controller: &C, ctx: &F)
+    (_sm: &shader::ShaderManager, controller: &C, ctx: &F)
     -> HashMap<ObjectType, Rc<RefCell<GameObject>>>
 {
     let mut objs = HashMap::new();
@@ -91,6 +92,10 @@ fn init_objs<F : glium::backend::Facade, C : GameController>
             .with_collisions("assets/planet/planet1.obj", Default::default())
             .immobile().density(10.)
     )));
+    objs.insert(ObjectType::Laser, Rc::new(RefCell::new(object::GameObject::new(
+        model::Model::new("assets/laser2.obj", ctx).with_instancing(), 
+        object::ObjectType::Laser).with_collisions("assets/laser2.obj", 
+            collisions::TreeStopCriteria::default()))));
     for (transform, vel, rot_vel, typ, id) in controller.get_game_objects()
         .iter().map(shared_types::node::from_remote_object)
         .filter(|(_, _, _, typ, _)| !typ.is_non_physical())
@@ -102,7 +107,7 @@ fn init_objs<F : glium::backend::Facade, C : GameController>
 }
 
 fn init_entities<F : glium::backend::Facade, C : GameController>
-    (sm: &shader::ShaderManager, controller: &C, ctx: &F)
+    (_sm: &shader::ShaderManager, controller: &C, ctx: &F)
     -> HashMap<ObjectType, Rc<RefCell<dyn AbstractEntity>>>
 {
     let clouds : Vec<_> = controller.get_game_objects()
@@ -131,6 +136,7 @@ fn init_lighting<F : glium::backend::Facade>(sm : &shader::ShaderManager, ctx: &
 }
 
 /// Converts a remote object into a rigid body
+#[allow(unused)]
 fn remote_obj_to_body(obj: &shared_types::RemoteObject) -> Option<RigidBody<ObjectData>> {
     use crate::collisions::CollisionObject;
     let (node, vel, rot_vel, typ, id) 
@@ -148,6 +154,7 @@ fn remote_obj_to_body(obj: &shared_types::RemoteObject) -> Option<RigidBody<Obje
 }
 
 /// Converts a rigid body to a remote object
+#[allow(unused)]
 fn body_to_remote_obj(body: &RigidBody<ObjectData>) -> shared_types::RemoteObject {
     shared_types::node::to_remote_object(&body.base.transform.borrow(), &body.base.velocity, 
         &body.base.rot_vel, body.metadata.0, body.metadata.1)
@@ -195,10 +202,12 @@ impl<State> GameMediatorBase<State> {
     #[inline]
     fn get_entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>> {
         self.objs.iter().map(|(_, obj)| 
-            (obj.borrow().as_entity().clone() as Rc<RefCell<dyn AbstractEntity>>)).collect()
+            (obj.borrow().as_entity().clone() as Rc<RefCell<dyn AbstractEntity>>))
+        .chain(self.entity.iter().map(|(_, obj)| 
+            (obj.clone() as Rc<RefCell<dyn AbstractEntity>>))).collect()
     }
 
-    fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a> {
+    /*fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a> {
         Box::new(self.objs.iter().flat_map(|(_, obj)| 
             (obj.borrow().bodies_slice())))
     }
@@ -206,10 +215,12 @@ impl<State> GameMediatorBase<State> {
     fn bodies_iter_mut<'a>(&'a self) -> Box<dyn Iterator<Item = &'a mut RigidBody<ObjectData>> + 'a> {
         Box::new(self.objs.iter_mut().flat_map(|(_, obj)| 
             (obj.borrow_mut().bodies_ref())))
-    }
+    }*/
 
     /// Iterates through all the rigid bodies, can be mutated
-    fn update_bodies(&mut self, mut func: Box<dyn FnMut(&mut dyn Iterator<Item = &mut RigidBody<ObjectData>>)>) {
+    fn update_bodies<F>(&mut self, mut func: F)
+        where F : FnMut(&mut dyn Iterator<Item = &mut RigidBody<ObjectData>>) 
+    {
         let mut objs : Vec<_> = self.objs.iter().map(|(_, obj)| {
             obj.borrow_mut()
         }).collect();
@@ -219,11 +230,13 @@ impl<State> GameMediatorBase<State> {
     }
 
     /// Iterates through all the rigid bodies, non-mutably
-    fn iter_bodies(&self, mut func: Box<dyn FnMut(&dyn Iterator<Item = &RigidBody<ObjectData>>)>) {
+    fn iter_bodies<F>(&self, mut func: F) 
+        where F : FnMut(&mut dyn Iterator<Item = &RigidBody<ObjectData>>)
+    {
         let objs : Vec<_> = self.objs.iter().map(|(_, obj)| {
             obj.borrow()
         }).collect();
-        func(&objs.iter().flat_map(|obj| {
+        func(&mut objs.iter().flat_map(|obj| {
             obj.bodies_slice().iter()
         }));
     }
@@ -322,7 +335,9 @@ impl<State> GameMediator for LocalGameMediator<State> {
         self.base.get_lights()
     }
 
-    fn iter_bodies(&self, func: Box<dyn FnMut(&dyn Iterator<Item = &RigidBody<ObjectData>>)>) {
+    fn iter_bodies<F>(&self, func: F) 
+        where F : FnMut(&mut dyn Iterator<Item = &RigidBody<ObjectData>>)
+    {
         self.base.iter_bodies(func);
     }
 
@@ -342,8 +357,8 @@ impl<State> GameMediator for LocalGameMediator<State> {
         self.base.add_laser(transform, vel);
     }
 
-    fn update_bodies(&mut self, 
-        func: Box<dyn FnMut(&mut dyn Iterator<Item = &mut RigidBody<ObjectData>>)>) 
+    fn update_bodies<F>(&mut self, func: F) 
+        where F : FnMut(&mut dyn Iterator<Item = &mut RigidBody<ObjectData>>) 
     {
         self.base.update_bodies(func);
     }
@@ -368,13 +383,13 @@ impl<State> GameMediator for LocalGameMediator<State> {
         self.base.emit_particles(dt);
     }
 
-    fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a> {
+    /*fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a> {
         self.base.bodies_iter()
     }
 
     fn bodies_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut RigidBody<ObjectData>> + 'a> {
         self.base.bodies_iter_mut()
-    }
+    }*/
 }
 
 impl GameMediatorLightingAvailable for LocalGameMediator<HasLightingAvailable> {

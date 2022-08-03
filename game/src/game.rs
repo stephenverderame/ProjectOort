@@ -14,7 +14,7 @@ use super::game_mediator::*;
 
 /// Encapsulates the game map and handles the logic for base game mechanics
 pub struct Game<M : GameMediator> {
-    mediator: M,
+    mediator: RefCell<M>,
     pub player: Rc<RefCell<player::Player>>,
     forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectData>>>>,
     dead_lasers: RefCell<Vec<shared_types::ObjectId>>,
@@ -25,7 +25,7 @@ pub struct Game<M : GameMediator> {
 impl<M : GameMediator> Game<M> {
 
     /// Creates a new particle emitter from an emitter factory function
-    fn create_emitter<Func>(&mut self, emitter_factory: Func, 
+    fn create_emitter<Func>(&self, emitter_factory: Func, 
         a: &RigidBody<object::ObjectData>, b: &RigidBody<object::ObjectData>, 
         hit: &HitData, emitter_id: usize)
         where Func : Fn(Point3<f64>,Vector3<f64>,
@@ -36,7 +36,7 @@ impl<M : GameMediator> Game<M> {
         if relative_vel.magnitude() > 1. {
             let ctx = graphics_engine::get_active_ctx();
             let facade = ctx.ctx.borrow();
-            self.mediator.add_particle_emitter(
+            self.mediator.borrow_mut().add_particle_emitter(
                 emitter_factory(hit.pos_norm_b.0, 
                     hit.pos_norm_b.1, relative_vel, &*facade), emitter_id
             );
@@ -45,7 +45,7 @@ impl<M : GameMediator> Game<M> {
 
     /// Callback function for when a tether shot collides with
     /// an object
-    fn on_hook(&mut self, a: &RigidBody<object::ObjectData>, 
+    fn on_hook(&self, a: &RigidBody<object::ObjectData>, 
         b: &RigidBody<object::ObjectData>, hit: &HitData, 
         player: &BaseRigidBody)
     {
@@ -59,7 +59,7 @@ impl<M : GameMediator> Game<M> {
         let ship_front = player.transform.borrow().transform_point(point3(0., 0., 8.));
         let hit_local = target.base.transform.borrow().mat()
             .invert().unwrap().transform_point(hit_point);
-        self.mediator.add_line(0, primitives::LineData {
+        self.mediator.borrow_mut().add_line(0, primitives::LineData {
             color: [1., 0., 0., 1.],
             start: node::Node::default().parent(player.transform.clone())
                 .pos(point3(0., 0., 10.)),
@@ -146,27 +146,29 @@ impl<M : GameMediator> Game<M> {
         self.forces.borrow_mut().append(&mut self.new_forces.borrow_mut());
         let mut u = self.player.borrow_mut();
         let forces = &self.forces.borrow();
-        let mut v : Vec<_> = self.mediator.bodies_iter_mut().collect();
-        v.push(u.as_rigid_body(controls, dt));
-        let p_idx = v.len() - 1;
-        let resolvers = {
-            let v = unsafe { std::mem::transmute::<_, &[& _]>(v.as_slice()) };
-            sim.calc_resolvers(&v[..], forces, p_idx, dt)
-        };
-        sim.apply_resolvers(&mut v, &resolvers, dt);
+        self.mediator.borrow_mut().update_bodies(|it| {
+            let mut v : Vec<_> = it.collect();
+            v.push(u.as_rigid_body(controls, dt));
+            let p_idx = v.len() - 1;
+            let resolvers = {
+                let v = unsafe { std::mem::transmute::<_, &[& _]>(v.as_slice()) };
+                sim.calc_resolvers(&v[..], forces, p_idx, dt)
+            };
+            sim.apply_resolvers(&mut v, &resolvers, dt);
+        });
         u.change_shield(self.delta_shield.take())
     }
 
     /// Function thet should be called every frame to handle shooting lasers
     fn handle_shots(user: &mut player::Player, controller: &controls::PlayerControls, 
-        mediator: &mut dyn GameMediator) 
+        mediator: &mut M) 
     {
         const ENERGY_PER_SHOT : f64 = 1.;
         if controller.fire && user.energy() > ENERGY_PER_SHOT {
             let mut transform = user.root().borrow().clone()
                 .scale(cgmath::vec3(0.3, 0.3, 1.));
             transform.translate(user.forward() * 10.);
-            let (typ, speed) = if controller.fire_rope 
+            let (_, speed) = if controller.fire_rope 
                 { (object::ObjectType::Hook, 200.) }
             else 
                 { (object::ObjectType::Laser, 120.) };
@@ -186,35 +188,32 @@ impl<M : GameMediator> Game<M> {
         {
             if controller.cut_rope {
                 self.forces.borrow_mut().clear();
-                self.mediator.remove_line(0);
+                self.mediator.borrow_mut().remove_line(0);
             }
             let mut u = self.player.borrow_mut();
-            Self::handle_shots(&mut *u, controller, &mut self.mediator);
+            Self::handle_shots(&mut *u, controller, &mut self.mediator.borrow_mut());
         }
         self.step_sim(sim, controller, dt);
 
-        self.mediator.remove_lasers(&self.dead_lasers.borrow());
-        self.mediator.emit_particles(dt);
-        scene.set_lights(&self.mediator.get_lights());
+        self.mediator.borrow_mut().remove_lasers(&self.dead_lasers.borrow());
+        self.mediator.borrow_mut().emit_particles(dt);
+        scene.set_lights(&self.mediator.borrow().get_lights());
     }
 
-    pub fn get_mediator(&self) -> &M
-    { &self.mediator }
+    pub fn get_mediator(&self) -> std::cell::Ref<M>
+    { self.mediator.borrow() }
 
     #[inline]
-    pub fn bodies_iter(&self) -> impl Iterator<Item = &RigidBody<object::ObjectData>>
-    { self.mediator.bodies_iter() }
-
-    #[inline]
+    #[allow(unused)]
     pub fn get_entities(&self) -> Vec<Rc<RefCell<dyn crate::entity::AbstractEntity>>>
-    { self.mediator.get_entities() }
+    { self.mediator.borrow().get_entities() }
 }
 
 impl<M : GameMediatorLightingAvailable> Game<M>
 {
     pub fn new(mediator: M, player: player::Player) -> Self {
         Game {
-            mediator,
+            mediator: RefCell::new(mediator),
             player: Rc::new(RefCell::new(player)),
             forces: RefCell::default(),
             dead_lasers: RefCell::new(Vec::new()),
@@ -227,9 +226,9 @@ impl<M : GameMediatorLightingAvailable> Game<M>
         where <M as GameMediatorLightingAvailable>::ReturnType : GameMediator 
     { 
         let (maps, vec, mediator) 
-            = self.mediator.lighting_info();
+            = self.mediator.into_inner().lighting_info();
         (maps, vec, Game {
-            mediator,
+            mediator: RefCell::new(mediator),
             player: self.player,
             forces: self.forces,
             dead_lasers: self.dead_lasers,
