@@ -59,10 +59,10 @@ impl Minimap {
     }
 
     /// Adds `body` to the minimap. Does nothing if `body` should not be shown
-    pub fn add_item(&mut self, body: &physics::RigidBody<object::ObjectType>) {
+    pub fn add_item(&mut self, body: &physics::RigidBody<object::ObjectData>) {
         use object::ObjectType::*;
         use cgmath::*;
-        let (color, tex_index, scale) = match body.metadata {
+        let (color, tex_index, scale) = match body.metadata.0 {
             Asteroid => ([0.517f32, 0.282, 0.082, 1.0], 0usize, 
                 (body.base.extents().unwrap_or(0.) / self.view_dist).max(0.05)),
             Laser => ([0.5451f32, 0.0, 0.5451, 1.0], 1usize, 0.1),

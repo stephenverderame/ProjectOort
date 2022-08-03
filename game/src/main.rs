@@ -12,7 +12,6 @@ mod object;
 mod player;
 mod controls;
 mod physics;
-mod game_map;
 mod game;
 mod game_mediator;
 mod minimap;
@@ -22,6 +21,8 @@ use graphics_engine::window::*;
 use cgmath::*;
 use graphics_engine::pipeline::*;
 use graphics_engine::*;
+use shared_types::game_controller::{LocalGameController, GameController};
+use game_mediator::*;
 
 use std::rc::Rc;
 use std::cell::{RefCell};
@@ -113,21 +114,24 @@ fn main() {
     let render_width = 1920;
     let render_height = 1080;
 
-    let controller = RefCell::new(controls::PlayerControls::new());
+    let player_controls = RefCell::new(controls::PlayerControls::new());
     let mut wnd = WindowMaker::new(render_width, render_height).title("Space Fight")
         .depth_buffer(24).msaa(4).build();
 
-    let map = game_map::AsteroidMap::new(&*wnd.shaders, &*wnd.ctx());
+    let controller = LocalGameController::new(&shared_types::game_controller::AsteroidMap{});
     let player = player::Player::new(
         model::Model::new("assets/Ships/StarSparrow01.obj", &*wnd.ctx()),
-        render_width as f32 / render_height as f32, "assets/Ships/StarSparrow01.obj");
-    let game = RefCell::new(game::Game::new(map, player));
+        render_width as f32 / render_height as f32, "assets/Ships/StarSparrow01.obj",
+        controller.get_player_stats().pid);
+    let mediator = 
+        LocalGameMediator::<HasLightingAvailable>::new(&wnd.shaders, &*wnd.ctx(), controller);
+    let game = game::Game::new(mediator, player);
 
     let mut main_scene = scene::Scene::new(
         get_main_render_pass(render_width, render_height, 
-            game.borrow().player.clone(), &*wnd.ctx()),
-        game.borrow().player.clone());
-    let (ibl, ldir) = game.borrow().get_map().lighting_info();
+            game.player.clone(), &*wnd.ctx()),
+        game.player.clone());
+    let (ibl, ldir, game) = game.get_lighting();
     main_scene.set_ibl_maps(ibl);
     main_scene.set_light_dir(ldir);
 
@@ -139,7 +143,7 @@ fn main() {
         get_ui_render_pass(render_width, render_height, &*wnd.ctx()), 
         Rc::new(RefCell::new(camera::Camera2D::new(render_width, render_height))))
         .bg((0., 0., 0., 0.6));
-    let map = minimap::Minimap::new(game.borrow().player.borrow().root().clone(), 
+    let map = minimap::Minimap::new(game.player.borrow().root().clone(), 
         3000., &*wnd.ctx());
     let minimap = Rc::new(RefCell::new(map));
     map_scene.set_entities(vec![minimap.clone()]);
@@ -160,8 +164,8 @@ fn main() {
         Rc::new(RefCell::new(shield_icon))]);
     
     // skybox must be rendered first, particles must be rendered last
-    let mut entities = game.borrow().get_map().entities();
-    entities.push(game.borrow().player.borrow().as_entity());
+    let mut entities = game.get_mediator().get_entities();
+    entities.push(game.player.borrow().as_entity());
     main_scene.set_entities(entities);
 
     let map_screen_location = 
@@ -177,8 +181,10 @@ fn main() {
         .insert_scene("main", Box::new(RefCell::new(compositor_scene)))
         .change_scene("main");
 
+    let game = RefCell::new(game);
+
     let sim = RefCell::new(physics::Simulation::<object::ObjectData>::new(point3(0., 0., 0.), 1500.)
-        .with_do_resolve(game::Game::should_resolve)
+        .with_do_resolve(game::Game::<LocalGameMediator<NoLightingAvailable>>::should_resolve)
         .with_on_hit(|a, b, hit, player| {
             game.borrow().on_hit(a, b, hit, player)
         }));
@@ -186,11 +192,9 @@ fn main() {
     let mut draw_cb = 
     |dt, mut scene : std::cell::RefMut<dyn scene::AbstractScene>| {
         minimap.borrow_mut().clear_items();
-        game.borrow().get_map().iter_bodies(Box::new(|bods| {
-            for bod in bods {
-                minimap.borrow_mut().add_item(bod);
-            }
-        }));
+        for bod in game.borrow().get_mediator().bodies_iter() {
+            minimap.borrow_mut().add_item(bod);
+        }
         stat_text.borrow_mut().clear_text();
         stat_text.borrow_mut().add_text(
             &format!("{}", game.borrow().player.borrow().shield().round() as u64),
@@ -201,12 +205,12 @@ fn main() {
             Rc::new(RefCell::new(node::Node::default().u_scale(0.07).pos(point3(-0.78, 0.75, 0.1)))),
             [1., 1., 0., 1.]);
         game.borrow().on_draw(&mut sim.borrow_mut(), dt, &mut *scene, 
-            &mut controller.borrow_mut());
+            &mut player_controls.borrow_mut());
         // will call on_hit, so cannot mutably borrow game
-        controller.borrow_mut().reset_toggles();
+        player_controls.borrow_mut().reset_toggles();
     };
     let mut controller_cb = |ev, _: std::cell::RefMut<SceneManager>| 
-        (&mut *controller.borrow_mut()).on_input(ev);
+        (&mut *player_controls.borrow_mut()).on_input(ev);
     let mut resize_cb = |new_size : glutin::dpi::PhysicalSize<u32>| {
         if new_size.height != 0 {
             game.borrow().player.borrow_mut().aspect = 

@@ -63,7 +63,7 @@ mod test;
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 #[repr(u8)]
 pub enum ObjectType {
-    Laser = 0, Ship, Asteroid, Any, Hook, Planet
+    Laser = 0, Ship, Asteroid, Skybox, Hook, Planet, Cloud
 }
 
 impl TryFrom<u8> for ObjectType {
@@ -73,8 +73,9 @@ impl TryFrom<u8> for ObjectType {
             0 => Ok(ObjectType::Laser),
             1 => Ok(ObjectType::Ship),
             2 => Ok(ObjectType::Asteroid),
-            3 => Ok(ObjectType::Any),
+            3 => Ok(ObjectType::Skybox),
             4 => Ok(ObjectType::Hook),
+            5 => Ok(ObjectType::Cloud),
             _ => Err(format!("Invalid object type byte representation: {}", val))
         }
     }
@@ -87,6 +88,15 @@ impl ObjectType {
     /// Undefined behavior if this condition is not met
     pub unsafe fn from_unchecked(val: u8) -> Self {
         std::mem::transmute(val)
+    }
+
+    /// Returns `true` if the object type does not have a corresponding rigid body,
+    /// that is if it an entity only
+    pub fn is_non_physical(&self) -> bool {
+        match self {
+            ObjectType::Cloud | ObjectType::Skybox => true,
+            _ => false
+        }
     }
 }
 

@@ -1,6 +1,5 @@
 use crate::physics::*;
 use crate::object;
-use super::game_map::*;
 use std::rc::Rc;
 use std::cell::RefCell;
 use super::player;
@@ -14,8 +13,8 @@ use std::cell::Cell;
 use super::game_mediator::*;
 
 /// Encapsulates the game map and handles the logic for base game mechanics
-pub struct Game<'c> {
-    mediator: Box<dyn GameMediator + 'c>,
+pub struct Game<M : GameMediator> {
+    mediator: M,
     pub player: Rc<RefCell<player::Player>>,
     forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectData>>>>,
     dead_lasers: RefCell<Vec<shared_types::ObjectId>>,
@@ -23,17 +22,7 @@ pub struct Game<'c> {
     delta_shield: Cell<f64>,
 }
 
-impl<'c> Game<'c> {
-    pub fn new<M : GameMediator + 'c>(mediator: M, player: player::Player) -> Self {
-        Self {
-            mediator: Box::new(mediator),
-            player: Rc::new(RefCell::new(player)),
-            forces: RefCell::default(),
-            dead_lasers: RefCell::new(Vec::new()),
-            new_forces: RefCell::new(Vec::new()),
-            delta_shield: Cell::new(0.),
-        }
-    }
+impl<M : GameMediator> Game<M> {
 
     /// Creates a new particle emitter from an emitter factory function
     fn create_emitter<Func>(&mut self, emitter_factory: Func, 
@@ -157,12 +146,14 @@ impl<'c> Game<'c> {
         self.forces.borrow_mut().append(&mut self.new_forces.borrow_mut());
         let mut u = self.player.borrow_mut();
         let forces = &self.forces.borrow();
-        self.mediator.update_bodies(Box::new(|it| {
-            let mut v : Vec<_> = it.collect();
-            v.push(u.as_rigid_body(controls, dt));
-            let p_idx = v.len() - 1;
-            sim.step(&mut v, forces, p_idx, dt);
-        }));
+        let mut v : Vec<_> = self.mediator.bodies_iter_mut().collect();
+        v.push(u.as_rigid_body(controls, dt));
+        let p_idx = v.len() - 1;
+        let resolvers = {
+            let v = unsafe { std::mem::transmute::<_, &[& _]>(v.as_slice()) };
+            sim.calc_resolvers(&v[..], forces, p_idx, dt)
+        };
+        sim.apply_resolvers(&mut v, &resolvers, dt);
         u.change_shield(self.delta_shield.take())
     }
 
@@ -198,7 +189,7 @@ impl<'c> Game<'c> {
                 self.mediator.remove_line(0);
             }
             let mut u = self.player.borrow_mut();
-            Self::handle_shots(&mut *u, controller, self.mediator.as_mut());
+            Self::handle_shots(&mut *u, controller, &mut self.mediator);
         }
         self.step_sim(sim, controller, dt);
 
@@ -207,6 +198,44 @@ impl<'c> Game<'c> {
         scene.set_lights(&self.mediator.get_lights());
     }
 
-    pub fn get_mediator(&self) -> &dyn GameMediator
-    { self.mediator.as_ref() }
+    pub fn get_mediator(&self) -> &M
+    { &self.mediator }
+
+    #[inline]
+    pub fn bodies_iter(&self) -> impl Iterator<Item = &RigidBody<object::ObjectData>>
+    { self.mediator.bodies_iter() }
+
+    #[inline]
+    pub fn get_entities(&self) -> Vec<Rc<RefCell<dyn crate::entity::AbstractEntity>>>
+    { self.mediator.get_entities() }
+}
+
+impl<M : GameMediatorLightingAvailable> Game<M>
+{
+    pub fn new(mediator: M, player: player::Player) -> Self {
+        Game {
+            mediator,
+            player: Rc::new(RefCell::new(player)),
+            forces: RefCell::default(),
+            dead_lasers: RefCell::new(Vec::new()),
+            new_forces: RefCell::new(Vec::new()),
+            delta_shield: Cell::new(0.),
+        }
+    }
+    
+    pub fn get_lighting(self) -> (super::shader::PbrMaps, Vector3<f32>, Game<M::ReturnType>) 
+        where <M as GameMediatorLightingAvailable>::ReturnType : GameMediator 
+    { 
+        let (maps, vec, mediator) 
+            = self.mediator.lighting_info();
+        (maps, vec, Game {
+            mediator,
+            player: self.player,
+            forces: self.forces,
+            dead_lasers: self.dead_lasers,
+            new_forces: self.new_forces,
+            delta_shield: self.delta_shield,
+        })
+
+    }
 }

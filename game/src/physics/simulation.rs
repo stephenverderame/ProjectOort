@@ -85,7 +85,7 @@ fn move_objects<T>(objs: &mut [&mut RigidBody<T>], dt: f64) {
 
 /// Uses `resolvers` to update position and rotation based on collisions
 fn resolve_collisions<T>(objects: &mut [&mut RigidBody<T>], 
-    resolvers: Vec<CollisionResolution>, _dt: f64) 
+    resolvers: &[CollisionResolution], _dt: f64) 
 {
     for (resolver, body_idx) in resolvers.into_iter().zip(0 .. objects.len())
         .filter(|(resolver, _)| resolver.is_collide) 
@@ -332,7 +332,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     /// Returns a vector of the change in position/rotation needed to resolve any forces
     ///  and collisions. The resolution at index `idx` is the change for the body at index
     /// `idx` in `objects`
-    pub fn step(&mut self, objects: &[&RigidBody<T>], 
+    pub fn calc_resolvers(&mut self, objects: &[&RigidBody<T>], 
         forces: &[Box<dyn Manipulator<T>>], player_idx: usize,
         dt: std::time::Duration) -> Vec<CollisionResolution>
     {
@@ -347,5 +347,16 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         apply_bounds(objects, &mut resolvers, self.scene_size, self.scene_center, 
             player_idx, &mut self.on_hit);
         resolvers
+    }
+
+    /// Steps the simulation `dt` into the future by applying the resolving forces to each object
+    /// 
+    /// Requires resolvers and objects of the corresponding indices to match
+    pub fn apply_resolvers(&mut self, objects: &mut [&mut RigidBody<T>],
+        resolvers: &[CollisionResolution], dt: std::time::Duration)
+    {
+        let dt_sec = dt.as_secs_f64();
+        move_objects(objects, dt_sec);
+        resolve_collisions(objects, resolvers, dt_sec);
     }
 }

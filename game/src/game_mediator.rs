@@ -46,17 +46,34 @@ pub trait GameMediator {
 
     fn emit_particles(&self, dt: std::time::Duration);
 
+    fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a>;
+
+    fn bodies_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut RigidBody<ObjectData>> + 'a>;
+
 }
 
-struct GameMediatorBase {
+pub trait GameMediatorLightingAvailable : GameMediator {
+    type ReturnType;
+
+    fn lighting_info(self) -> (shader::PbrMaps, cgmath::Vector3<f32>, Self::ReturnType);
+}
+
+pub struct HasLightingAvailable {}
+pub struct NoLightingAvailable {}
+
+struct GameMediatorBase<State> {
     objs: HashMap<ObjectType, Rc<RefCell<GameObject>>>,
     entity: HashMap<ObjectType, Rc<RefCell<dyn AbstractEntity>>>,
     lines: Rc<RefCell<primitives::Lines>>,
     particles: Rc<RefCell<particles::ParticleSystem>>,
     ids: IdList,
+    ibl_maps: Cell<Option<shader::PbrMaps>>,
+    light_dir: Vector3<f32>,
+    _state: std::marker::PhantomData<State>,
 }
 
-fn init_objs<F : glium::backend::Facade>(sm: &shader::ShaderManager, ctx: &F)
+fn init_objs<F : glium::backend::Facade, C : GameController>
+    (sm: &shader::ShaderManager, controller: &C, ctx: &F)
     -> HashMap<ObjectType, Rc<RefCell<GameObject>>>
 {
     let mut objs = HashMap::new();
@@ -74,18 +91,43 @@ fn init_objs<F : glium::backend::Facade>(sm: &shader::ShaderManager, ctx: &F)
             .with_collisions("assets/planet/planet1.obj", Default::default())
             .immobile().density(10.)
     )));
+    for (transform, vel, rot_vel, typ, id) in controller.get_game_objects()
+        .iter().map(shared_types::node::from_remote_object)
+        .filter(|(_, _, _, typ, _)| !typ.is_non_physical())
+    {
+        objs[&typ].borrow_mut()
+            .new_instance(transform, Some(vel), id).base.rot_vel = rot_vel;
+    }
     objs
 }
 
-fn init_entities<F : glium::backend::Facade>(sm: &shader::ShaderManager, ctx: &F)
+fn init_entities<F : glium::backend::Facade, C : GameController>
+    (sm: &shader::ShaderManager, controller: &C, ctx: &F)
     -> HashMap<ObjectType, Rc<RefCell<dyn AbstractEntity>>>
 {
+    let clouds : Vec<_> = controller.get_game_objects()
+        .iter().map(shared_types::node::from_remote_object)
+        .filter(|(_, _, _, typ, _)| *typ == ObjectType::Cloud)
+        .map(|(transform, _, _, _, _)| transform).collect();
     let mut entities : HashMap<_, Rc<RefCell<dyn AbstractEntity>>> = HashMap::new();
-    entities.insert(ObjectType::Any, Rc::new(RefCell::new(
+    entities.insert(ObjectType::Cloud, Rc::new(RefCell::new(
         entity::EntityBuilder::new(cubes::Volumetric::cloud(128, ctx))
         .with_pass(shader::RenderPassType::Visual)
-        .render_order(entity::RenderOrder::Last).build())));
+        .render_order(entity::RenderOrder::Last)
+        .at_all(&clouds)
+        .build())));
     entities
+}
+
+/// Gets the skybox and ibl map
+fn init_lighting<F : glium::backend::Facade>(sm : &shader::ShaderManager, ctx: &F, 
+    lighting: &GlobalLightingInfo) -> (Entity, shader::PbrMaps)
+{
+    let mut skybox = cubes::Skybox::cvt_from_sphere(
+        lighting.skybox, 2048, sm, ctx);
+    let ibl = scene::gen_ibl_from_hdr(lighting.hdr, 
+        &mut skybox, sm, ctx);
+    (skybox.to_entity(), ibl)
 }
 
 /// Converts a remote object into a rigid body
@@ -111,18 +153,26 @@ fn body_to_remote_obj(body: &RigidBody<ObjectData>) -> shared_types::RemoteObjec
         &body.base.rot_vel, body.metadata.0, body.metadata.1)
 }
 
-impl GameMediatorBase {
-    fn new<F : glium::backend::Facade>(sm: &shader::ShaderManager, ctx: &F) -> Self {
+impl<State> GameMediatorBase<State> {
+    fn new<F : glium::backend::Facade, C : GameController>(sm: &shader::ShaderManager, 
+        controller: &C, ctx: &F) -> GameMediatorBase<HasLightingAvailable> 
+    {
         let lines = Rc::new(RefCell::new(primitives::Lines::new(ctx)));
         let particles = Rc::new(RefCell::new(particles::ParticleSystem::new()
             .with_billboard("assets/particles/smoke_01.png", 0.4)
             .with_billboard("assets/particles/circle_05.png", 0.4)));
+        let mut entity = init_entities(sm, controller, ctx);
+        let (skybox, ibl_maps) = init_lighting(sm, ctx, &controller.get_lighting_info());
+        entity.insert(ObjectType::Skybox, Rc::new(RefCell::new(skybox)));
         GameMediatorBase {
-            objs: init_objs(sm, ctx),
-            entity: init_entities(sm, ctx),
+            objs: init_objs(sm, controller, ctx),
+            entity,
             lines,
             particles,
             ids: IdList::new(),
+            ibl_maps: Cell::new(Some(ibl_maps)),
+            light_dir: controller.get_lighting_info().dir_light,
+            _state: std::marker::PhantomData::<HasLightingAvailable>{},
         }
     }
 
@@ -148,9 +198,19 @@ impl GameMediatorBase {
             (obj.borrow().as_entity().clone() as Rc<RefCell<dyn AbstractEntity>>)).collect()
     }
 
+    fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a> {
+        Box::new(self.objs.iter().flat_map(|(_, obj)| 
+            (obj.borrow().bodies_slice())))
+    }
+
+    fn bodies_iter_mut<'a>(&'a self) -> Box<dyn Iterator<Item = &'a mut RigidBody<ObjectData>> + 'a> {
+        Box::new(self.objs.iter_mut().flat_map(|(_, obj)| 
+            (obj.borrow_mut().bodies_ref())))
+    }
+
     /// Iterates through all the rigid bodies, can be mutated
-    fn update_bodies(&mut self, func: Box<dyn FnMut(&mut dyn Iterator<Item = &mut RigidBody<ObjectData>>)>) {
-        let objs : Vec<_> = self.objs.iter().map(|(_, obj)| {
+    fn update_bodies(&mut self, mut func: Box<dyn FnMut(&mut dyn Iterator<Item = &mut RigidBody<ObjectData>>)>) {
+        let mut objs : Vec<_> = self.objs.iter().map(|(_, obj)| {
             obj.borrow_mut()
         }).collect();
         func(&mut objs.iter_mut().flat_map(|obj| {
@@ -159,7 +219,7 @@ impl GameMediatorBase {
     }
 
     /// Iterates through all the rigid bodies, non-mutably
-    fn iter_bodies(&self, func: Box<dyn FnMut(&dyn Iterator<Item = &RigidBody<ObjectData>>)>) {
+    fn iter_bodies(&self, mut func: Box<dyn FnMut(&dyn Iterator<Item = &RigidBody<ObjectData>>)>) {
         let objs : Vec<_> = self.objs.iter().map(|(_, obj)| {
             obj.borrow()
         }).collect();
@@ -207,23 +267,43 @@ impl GameMediatorBase {
     }
 }
 
-struct LocalGameMediator {
-    base: GameMediatorBase,
+impl GameMediatorBase<HasLightingAvailable> {
+    fn get_ibl_maps(self) -> (super::shader::PbrMaps, GameMediatorBase<NoLightingAvailable>) {
+        (self.ibl_maps.take().unwrap(),
+        GameMediatorBase {
+            objs: self.objs,
+            entity: self.entity,
+            lines: self.lines,
+            particles: self.particles,
+            ids: self.ids,
+            ibl_maps: Cell::new(None),
+            light_dir: self.light_dir,
+            _state: std::marker::PhantomData::<NoLightingAvailable>{},
+        })
+    }
+}
+
+/// A Game mediator that assumes the controller's game state stays constant from
+/// the mediator's initialization
+/// 
+/// This game mediator handles most game state changes within itself
+pub struct LocalGameMediator<State> {
+    base: GameMediatorBase<State>,
     controller: Box<dyn GameController>,
 }
 
-impl LocalGameMediator {
+impl<State> LocalGameMediator<State> {
     pub fn new<F, C>(sm: &shader::ShaderManager, ctx: &F, controller: C) 
-        -> Self where C : GameController + 'static, F : glium::backend::Facade
+        -> LocalGameMediator<HasLightingAvailable> where C : GameController + 'static, F : glium::backend::Facade
     {
-        Self {
-            base: GameMediatorBase::new(sm, ctx),
+        LocalGameMediator {
+            base: GameMediatorBase::<HasLightingAvailable>::new(sm, &controller, ctx),
             controller: Box::new(controller),
         }
     }
 }
 
-impl GameMediator for LocalGameMediator {
+impl<State> GameMediator for LocalGameMediator<State> {
     fn sync(&mut self) {
         self.controller.sync();
         if self.base.ids.remaining() < 64 {
@@ -286,5 +366,25 @@ impl GameMediator for LocalGameMediator {
 
     fn emit_particles(&self, dt: std::time::Duration) {
         self.base.emit_particles(dt);
+    }
+
+    fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a> {
+        self.base.bodies_iter()
+    }
+
+    fn bodies_iter_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut RigidBody<ObjectData>> + 'a> {
+        self.base.bodies_iter_mut()
+    }
+}
+
+impl GameMediatorLightingAvailable for LocalGameMediator<HasLightingAvailable> {
+    type ReturnType = LocalGameMediator<NoLightingAvailable>;
+
+    fn lighting_info(self) -> (shader::PbrMaps, cgmath::Vector3<f32>, Self::ReturnType) {
+        let (ibl_maps, base) = self.base.get_ibl_maps();
+        (ibl_maps, base.light_dir, LocalGameMediator {
+            base,
+            controller: self.controller,
+        })
     }
 }

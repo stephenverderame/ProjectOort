@@ -37,8 +37,9 @@ impl AnimGameObject {
 
     pub fn from(model: model::Model, transform: node::Node, id: ObjectId) -> Self {
         let transform = Rc::new(RefCell::new(transform));
+        todo!();
         Self {
-            data: RigidBody::new(transform.clone(), None, BodyType::Dynamic, (ObjectType::Any, id)),
+            data: RigidBody::new(transform.clone(), None, BodyType::Dynamic, (ObjectType::Cloud, id)),
             entity: Rc::new(RefCell::new(ModelEntity {
                 geometry: Box::new(model),
                 locations: vec![transform],

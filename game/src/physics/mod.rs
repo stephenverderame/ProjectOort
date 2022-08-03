@@ -157,7 +157,7 @@ impl<T> Manipulator<T> for ForceManipulator<T> {
     {
         let dt = dt.as_secs_f64();
         let len = bodies.len();
-        for (bod, idx) in bodies.iter_mut().zip(0 .. len)
+        for (bod, idx) in bodies.iter().zip(0 .. len)
             .filter(|(bod, _)| bod.base.body_type != BodyType::Static) 
         {
             for f in &self.forces {
@@ -245,16 +245,17 @@ impl<T> Manipulator<T> for Tether<T> {
                 get_r_projections_mass(&objs[a_idx], &objs[b_idx], t.length) 
             {
                 let mut total_parallel_p = vec3(0., 0., 0.);
-                let calc_momentum = |body : &mut RigidBody<T>, t| {
+                let calc_momentum = 
+                |body : &RigidBody<T>, t, resolver: &mut CollisionResolution| {
                     let v = t * a_to_b;
-                    body.base.velocity -= v;
+                    resolver.vel -= v;
                     v * body.base.mass
                 };
                 if t_a < 0. {
-                    total_parallel_p += calc_momentum(&mut objs[a_idx], t_a);
+                    total_parallel_p += calc_momentum(&objs[a_idx], t_a, &mut resolvers[a_idx]);
                 }
                 if t_b > 0. {
-                    total_parallel_p += calc_momentum(&mut objs[b_idx], t_b);
+                    total_parallel_p += calc_momentum(&objs[b_idx], t_b, &mut resolvers[b_idx]);
                 }
                 total_parallel_p /= total_mass;
                 resolvers[a_idx].vel += total_parallel_p;

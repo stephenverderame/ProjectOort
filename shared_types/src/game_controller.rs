@@ -11,7 +11,7 @@ pub struct GameStats {
 }
 
 pub struct PlayerStats {
-
+    pub pid: ObjectId,
 }
 
 pub trait GameController {
@@ -39,10 +39,20 @@ pub trait GameController {
 
     /// Called every loop to update state
     fn sync(&mut self);
+
+    fn get_lighting_info(&self) -> &GlobalLightingInfo;
+}
+
+pub struct GlobalLightingInfo {
+    pub skybox: &'static str,
+    pub hdr: &'static str,
+    pub dir_light: Vector3<f32>,
 }
 
 pub trait Map {
     fn initial_objects(&self) -> Vec<RemoteObject>;
+
+    fn lighting_info(&self) -> GlobalLightingInfo;
 }
 
 pub struct AsteroidMap {}
@@ -110,6 +120,15 @@ impl Map for AsteroidMap {
             &vec3(0., 0., 0.), &vec3(0., 0., 0.), ObjectType::Planet, ids));
         vec
     }
+
+    fn lighting_info(&self) -> GlobalLightingInfo {
+        GlobalLightingInfo {
+            skybox: "assets/Milkyway/Milkyway_BG.jpg",
+            hdr: "assets/Milkyway/Milkyway_Light.hdr",
+            dir_light: vec3(-2396.8399272563433, -1668.5529287640434, 
+                3637.5010772434753).normalize(),
+        }
+    }
 }
 
 pub struct LocalGameController {
@@ -118,18 +137,23 @@ pub struct LocalGameController {
     indices: HashMap<ObjectId, usize>,
     start_time: std::time::Instant,
     requested_ids: std::collections::VecDeque<(ObjectId, ObjectId)>,
+    lighting: GlobalLightingInfo,
+    player: PlayerStats,
 }
 
 impl LocalGameController {
     pub fn new<M: Map, Dm : std::ops::Deref<Target = M>>(map: Dm) -> LocalGameController {
         let objs = map.initial_objects();
         let indices = (0 .. objs.len()).map(|i| (objs[i].id, i)).collect();
+        let player_id = objs.last().map(|o| o.id).unwrap_or(Default::default());
         LocalGameController {
-            last_id: objs.last().map(|o| o.id).unwrap_or(Default::default()),
+            last_id: player_id.next(),
             objects: objs,
             start_time: std::time::Instant::now(),
             indices,
             requested_ids: Default::default(),
+            lighting: map.lighting_info(),
+            player: PlayerStats {pid: player_id},
         }
     }
 }
@@ -148,7 +172,7 @@ impl GameController for LocalGameController {
     }
 
     fn get_player_stats(&self) -> &PlayerStats {
-        &PlayerStats {}
+        &self.player
     }
 
     fn set_objects(&mut self, objects: &[RemoteObject]) {
@@ -203,5 +227,9 @@ impl GameController for LocalGameController {
 
     fn sync(&mut self) {
         
+    }
+
+    fn get_lighting_info(&self) -> &GlobalLightingInfo {
+        &self.lighting
     }
 }

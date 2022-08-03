@@ -108,6 +108,14 @@ impl EntityBuilder {
         self
     }
 
+    /// Adds all locations to the entity
+    pub fn at_all<T : Transformation + Clone + 'static>(mut self, locs: &[T]) -> Self {
+        for pos in locs {
+            self.locations.push(Rc::new(RefCell::new(pos.clone())));
+        }
+        self
+    }
+
     /// Sets the render passes for the entity
     pub fn with_pass(mut self, pass: shader::RenderPassType) -> Self {
         self.render_passes.push(pass);
