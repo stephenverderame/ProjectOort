@@ -113,12 +113,10 @@ impl<M : GameMediator> Game<M> {
         if a.metadata.0 == Ship && b.metadata.0 == Asteroid ||
             a.metadata.0 == Asteroid && b.metadata.0 == Ship 
         {
-            println!("Ship hit asteroid");
             self.create_emitter(asteroid_hit_emitter::<glium::Display>, 
                 a, b, hit, 1);
         }
         if a.metadata.0 == Hook || b.metadata.0 == Hook {
-            println!("Hook hit");
             self.on_hook(a, b, hit, player);
             let lt = if a.metadata.0 == Hook { a.metadata.1 }
             else { b.metadata.1 }.clone();

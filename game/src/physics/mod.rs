@@ -84,6 +84,15 @@ impl CollisionResolution {
             //self.rot = body.rot_vel.invert();
         }
     }
+
+    /// Adds a manual resolution to this collider by incrementing the velocities by the given values
+    fn add_vel_change(&mut self, vel: Vector3<f64>, rot: Option<Vector3<f64>>) {
+        self.vel += vel;
+        self.is_collide = true;
+        if let Some(rot) = rot {
+            self.rot += rot;
+        }
+    }
 }
 
 /// Something that can apply a force on a rigid body
@@ -164,8 +173,7 @@ impl<T> Manipulator<T> for ForceManipulator<T> {
                 if let Some((pt, force)) = f.get_force(&bod.base) {
                     let (delta_v, delta_a_v) = 
                         delta_vels_from_force(&pt, &force, &bod.base, dt);
-                    resolvers[idx].vel += delta_v;
-                    resolvers[idx].rot += delta_a_v;
+                    resolvers[idx].add_vel_change(delta_v, Some(delta_a_v));
                     
                 }
             }
@@ -248,7 +256,7 @@ impl<T> Manipulator<T> for Tether<T> {
                 let calc_momentum = 
                 |body : &RigidBody<T>, t, resolver: &mut CollisionResolution| {
                     let v = t * a_to_b;
-                    resolver.vel -= v;
+                    resolver.add_vel_change(v * -1., None);
                     v * body.base.mass
                 };
                 if t_a < 0. {
@@ -258,8 +266,8 @@ impl<T> Manipulator<T> for Tether<T> {
                     total_parallel_p += calc_momentum(&objs[b_idx], t_b, &mut resolvers[b_idx]);
                 }
                 total_parallel_p /= total_mass;
-                resolvers[a_idx].vel += total_parallel_p;
-                resolvers[b_idx].vel += total_parallel_p;
+                resolvers[a_idx].add_vel_change(total_parallel_p, None);
+                resolvers[b_idx].add_vel_change(total_parallel_p, None);
             }
 
         }

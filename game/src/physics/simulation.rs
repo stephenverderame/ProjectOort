@@ -124,37 +124,37 @@ fn apply_bounds<'a, T>(objs: &[&RigidBody<T>], resolvers: &mut [CollisionResolut
         if p.x < scene_center.x - scene_size && obj.base.velocity.x < 0. {
             hit = true;
             let diff = scene_center.x - scene_size - p.x;
-            resolvers[obj_idx].vel += vec3(diff, 0., 0.);
+            resolvers[obj_idx].add_vel_change(vec3(diff, 0., 0.), None);
             hit_data.pos_norm_a.1.x += diff;
             hit_data.pos_norm_b.1.x += diff;
         } if p.x > scene_center.x + scene_size && obj.base.velocity.x > 0. {
             hit = true;
             let diff = scene_center.x + scene_size - p.x;
-            resolvers[obj_idx].vel += vec3(diff, 0., 0.);
+            resolvers[obj_idx].add_vel_change(vec3(diff, 0., 0.), None);
             hit_data.pos_norm_a.1.x += diff;
             hit_data.pos_norm_b.1.x += diff;
         } if p.y < scene_center.y - scene_size && obj.base.velocity.y < 0. {
             hit = true;
             let diff = scene_center.y - scene_size - p.y;
-            resolvers[obj_idx].vel += vec3(0., diff, 0.);
+            resolvers[obj_idx].add_vel_change(vec3(0., diff, 0.), None);
             hit_data.pos_norm_a.1.y += diff;
             hit_data.pos_norm_b.1.y += diff;
         } if p.y > scene_center.y + scene_size && obj.base.velocity.y > 0. {
             hit = true;
             let diff = scene_center.y + scene_size - p.y;
-            resolvers[obj_idx].vel += vec3(0., diff, 0.);
+            resolvers[obj_idx].add_vel_change(vec3(0., diff, 0.), None);
             hit_data.pos_norm_a.1.y += diff;
             hit_data.pos_norm_b.1.y += diff;
         } if p.z < scene_center.z - scene_size && obj.base.velocity.z < 0. {
             hit = true;
             let diff = scene_center.z - scene_size - p.z;
-            resolvers[obj_idx].vel += vec3(0., 0., diff);
+            resolvers[obj_idx].add_vel_change(vec3(0., 0., diff), None);
             hit_data.pos_norm_a.1.z += diff;
             hit_data.pos_norm_b.1.z += diff;
         } if p.z > scene_center.z + scene_size && obj.base.velocity.z > 0. {
             hit = true;
             let diff = scene_center.z + scene_size - p.z;
-            resolvers[obj_idx].vel += vec3(0., 0., diff);
+            resolvers[obj_idx].add_vel_change(vec3(0., 0., diff), None);
             hit_data.pos_norm_a.1.z += diff;
             hit_data.pos_norm_b.1.z += diff;
         }

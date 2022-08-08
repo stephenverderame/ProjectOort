@@ -206,7 +206,10 @@ impl<State> GameMediatorBase<State> {
         self.objs.iter().map(|(_, obj)| 
             (obj.borrow().as_entity().clone() as Rc<RefCell<dyn AbstractEntity>>))
         .chain(self.entity.iter().map(|(_, obj)| 
-            (obj.clone() as Rc<RefCell<dyn AbstractEntity>>))).collect()
+            (obj.clone() as Rc<RefCell<dyn AbstractEntity>>)))
+        .chain(std::iter::once(self.lines.clone() as Rc<RefCell<dyn AbstractEntity>>))
+        .chain(std::iter::once(self.particles.clone() as Rc<RefCell<dyn AbstractEntity>>))
+        .collect()
     }
 
     /*fn bodies_iter<'a>(&'a self) -> Box<dyn Iterator<Item = &'a RigidBody<ObjectData>> + 'a> {
