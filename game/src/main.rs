@@ -116,7 +116,7 @@ fn main() {
 
     let player_controls = RefCell::new(controls::PlayerControls::new());
     let mut wnd = WindowMaker::new(render_width, render_height).title("Space Fight")
-        .depth_buffer(24).msaa(4).build();
+        .depth_buffer(24).build();
 
     let controller = LocalGameController::new(&shared_types::game_controller::AsteroidMap{});
     let player = player::Player::new(
@@ -170,7 +170,10 @@ fn main() {
 
     let map_screen_location = 
         Matrix3::from_translation(vec2(-2.0f32, 0.0)) * Matrix3::from_scale(3.0f32);
-    let compositor_scene = scene::compositor_scene_new(render_width, render_height, 
+    let screen_width = Rc::new(RefCell::new(render_width));
+    let screen_height = Rc::new(RefCell::new(render_height));
+    let compositor_scene = scene::compositor_scene_new(
+        screen_width.clone(), screen_height.clone(), 
         Rc::new(RefCell::new(camera::Camera2D::new(render_width, render_height))), 
         vec![
             (Box::new(main_scene), None), 
@@ -217,6 +220,8 @@ fn main() {
         if new_size.height != 0 {
             game.borrow().player.borrow_mut().aspect = 
                 new_size.width as f32 / new_size.height as f32;
+            *screen_width.borrow_mut() = new_size.width;
+            *screen_height.borrow_mut() = new_size.height;
         }
     };
     let cbs = WindowCallbacks::new().with_draw_handler(&mut draw_cb)

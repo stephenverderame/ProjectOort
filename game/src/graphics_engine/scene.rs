@@ -274,25 +274,32 @@ pub struct CompositorScene<S : Surface,
 /// `scenes` - vector of pairs of scenes and their model matrix to compose
 ///     The final texture output will be composed in NDC with the specified
 ///     model matrix to control placement of the texture
-pub fn compositor_scene_new<F : backend::Facade>(width : u32, height : u32, 
+pub fn compositor_scene_new<F : backend::Facade>(width : Rc<RefCell<u32>>, 
+    height : Rc<RefCell<u32>>, 
     viewer: Rc<RefCell<dyn Viewer>>, 
     scenes: Vec<(Box<dyn AbstractScene>, Option<Matrix3<f32>>)>, 
     fac: &F) -> CompositorScene<glium::Frame, super::MutCtx, 
         impl Fn() -> (super::MutCtx, BlitTarget), 
         impl Fn(super::MutCtx)>
 {
+    let cur_width = *width.borrow();
+    let cur_height = *height.borrow();
     CompositorScene {
         scenes,
+        compositor: CompositorProcessor::new(cur_width, cur_height, 
+            BlendFn::Overlay, fac),
         blitter: BlitTextureProcessor::new(move || { 
             let mut surface = super::get_active_ctx().as_surface();
             surface.clear_color_and_depth((1., 0., 0., 1.), 1.);
+            //unsafe { gl::Viewport(0, 0, *width.borrow() as i32, *height.borrow() as i32) };
             (surface, BlitTarget {
                 left: 0, bottom: 0,
-                width: width as i32, height: height as i32,
+                width: *width.borrow() as i32, height: *height.borrow() as i32,
             })
-        }, |disp| disp.finish()),
-        compositor: CompositorProcessor::new(width, height, 
-            BlendFn::Overlay, fac),
+        }, |disp| {
+            assert_eq!(unsafe { gl::GetError() }, gl::NO_ERROR);
+            disp.finish()}
+        ),
         viewer,
     }
 }
