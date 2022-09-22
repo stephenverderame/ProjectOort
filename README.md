@@ -171,11 +171,30 @@ is used to determine whether an object is the same as another. An `ONode` holds 
 
 ### Physics + Collision Resolution
 
-Not much has been done yet. Right now, collision resolution is simply to subtract the position by the object's
-velocity dotted with the impact normal.
+A rigid body simulation is used to handle the physics and collision resolution. Each rigid body is given
+a manually assigned mass, or a manually assigned density. In the latter case we can compute an estimated mass
+using the volume of the body's bounding box.
+For each rigid body we estimate an inertial tensor based on the vertices of the Rigid Body's collision mesh.
 
-I plan to add mass and moment of inertia estimates for each object in order to incorporate torques and rotations and more accurately calculate
-forces and acceleration.
+Then at each step of the simulation, we determine the magnitude, direction, and point of application of the forces
+that are applied to each object. We then use the impulse momentum theorem to compute changes in velocity. 
+We subtract the point of application from the object's center of mass to estimate a lever arm, and compute an applied
+torque for the object. Using this and the inertial tensor, we are able to compute a rotational angular velocity.
+I chose not to handle rotational velocity updates quite the same for the user-controlled ships for now, 
+because it made the controls upon colliding with something feel unintuitive.
+
+For collision resolution, we compute a point of contact by averaging the centroids of colliding triangles and an impact force
+based upon the momentum of colliding bodies.
+
+* Grappling Hook to "swing" from Asteroids
+
+    The basic premise is that if the two objects connected by the "cable" are too far apart, we essentially update the velocities
+    of both objects by treating the cable being pulled taught as an elastic collision.
+
+### Game Logic and Multiplayer
+
+Currently working on a UDP game server and implementing game logic in 
+an abstract way to support single and multi player modes.
 
 ---
 ## Images
@@ -248,7 +267,7 @@ There's still much more besides this and I am writing this so I know how to pick
 
     You can kind of see a "sweep" when the shadows go from on cascade to the next. With straight CSM this is fixed by varying the PCF filter
 
-- [ ] (Nice-to-have) Rust macro to define a pipeline more easily. Idea was to try to create a DSL along the lines of Tikz graphs in Latex
+- [x] (Nice-to-have) Rust macro to define a pipeline more easily. Idea was to try to create a DSL along the lines of Tikz graphs in Latex
 
 ### Physics + Collisions
 
