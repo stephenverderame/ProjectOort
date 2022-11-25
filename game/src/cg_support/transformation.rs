@@ -29,7 +29,7 @@ impl Transformation for super::node::Node {
 }
 impl Transformation for Matrix4<f64> {
     fn as_transform(&self) -> Self {
-        self.clone()
+        *self
     }
 
     fn into_transform(self) -> Self {

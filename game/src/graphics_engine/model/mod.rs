@@ -3,6 +3,7 @@ use cgmath::*;
 extern crate assimp;
 extern crate assimp_sys;
 extern crate tobj;
+#[allow(clippy::module_inception)]
 mod model;
 mod mesh;
 mod animation;

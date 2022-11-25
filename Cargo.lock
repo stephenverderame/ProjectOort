@@ -1155,7 +1155,10 @@ dependencies = [
 name = "oort-server"
 version = "0.1.0"
 dependencies = [
+ "cgmath",
+ "serial_test",
  "shared_types",
+ "static_assertions",
 ]
 
 [[package]]

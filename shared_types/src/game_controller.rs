@@ -1,17 +1,13 @@
-
 use super::*;
-use cgmath::*;
-use rand;
-use std::ops::Range;
-use crate::node::{Node, to_remote_object};
+pub use game_map::*;
 use std::collections::HashMap;
+use std::net::IpAddr;
 
-pub struct GameStats {
-
-}
+pub struct GameStats {}
 
 pub struct PlayerStats {
     pub pid: ObjectId,
+    pub spawn_pos: cgmath::Point3<f64>,
 }
 
 pub trait GameController {
@@ -43,94 +39,6 @@ pub trait GameController {
     fn get_lighting_info(&self) -> &GlobalLightingInfo;
 }
 
-pub struct GlobalLightingInfo {
-    pub skybox: &'static str,
-    pub hdr: &'static str,
-    pub dir_light: Vector3<f32>,
-}
-
-pub trait Map {
-    fn initial_objects(&self) -> Vec<RemoteObject>;
-
-    fn lighting_info(&self) -> GlobalLightingInfo;
-}
-
-pub struct AsteroidMap {}
-
-impl AsteroidMap {
-    /// Generates `count` number of transforms all arranged around `center` in
-    /// a sphere. Calls `func`, passing in each transform
-    /// 
-    /// `radius` - the range of radii to place objects
-    /// 
-    /// `theta` - the range of radians to place objects around (horizontally)
-    /// 
-    /// `phi` - the range of radians to place objects from the zenith
-    /// 
-    /// `scale` - the range of uniform scale factors
-    fn randomize_spherical<F>(center: Point3<f64>, radius: Range<f64>, 
-        theta: Range<f64>, phi: Range<f64>, scale: Range<f64>, 
-        count: usize, mut func : F)
-        where F : FnMut(Node)
-    {
-        use rand::distributions::*;
-        let radius_distrib = Uniform::from(radius);
-        let theta_distrib = Uniform::from(theta);
-        let phi_distrib = Uniform::from(phi);
-        let scale_distrib = Uniform::from(scale);
-        let axis_distrib = Uniform::from(-1.0 .. 1.0);
-        let angle_distrib = Uniform::from(0.0 .. 360.0);
-        let (mut rng_r, mut rng_t, mut rng_p, mut rng_s, mut rng_a) = 
-            (rand::thread_rng(), rand::thread_rng(), 
-            rand::thread_rng(), rand::thread_rng(), rand::thread_rng());
-        for (((radius, theta), phi), scale) in radius_distrib.sample_iter(&mut rng_r)
-            .zip(theta_distrib.sample_iter(&mut rng_t))
-            .zip(phi_distrib.sample_iter(&mut rng_p))
-            .zip(scale_distrib.sample_iter(&mut rng_s))
-            .take(count)
-        {
-            let x = vec3(phi.sin() * theta.cos(), phi.sin() * theta.sin(),
-                phi.cos()) * radius;
-            let pos : [f64; 3] = (center.to_vec() + x).into();
-            let axis = vec3(axis_distrib.sample(&mut rng_a), 
-                axis_distrib.sample(&mut rng_a), 
-                axis_distrib.sample(&mut rng_a)).normalize();
-            let rot = Quaternion::<f64>::from_axis_angle(axis, 
-                Deg::<f64>(angle_distrib.sample(&mut rng_a))).normalize();
-            let n = Node::default().pos(pos.into()).u_scale(scale)
-                .rot(rot);
-            func(n);
-        }
-    }
-}
-
-impl Map for AsteroidMap {
-    fn initial_objects(&self) -> Vec<RemoteObject> {
-        let mut vec = Vec::new();
-        use std::f64::consts::PI;
-        let mut ids = ObjectId::default();
-        Self::randomize_spherical(point3(0., 0., 0.), 120. .. 600., 0. .. 2. * PI, 
-            0. .. PI, 0.002 .. 0.8, 100, 
-            |t| { 
-                vec.push(to_remote_object(&t, &vec3(0., 0., 0.), 
-                    &vec3(0., 0., 0.), ObjectType::Asteroid, ids));
-                ids = ids.incr(1);
-            });
-        vec.push(to_remote_object(&Node::default().u_scale(10.), 
-            &vec3(0., 0., 0.), &vec3(0., 0., 0.), ObjectType::Planet, ids));
-        vec
-    }
-
-    fn lighting_info(&self) -> GlobalLightingInfo {
-        GlobalLightingInfo {
-            skybox: "assets/Milkyway/Milkyway_BG.jpg",
-            hdr: "assets/Milkyway/Milkyway_Light.hdr",
-            dir_light: vec3(-2396.8399272563433, -1668.5529287640434, 
-                3637.5010772434753).normalize(),
-        }
-    }
-}
-
 pub struct LocalGameController {
     last_id: ObjectId,
     objects: Vec<RemoteObject>,
@@ -142,9 +50,9 @@ pub struct LocalGameController {
 }
 
 impl LocalGameController {
-    pub fn new<M: Map, Dm : std::ops::Deref<Target = M>>(map: Dm) -> LocalGameController {
+    pub fn new<M: Map, Dm: std::ops::Deref<Target = M>>(map: Dm) -> LocalGameController {
         let objs = map.initial_objects();
-        let indices = (0 .. objs.len()).map(|i| (objs[i].id, i)).collect();
+        let indices = (0..objs.len()).map(|i| (objs[i].id, i)).collect();
         let player_id = objs.last().map(|o| o.id).unwrap_or(Default::default());
         LocalGameController {
             last_id: player_id.next(),
@@ -153,7 +61,10 @@ impl LocalGameController {
             indices,
             requested_ids: Default::default(),
             lighting: map.lighting_info(),
-            player: PlayerStats {pid: player_id},
+            player: PlayerStats {
+                pid: player_id,
+                spawn_pos: cgmath::point3(0., 0., 0.),
+            },
         }
     }
 }
@@ -189,7 +100,7 @@ impl GameController for LocalGameController {
     fn update_objects(&mut self, updates: &[RemoteObjectUpdate]) {
         for update in updates {
             if let Some(idx) = self.indices.get(&update.id) {
-                let (node, mut vel, mut rot, typ, id) = 
+                let (node, mut vel, mut rot, typ, id) =
                     node::from_remote_object(&self.objects[*idx]);
                 vel += From::from(update.delta_vel);
                 rot += From::from(update.delta_rot);
@@ -210,7 +121,6 @@ impl GameController for LocalGameController {
                     self.indices.insert(last_id, index);
                 }
                 self.objects.swap_remove(index);
-
             }
         }
     }
@@ -225,11 +135,113 @@ impl GameController for LocalGameController {
         self.requested_ids.pop_front()
     }
 
-    fn sync(&mut self) {
-        
-    }
+    fn sync(&mut self) {}
 
     fn get_lighting_info(&self) -> &GlobalLightingInfo {
         &self.lighting
+    }
+}
+
+pub struct RemoteGameController {
+    objects: Vec<RemoteObject>,
+    indices: HashMap<ObjectId, usize>,
+    available_ids: id_list::IdList,
+    lighting: GlobalLightingInfo,
+    player: PlayerStats,
+    sock: UdpSocket,
+    peer: (IpAddr, u16),
+    msg_buffer: ClientBuffer<ServerCommandType>,
+}
+
+impl RemoteGameController {
+    fn login(
+        username: &str,
+        sock: &UdpSocket,
+        last_out_id: &mut MsgId,
+        received_msgs: &mut ClientBuffer<ServerCommandType>,
+    ) -> Result<LoginInfo, Box<dyn Error>> {
+        let mut trials = 0;
+        while trials < 3 {
+            match remote::send_important(
+                &sock,
+                &ClientCommandType::Login(username.to_owned()),
+                *last_out_id,
+                received_msgs,
+                Default::default(),
+            ) {
+                Ok(ServerCommandType::ReturnLogin(login)) => {
+                    last_out_id.wrapping_add(1);
+                    return Ok(login);
+                }
+                Err(_) => trials += 1,
+                Ok(_) => panic!("Unexpected response"),
+            }
+        }
+        Err("Could not receive data")?
+    }
+
+    fn get_initial_objects(
+        sock: &UdpSocket,
+        player: RemoteObject,
+        last_out_id: &mut MsgId,
+        received_msgs: &mut ClientBuffer<ServerCommandType>,
+    ) -> Result<(Vec<RemoteObject>, HashMap<ObjectId, usize>), Box<dyn Error>> {
+        let mut trials = 0;
+        let mut objects = vec![player.clone()];
+        let mut indices = HashMap::new();
+        indices.insert(player.id, 0);
+        while trials < 3 {
+            match remote::send_important(
+                &sock,
+                &ClientCommandType::Update(vec![player]),
+                *last_out_id,
+                received_msgs,
+                Default::default(),
+            ) {
+                Ok(ServerCommandType::Update(objs)) => {
+                    for (obj, idx) in objs.into_iter().zip(1..) {
+                        indices.insert(obj.id, idx);
+                        objects.push(obj);
+                    }
+                    last_out_id.wrapping_add(1);
+                    return Ok((objects, indices));
+                }
+                Err(_) => trials += 1,
+                Ok(_) => panic!("Unexpected response"),
+            }
+        }
+        Err("Could not receive data")?
+    }
+
+    pub fn new(username: &str, server: (IpAddr, u16)) -> Result<Self, Box<dyn Error>> {
+        let sock = UdpSocket::bind(&server)?;
+        sock.connect(&server)?;
+        let mut last_out_id = 0 as MsgId;
+        let mut recieved_msgs = ClientBuffer::<ServerCommandType>::new();
+        let mut available_ids = id_list::IdList::new();
+        let login_info = Self::login(username, &sock, &mut last_out_id, &mut recieved_msgs)?;
+        available_ids.add_ids(login_info.starting_ids);
+        let player = node::to_remote_object(
+            &node::Node::default().pos(From::from(login_info.spawn_pos)),
+            &cgmath::vec3(0., 0., 0.),
+            &cgmath::vec3(0., 0., 0.),
+            ObjectType::Ship,
+            login_info.pid,
+        );
+        let (objects, indices) =
+            Self::get_initial_objects(&sock, player, &mut last_out_id, &mut recieved_msgs)?;
+        Ok(Self {
+            objects,
+            indices,
+            available_ids,
+            lighting: login_info.lighting,
+            player: PlayerStats {
+                pid: login_info.pid,
+                spawn_pos: From::from(login_info.spawn_pos),
+            },
+            sock,
+            peer: server,
+            msg_buffer: recieved_msgs,
+        })
     }
 }

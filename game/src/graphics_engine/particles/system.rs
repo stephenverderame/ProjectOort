@@ -67,13 +67,13 @@ impl ParticleSystem {
             }
         }
         self.emitters.retain(|(e, _)|
-            death.iter().find(|d| **d == e as *const Box<dyn Emitter>).is_none());
+            !death.iter().any(|d| *d == e as *const Box<dyn Emitter>));
     }
 
     pub fn lights(&self) -> Option<Vec<shader::LightData>> {
         let mut lights = Vec::new();
         for (e, _) in &self.emitters {
-            e.lights().as_mut().map(|x| lights.append(x));
+            if let Some(x) = e.lights().as_mut() { lights.append(x) }
         }
         if lights.is_empty() { None }
         else { Some(lights) }

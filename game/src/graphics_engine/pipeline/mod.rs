@@ -21,7 +21,7 @@ impl<'a, T> Ownership<'a, T> {
     /// Gets a reference of the data, regardless of the onwership type
     pub fn to_ref(&self) -> &T {
         match &self {
-            Own(s) => &s,
+            Own(s) => s,
             Ref(s) => s,
         }
     }
@@ -30,9 +30,9 @@ impl<'a, T> Ownership<'a, T> {
 use Ownership::*;
 
 pub enum StageArgs {
-    CascadeArgs([[f32; 4]; 4], f32),
-    ObjectArgs(u32),
-    CompositorArgs([[f32; 3]; 3]),
+    Cascade([[f32; 4]; 4], f32),
+    Object(u32),
+    Compositor([[f32; 3]; 3]),
 }
 
 /// The type of texture returned by a pipeline stage
@@ -43,15 +43,15 @@ pub enum TextureType<'a> {
     #[allow(dead_code)]
     Bindless(texture::ResidentTexture),
     WithArg(Box<TextureType<'a>>, StageArgs),
-    Multi(Vec<Box<TextureType<'a>>>),
+    Multi(Vec<TextureType<'a>>),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum TargetType {
-    MsaaTarget,
-    CubemapTarget,
-    MipcubeTarget,
-    DepthTarget,
+    Msaa,
+    Cubemap,
+    Mipcube,
+    Depth,
 }
 
 /// A RenderTarget is something that can be rendered to and produces a texture

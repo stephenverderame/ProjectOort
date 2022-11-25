@@ -105,6 +105,7 @@ impl<I, S, D, Ia, G, Lg> ParticleEmitter<I, S, D, Ia, G, Lg> where
     /// `particle_getter` - Function that gets the instance data to be sent to the shader from a particle
     /// 
     /// `light_getter` - Function that gets a light source from a particle
+    #[allow(clippy::too_many_arguments)]
     pub fn new<F : glium::backend::Facade>(pos: Node, lifetime: Option<Duration>, num: u32, facade: &F,
         particle_generator: I, particle_killer: D, particle_stepper: S, particle_getter: G, light_getter: Lg) -> Self
     {
@@ -177,7 +178,7 @@ impl<I, S, D, Ia, G, Lg> Emitter for ParticleEmitter<I, S, D, Ia, G, Lg> where
     }
 
     /// Gets the instance data for all particles
-    fn instance_data<'a>(&'a self) -> glium::vertex::VerticesSource<'a>
+    fn instance_data(&self) -> glium::vertex::VerticesSource<'_>
     {
         From::from(self.instances.get_stored_buffer().unwrap().per_instance().unwrap())
     }

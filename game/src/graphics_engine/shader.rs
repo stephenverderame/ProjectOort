@@ -213,7 +213,7 @@ pub struct ViewerData {
 pub struct SceneData<'a> {
     pub viewer: ViewerData,
     pub ibl_maps: Option<&'a PbrMaps>,
-    pub lights: Option<&'a ssbo::SSBO<LightData>>,
+    pub lights: Option<&'a ssbo::Ssbo<LightData>>,
     pub pass_type: RenderPassType,
     pub light_pos: Option<[f32; 3]>,
 }
@@ -242,7 +242,7 @@ pub struct PBRData<'a> {
     pub emission_map: Option<&'a glium::texture::SrgbTexture2d>,
     pub ao_map: Option<&'a glium::texture::Texture2d>,
     pub instancing: bool,
-    pub bone_mats: Option<&'a ssbo::SSBO<[[f32; 4]; 4]>>,
+    pub bone_mats: Option<&'a ssbo::Ssbo<[[f32; 4]; 4]>>,
     pub trans_data: Option<&'a TransparencyData>,
     pub emission_strength: f32,
     pub metallic_fac: f32,
