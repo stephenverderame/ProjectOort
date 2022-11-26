@@ -84,10 +84,10 @@ impl TextureProcessor for ExtractBrightProcessor {
         if let TextureType::Tex2d(source) = source.unwrap()[0] {
             let source = source.to_ref();
             let data =
-                shader::UniformInfo::ExtractBrightInfo(shader::ExtractBrightData { tex: source });
+                shader::UniformInfo::ExtractBright(shader::ExtractBrightData { tex: source });
             let (program, params, uniform) = shader.use_shader(&data, sd, Some(pc));
             match uniform {
-                shader::UniformType::ExtractBrightUniform(uniform) => {
+                shader::UniformType::ExtractBright(uniform) => {
                     let fbo = &mut self.bright_color_fbo;
                     fbo.clear_color(0., 0., 0., 1.);
                     fbo.draw(&self.vbo, &self.ebo, program, &uniform, &params)
@@ -173,13 +173,13 @@ impl SepConvProcessor {
         iteration: usize,
         shaders: &shader::ShaderManager,
     ) {
-        let data = shader::UniformInfo::SepConvInfo(shader::SepConvData {
+        let data = shader::UniformInfo::SepConv(shader::SepConvData {
             horizontal_pass: iteration % 2 == 0,
             tex: source,
         });
         let (program, params, uniform) = shaders.use_shader(&data, None, None);
         match uniform {
-            shader::UniformType::SepConvUniform(uniform) => {
+            shader::UniformType::SepConv(uniform) => {
                 dst.draw(vbo, ebo, program, &uniform, &params).unwrap();
             }
             _ => panic!("Invalid uniform type returned for RenderTarget"),
@@ -187,7 +187,7 @@ impl SepConvProcessor {
     }
 }
 
-impl<'a> TextureProcessor for SepConvProcessor {
+impl TextureProcessor for SepConvProcessor {
     fn process(
         &mut self,
         source: Option<Vec<&TextureType>>,
@@ -275,7 +275,7 @@ impl CompositorProcessor {
         cache: &PipelineCache,
         shader: &shader::ShaderManager,
     ) -> Option<TextureType> {
-        let args = shader::UniformInfo::CompositeInfo(shader::CompositeData {
+        let args = shader::UniformInfo::Composite(shader::CompositeData {
             textures,
             transforms,
             model: cgmath::Matrix4::from_scale(1f32).into(),
@@ -283,7 +283,7 @@ impl CompositorProcessor {
         });
         let (program, params, uniform) = shader.use_shader(&args, None, Some(cache));
         match uniform {
-            shader::UniformType::CompositeUniform(uniform) => {
+            shader::UniformType::Composite(uniform) => {
                 self.fbo.clear_color_and_depth((0., 0., 0., 1.0), 1.0);
                 self.fbo
                     .draw(&self.vbo, &self.ebo, program, &uniform, &params)
@@ -321,7 +321,7 @@ impl TextureProcessor for CompositorProcessor {
                 _ => None,
             })
             .unzip();
-        if textures.len() == 0 {
+        if textures.is_empty() {
             panic!("Not enough 2d textures input to compositor")
         } else {
             self.render(textures, transforms, cache, shader)
@@ -491,9 +491,7 @@ impl TextureProcessor for CopyTextureProcessor {
         _: &mut PipelineCache,
         _: Option<&shader::SceneData>,
     ) -> Option<TextureType> {
-        if source.is_none() {
-            return None;
-        }
+        source.as_ref()?;
         let ctx = super::super::get_active_ctx();
         match source.unwrap()[0] {
             TextureType::Tex2d(Ref(x)) => {
@@ -589,9 +587,9 @@ impl TextureProcessor for GenLutProcessor {
                 .unwrap();
         fbo.clear_color_and_depth((0., 0., 0., 0.), 1.);
         let (program, params, uniform) =
-            shader.use_shader(&shader::UniformInfo::GenLutInfo, sd, Some(pc));
+            shader.use_shader(&shader::UniformInfo::GenLut, sd, Some(pc));
         match uniform {
-            shader::UniformType::BrdfLutUniform(uniform) => fbo
+            shader::UniformType::BrdfLut(uniform) => fbo
                 .draw(&self.vbo, &self.ebo, program, &uniform, &params)
                 .unwrap(),
             _ => panic!("Gen lut got unexepected uniform type"),
@@ -649,8 +647,8 @@ impl TextureProcessor for CullLightProcessor {
     ) -> Option<TextureType> {
         if let TextureType::Depth2d(depth) = input.unwrap()[0] {
             let depth_tex = depth.to_ref();
-            let params = shader::UniformInfo::LightCullInfo(shader::LightCullData {
-                depth_tex: depth_tex,
+            let params = shader::UniformInfo::LightCull(shader::LightCullData {
+                depth_tex,
                 scr_width: self.width,
                 scr_height: self.height,
             });
@@ -738,10 +736,7 @@ impl TextureProcessor for ToCacheProcessor {
         cache: &mut PipelineCache<'b>,
         _: Option<&shader::SceneData>,
     ) -> Option<TextureType> {
-        if input.is_none() {
-            None
-        } else {
-            let input = input.unwrap();
+        if let Some(input) = input {
             if input.len() == 1 {
                 match input[0] {
                     TextureType::WithArg(b, StageArgs::Object(i)) => {
@@ -775,6 +770,8 @@ impl TextureProcessor for ToCacheProcessor {
                     panic!("Unrecognized cache input")
                 }
             }
+        } else {
+            None
         }
     }
 }

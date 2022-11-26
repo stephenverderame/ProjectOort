@@ -6,7 +6,6 @@ use crate::graphics_engine::entity::*;
 use crate::graphics_engine::{cubes, entity, model, particles, primitives, scene, shader};
 use crate::physics::{self, RigidBody};
 use cgmath::*;
-use glium;
 use shared_types::{game_controller::*, id_list::IdList};
 use std::cell::{Cell, Ref, RefCell};
 use std::collections::HashMap;
@@ -164,7 +163,7 @@ fn init_lighting<F: glium::backend::Facade>(
 ) -> (Entity, shader::PbrMaps) {
     let mut skybox = cubes::Skybox::cvt_from_sphere(&lighting.skybox, 2048, sm, ctx);
     let ibl = scene::gen_ibl_from_hdr(&lighting.hdr, &mut skybox, sm, ctx);
-    (skybox.to_entity(), ibl)
+    (skybox.into_entity(), ibl)
 }
 
 /// Converts a remote object into a rigid body
@@ -215,7 +214,7 @@ impl<State> GameMediatorBase<State> {
                 .with_billboard("assets/particles/circle_05.png", 0.4),
         ));
         let mut entity = init_entities(sm, controller, ctx);
-        let (skybox, ibl_maps) = init_lighting(sm, ctx, &controller.get_lighting_info());
+        let (skybox, ibl_maps) = init_lighting(sm, ctx, controller.get_lighting_info());
         entity.insert(ObjectType::Skybox, Rc::new(RefCell::new(skybox)));
         GameMediatorBase {
             objs: init_objs(sm, controller, ctx),
@@ -247,13 +246,7 @@ impl<State> GameMediatorBase<State> {
                     vec3(0.5451, 0., 0.5451),
                 ));
             });
-        lights.append(
-            &mut self
-                .particles
-                .borrow()
-                .lights()
-                .unwrap_or_else(|| Vec::new()),
-        );
+        lights.append(&mut self.particles.borrow().lights().unwrap_or_default());
         lights
     }
 
@@ -261,7 +254,7 @@ impl<State> GameMediatorBase<State> {
     fn get_entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>> {
         self.objs
             .iter()
-            .map(|(_, obj)| (obj.borrow().as_entity().clone() as Rc<RefCell<dyn AbstractEntity>>))
+            .map(|(_, obj)| (obj.borrow().as_entity() as Rc<RefCell<dyn AbstractEntity>>))
             .chain(
                 self.entity
                     .iter()

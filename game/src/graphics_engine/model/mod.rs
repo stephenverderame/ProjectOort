@@ -3,13 +3,13 @@ use cgmath::*;
 extern crate assimp;
 extern crate assimp_sys;
 extern crate tobj;
-#[allow(clippy::module_inception)]
-mod model;
-mod mesh;
 mod animation;
 mod material;
-pub use model::Model;
+mod mesh;
+#[allow(clippy::module_inception)]
+mod model;
 pub use animation::Animator;
+pub use model::Model;
 
 /// Assimp Vector3D to f32 array
 #[inline(always)]
@@ -24,28 +24,32 @@ fn to_v2(v: Vector3D) -> [f32; 2] {
 /// Assimp to cgmath Mat4
 #[inline(always)]
 fn to_m4(m: assimp_sys::AiMatrix4x4) -> cgmath::Matrix4<f64> {
-    cgmath::Matrix4::new(m.a1, m.b1, m.c1, m.d1, m.a2, m.b2, m.c2, m.d2,
-        m.a3, m.b3, m.c3, m.d3, m.a4, m.b4, m.c4, m.d4).cast().unwrap()
+    cgmath::Matrix4::new(
+        m.a1, m.b1, m.c1, m.d1, m.a2, m.b2, m.c2, m.d2, m.a3, m.b3, m.c3, m.d3, m.a4, m.b4, m.c4,
+        m.d4,
+    )
+    .cast()
+    .unwrap()
 }
 
-/// Generic interpolation 
+/// Generic interpolation
 trait Lerp {
     type Numeric;
     /// Interpolates between `a` to `b` using `fac`
-    /// 
+    ///
     /// Requires `fac` is between `0` and `1` where `0` indicates `a` is returned
     /// and `1` indicates `b` is
     fn lerp(a: Self, b: Self, fac: Self::Numeric) -> Self;
 }
 
-impl<T : BaseFloat> Lerp for Vector3<T> {
+impl<T: BaseFloat> Lerp for Vector3<T> {
     type Numeric = T;
     fn lerp(a: Self, b: Self, fac: Self::Numeric) -> Self {
         a * (Self::Numeric::from(1).unwrap() - fac) + b * fac
     }
 }
 
-impl<T : BaseFloat> Lerp for Quaternion<T> {
+impl<T: BaseFloat> Lerp for Quaternion<T> {
     type Numeric = T;
     fn lerp(a: Self, b: Self, fac: Self::Numeric) -> Self {
         a.normalize().slerp(b.normalize(), fac)

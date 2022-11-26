@@ -58,14 +58,8 @@ pub enum RenderPassType {
 impl PartialEq for RenderPassType {
     fn eq(&self, other: &RenderPassType) -> bool {
         use RenderPassType::*;
-        match (self, other) {
-            (Visual, Visual) => true,
-            (Depth, Depth) => true,
-            (Transparent(_), Transparent(_)) => true,
-            (LayeredVisual, LayeredVisual) => true,
-            (TransparentDepth, TransparentDepth) => true,
-            _ => false,
-        }
+        matches!((self, other), (Visual, Visual) | (Depth, Depth) | (Transparent(_), Transparent(_))
+                | (LayeredVisual, LayeredVisual) | (TransparentDepth, TransparentDepth))
     }
 }
 
@@ -75,7 +69,7 @@ impl RenderPassType {
     /// Used to indicate that an object should be drawn on 
     /// a reflection of another object
     pub fn transparent_tag() -> Self {
-        RenderPassType::Transparent(0 as *const Entity)
+        RenderPassType::Transparent(std::ptr::null::<Entity>())
     }
 }
 
@@ -341,6 +335,7 @@ impl<'s, T : Uniforms, R : Uniforms> Uniforms for UniformsStruct<'s, T, R> {
 /// Stores shader inputs that can change from stage to stage within a 
 /// render pass. Shader stages can read and write from the pipeline chache,
 /// which is reset every iteration of a render pass
+#[derive(Default)]
 pub struct PipelineCache<'a> {
     pub cascade_ubo: Option<glium::uniforms::UniformBuffer<CascadeUniform>>,
     pub tiles_x: Option<u32>,
@@ -351,71 +346,58 @@ pub struct PipelineCache<'a> {
     pub cam_depth: Option<&'a glium::texture::DepthTexture2d>,
 }
 
-impl<'a> std::default::Default for PipelineCache<'a> {
-    fn default() -> PipelineCache<'a> {
-        PipelineCache {
-            cascade_ubo: None,
-            tiles_x: None,
-            cascade_maps: None,
-            obj_cubemaps: HashMap::new(),
-            trans_cascade_maps: None,
-            cam_depth: None,
-        }
-    }
-}
-
 pub struct MinimapData<'a> {
     pub textures: [&'a glium::texture::Texture2d; 3],
 }
 
 /// Shader inputs passed from a rendering object to the shader manager
 pub enum UniformInfo<'a> {
-    PBRInfo(PBRData<'a>),
-    EquiRectInfo(EqRectData<'a>),
-    SkyboxInfo(SkyboxData<'a>),
-    CompositeInfo(CompositeData<'a>),
-    SepConvInfo(SepConvData<'a>),
-    ExtractBrightInfo(ExtractBrightData<'a>),
-    PrefilterHdrEnvInfo(PrefilterHdrEnvData<'a>),
-    GenLutInfo,
-    LaserInfo,
-    TriangleCollisionsInfo,
-    LightCullInfo(LightCullData<'a>),
+    Pbr(PBRData<'a>),
+    EquiRect(EqRectData<'a>),
+    Skybox(SkyboxData<'a>),
+    Composite(CompositeData<'a>),
+    SepConv(SepConvData<'a>),
+    ExtractBright(ExtractBrightData<'a>),
+    PrefilterHdrEnv(PrefilterHdrEnvData<'a>),
+    GenLut,
+    Laser,
+    TriangleCollisions,
+    LightCull(LightCullData<'a>),
     /// Arg - model matrix
-    CollisionDebugInfo([[f32; 4]; 4]),
+    CollisionDebug([[f32; 4]; 4]),
     /// Args - billboard texture, spherical billboard density
-    BillboardInfo(&'a glium::texture::SrgbTexture2d, f32),
-    CloudInfo(CloudData<'a>),
-    LineInfo,
+    Billboard(&'a glium::texture::SrgbTexture2d, f32),
+    Cloud(CloudData<'a>),
+    Line,
     /// Args - SDF texture, `[tex_width, tex_height]`
-    TextInfo(&'a glium::texture::Texture2d, [i32; 2]),
-    MinimapInfo(MinimapData<'a>),
+    Text(&'a glium::texture::Texture2d, [i32; 2]),
+    Minimap(MinimapData<'a>),
     /// Args - Icon texture, model matrix
-    IconInfo(&'a glium::texture::SrgbTexture2d, [[f32; 4]; 4]),
+    Icon(&'a glium::texture::SrgbTexture2d, [[f32; 4]; 4]),
 }
 
 impl<'a> std::fmt::Debug for UniformInfo<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use UniformInfo::*;
         let name = match self {
-            PBRInfo(_) => "PBR",
-            EquiRectInfo(_) => "EQ Rect",
-            SkyboxInfo(_) => "Skybox",
-            CompositeInfo(_) => "Compositor",
-            SepConvInfo(_) => "Sep Conv",
-            ExtractBrightInfo(_) => "Extract Bright",
-            PrefilterHdrEnvInfo(_) => "Prefilter HDR",
-            GenLutInfo => "Gen BRDF Lut",
-            LaserInfo => "Laser",
-            TriangleCollisionsInfo => "Compute triangle",
-            LightCullInfo(_) => "Compute light cull",
-            CollisionDebugInfo(_) => "Collision debug",
-            BillboardInfo(_, _) => "Billboard",
-            CloudInfo(_) => "Cloud",
-            LineInfo => "Line",
-            TextInfo(_, _) => "Text",
-            MinimapInfo(_) => "Minimap",
-            IconInfo(_, _) => "Icon",
+            Pbr(_) => "PBR",
+            EquiRect(_) => "EQ Rect",
+            Skybox(_) => "Skybox",
+            Composite(_) => "Compositor",
+            SepConv(_) => "Sep Conv",
+            ExtractBright(_) => "Extract Bright",
+            PrefilterHdrEnv(_) => "Prefilter HDR",
+            GenLut => "Gen BRDF Lut",
+            Laser => "Laser",
+            TriangleCollisions => "Compute triangle",
+            LightCull(_) => "Compute light cull",
+            CollisionDebug(_) => "Collision debug",
+            Billboard(_, _) => "Billboard",
+            Cloud(_) => "Cloud",
+            Line => "Line",
+            Text(_, _) => "Text",
+            Minimap(_) => "Minimap",
+            Icon(_, _) => "Icon",
         };
         f.write_str(name)
     }
@@ -429,99 +411,100 @@ impl<'a> UniformInfo<'a> {
         use RenderPassType::*;
         match (self, pass) {
             // solid passes
-            (PBRInfo(PBRData {instancing: true, ..}), Visual) => ShaderType::PbrInstancedShader,
-            (PBRInfo(PBRData {instancing: true, ..}), Transparent(_)) |
-                (PBRInfo(PBRData {instancing:true , ..}), LayeredVisual)
+            (Pbr(PBRData {instancing: true, ..}), Visual) => ShaderType::PbrInstancedShader,
+            (Pbr(PBRData {instancing: true, ..}), Transparent(_)) |
+                (Pbr(PBRData {instancing:true , ..}), LayeredVisual)
                 => ShaderType::ParallelInstancePbr,
-            (PBRInfo(PBRData {bone_mats: Some(_), ..}), Visual) => ShaderType::PbrAnim,
-            (PBRInfo(PBRData {bone_mats: Some(_), ..}), LayeredVisual) |
-                (PBRInfo(PBRData {bone_mats: Some(_), ..}), Transparent(_)) => ShaderType::ParallelAnimPbr,
-            (PBRInfo(_), Visual) => ShaderType::Pbr,
-            (PBRInfo(_), LayeredVisual) | (PBRInfo(_), Transparent(_)) => ShaderType::ParallelPbr,
-            (PBRInfo(PBRData {instancing: true, ..}), Depth) => 
+            (Pbr(PBRData {bone_mats: Some(_), ..}), Visual) => ShaderType::PbrAnim,
+            (Pbr(PBRData {bone_mats: Some(_), ..}), LayeredVisual) |
+                (Pbr(PBRData {bone_mats: Some(_), ..}), Transparent(_)) => ShaderType::ParallelAnimPbr,
+            (Pbr(_), Visual) => ShaderType::Pbr,
+            (Pbr(_), LayeredVisual) | (Pbr(_), Transparent(_)) => ShaderType::ParallelPbr,
+            (Pbr(PBRData {instancing: true, ..}), Depth) =>
                 ShaderType::DepthInstancedShader,
-            (PBRInfo(PBRData {bone_mats: Some(_), ..}), Depth) => 
+            (Pbr(PBRData {bone_mats: Some(_), ..}), Depth) =>
                 ShaderType::DepthAnim,
-            (PBRInfo(_), Depth) | (PBRInfo(_), TransparentDepth) => ShaderType::DepthShader,
-            (LaserInfo, Visual) => ShaderType::Laser,
-            (LaserInfo, LayeredVisual) | (LaserInfo, Transparent(_)) => ShaderType::ParallelLaser,
-            (LaserInfo, Depth) => ShaderType::DepthShader,
-            (CollisionDebugInfo(_), Visual) => ShaderType::CollisionDebug,
-            (CloudInfo(_), Visual) => ShaderType::Cloud,
-            (LineInfo, Visual) | (LineInfo, Transparent(_)) => ShaderType::Line,
+            (Pbr(_), Depth) | (Pbr(_), TransparentDepth) => ShaderType::DepthShader,
+            (Laser, Visual) => ShaderType::Laser,
+            (Laser, LayeredVisual) | (Laser, Transparent(_)) => ShaderType::ParallelLaser,
+            (Laser, Depth) => ShaderType::DepthShader,
+            (CollisionDebug(_), Visual) => ShaderType::CollisionDebug,
+            (Cloud(_), Visual) => ShaderType::Cloud,
+            (Line, Visual) | (Line, Transparent(_)) => ShaderType::Line,
             //(CloudInfo(_), Depth) => ShaderType::CloudDepth,
 
             // game objects
-            (EquiRectInfo(_), Visual) => ShaderType::EquiRect,
-            (SkyboxInfo(_), Visual) => ShaderType::Skybox,
-            (EquiRectInfo(_), LayeredVisual) | (EquiRectInfo(_), Transparent(_)) => ShaderType::ParallelEqRect,
-            (SkyboxInfo(_), LayeredVisual) | (SkyboxInfo(_), Transparent(_)) => ShaderType::ParallelSky,
-            (BillboardInfo(_, _), Visual) => ShaderType::Billboard,
-            (TextInfo(_, _), Visual) => ShaderType::Text,
-            (MinimapInfo(_), Visual) => ShaderType::Minimap,
-            (IconInfo(_, _), Visual) => ShaderType::Icon,
+            (EquiRect(_), Visual) => ShaderType::EquiRect,
+            (Skybox(_), Visual) => ShaderType::Skybox,
+            (EquiRect(_), LayeredVisual) | (EquiRect(_), Transparent(_)) => ShaderType::ParallelEqRect,
+            (Skybox(_), LayeredVisual) | (Skybox(_), Transparent(_)) => ShaderType::ParallelSky,
+            (Billboard(_, _), Visual) => ShaderType::Billboard,
+            (Text(_, _), Visual) => ShaderType::Text,
+            (Minimap(_), Visual) => ShaderType::Minimap,
+            (Icon(_, _), Visual) => ShaderType::Icon,
 
             // tex processors
-            (CompositeInfo(_), Visual) => ShaderType::CompositeShader,
-            (SepConvInfo(_), Visual) => ShaderType::BlurShader,
-            (ExtractBrightInfo(_), Visual) => ShaderType::BloomShader,
-            (PrefilterHdrEnvInfo(_), Visual) => ShaderType::PrefilterHdrShader,
-            (PrefilterHdrEnvInfo(_), LayeredVisual) => ShaderType::ParallelPrefilter,
-            (GenLutInfo, Visual) => ShaderType::GenLutShader,
+            (Composite(_), Visual) => ShaderType::CompositeShader,
+            (SepConv(_), Visual) => ShaderType::BlurShader,
+            (ExtractBright(_), Visual) => ShaderType::BloomShader,
+            (PrefilterHdrEnv(_), Visual) => ShaderType::PrefilterHdrShader,
+            (PrefilterHdrEnv(_), LayeredVisual) => ShaderType::ParallelPrefilter,
+            (GenLut, Visual) => ShaderType::GenLutShader,
 
             // compute shaders
-            (LightCullInfo(_), Visual) => ShaderType::CullLightsCompute,
-            (TriangleCollisionsInfo, Visual) => ShaderType::TriIntersectionCompute,
+            (LightCull(_), Visual) => ShaderType::CullLightsCompute,
+            (TriangleCollisions, Visual) => ShaderType::TriIntersectionCompute,
             (typ, pass) => panic!("Unknown shader-pass combination ({:?}, {:?})", typ, pass),
         }
     }
 }
 
 use glium::uniforms::*;
+#[allow(clippy::type_complexity, clippy::large_enum_variant)]
 pub enum UniformType<'a> {
-    LaserUniform(UniformsStorage<'a, bool, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
-    SkyboxUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    PbrUniform(UniformsArray<'static, Sampler<'a, glium::texture::DepthTexture2d>, 
-        UniformsArray<'static, Sampler<'a, glium::texture::DepthTexture2d>, 
+    Laser(UniformsStorage<'a, bool, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
+    Skybox(UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    Pbr(UniformsArray<'static, Sampler<'a, glium::texture::DepthTexture2d>,
+        UniformsArray<'static, Sampler<'a, glium::texture::DepthTexture2d>,
         UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>,
-        UniformsStruct<'static, UniformsStorage<'a, 
-        glium::uniforms::Sampler<'a, glium::texture::Cubemap>, glium::uniforms::UniformsStorage<'a, f32, 
-        glium::uniforms::UniformsStorage<'a, f32, glium::uniforms::EmptyUniforms>>>, 
-        glium::uniforms::UniformsStorage<'a, [f32; 3], glium::uniforms::UniformsStorage<'a, [[f32; 4]; 4], 
-        glium::uniforms::UniformsStorage<'a, &'a glium::uniforms::UniformBuffer<CascadeUniform>, 
-        glium::uniforms::UniformsStorage<'a, i32, glium::uniforms::UniformsStorage<'a, bool, 
-        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::Texture2d>, 
-        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::Texture2d>, 
-        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::texture::Cubemap>, 
-        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::texture::Cubemap>, 
-        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::texture::SrgbTexture2d>, 
-        glium::uniforms::UniformsStorage<'a, [f32; 3], glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, 
-        glium::Texture2d>, glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::Texture2d>, 
-        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::Texture2d>, 
-        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::texture::SrgbTexture2d>, 
-        glium::uniforms::UniformsStorage<'a, [[f32; 4]; 4], glium::uniforms::UniformsStorage<'a, [[f32; 4]; 4], 
+        UniformsStruct<'static, UniformsStorage<'a,
+        glium::uniforms::Sampler<'a, glium::texture::Cubemap>, glium::uniforms::UniformsStorage<'a, f32,
+        glium::uniforms::UniformsStorage<'a, f32, glium::uniforms::EmptyUniforms>>>,
+        glium::uniforms::UniformsStorage<'a, [f32; 3], glium::uniforms::UniformsStorage<'a, [[f32; 4]; 4],
+        glium::uniforms::UniformsStorage<'a, &'a glium::uniforms::UniformBuffer<CascadeUniform>,
+        glium::uniforms::UniformsStorage<'a, i32, glium::uniforms::UniformsStorage<'a, bool,
+        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::Texture2d>,
+        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::Texture2d>,
+        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::texture::Cubemap>,
+        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::texture::Cubemap>,
+        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::texture::SrgbTexture2d>,
+        glium::uniforms::UniformsStorage<'a, [f32; 3], glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a,
+        glium::Texture2d>, glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::Texture2d>,
+        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::Texture2d>,
+        glium::uniforms::UniformsStorage<'a, glium::uniforms::Sampler<'a, glium::texture::SrgbTexture2d>,
+        glium::uniforms::UniformsStorage<'a, [[f32; 4]; 4], glium::uniforms::UniformsStorage<'a, [[f32; 4]; 4],
         UniformsStorage<'a, f32, UniformsStorage< 'a, f32, UniformsStorage<'a, f32, glium::uniforms::EmptyUniforms>>>>>>>>>>>>>>>>>>>>>>>>),
-    EqRectUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    ExtractBrightUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
-    CompositeUniform(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, UniformsArray<'static, [[f32; 3]; 3], UniformsStorage<'a, (&'a str, glium::program::ShaderStage), UniformsStorage<'a, [[f32; 4]; 4], 
+    EqRect(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    ExtractBright(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
+    Composite(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, UniformsArray<'static, [[f32; 3]; 3], UniformsStorage<'a, (&'a str, glium::program::ShaderStage), UniformsStorage<'a, [[f32; 4]; 4],
         UniformsStorage<'a, u32, EmptyUniforms>>>>>),
-    SepConvUniform(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    PrefilterHdrEnvUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4], 
+    SepConv(UniformsStorage<'a, bool, UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    PrefilterHdrEnv(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::Cubemap>, UniformsStorage<'a, [[f32; 4]; 4],
         UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>),
-    BrdfLutUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
-    DepthUniform(UniformsStorage<'a, f32, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    ColorUniform(UniformsStorage<'a, [f32; 4], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
-    BillboardUniform(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, 
+    BrdfLut(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
+    Depth(UniformsStorage<'a, f32, UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    Color(UniformsStorage<'a, [f32; 4], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>),
+    Billboard(UniformsStorage<'a, f32, UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>,
         UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>),
-    CloudUniform(UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], 
-        UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, i32, 
+    Cloud(UniformsStorage<'a, Sampler<'a, glium::texture::DepthTexture2d>, UniformsStorage<'a, [[f32; 4]; 4],
+        UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, i32,
         UniformsStorage<'a, Sampler<'a, glium::texture::Texture3d>, UniformsStorage<'a, [f32; 3],
         UniformsStorage<'a, [f32; 3], UniformsStorage<'a, [[f32; 4]; 4], UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>>>>>>>>),
-    LineUniform(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
-    TextUniform(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [f32; 2], UniformsStorage<'a, [[f32; 4]; 4],
+    Line(UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>),
+    Text(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [f32; 2], UniformsStorage<'a, [[f32; 4]; 4],
         EmptyUniforms>>>),
-    MinimapUniform(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, EmptyUniforms>),
-    IconUniform(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
+    Minimap(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, EmptyUniforms>),
+    Icon(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
     
 }
 /// Samples a texture with LinearMipmapLinear minification, repeat wrapping, and linear magnification
@@ -725,7 +708,7 @@ impl ShaderManager {
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
         compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
         ShaderManager {
-            shaders: shaders, compute_shaders,
+            shaders, compute_shaders,
             empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
             empty_2d: glium::texture::Texture2d::empty(facade, 0, 0).unwrap(),
             empty_cube: glium::texture::Cubemap::empty(facade, 0).unwrap(),
@@ -748,39 +731,39 @@ impl ShaderManager {
         let params = typ.get_draw_params(pass_tp);
         let shader = self.shaders.get(&typ).unwrap();
         let uniform = match (data, pass_tp) {
-            (LaserInfo, Visual) => 
-                UniformType::LaserUniform(glium::uniform! {
+            (Laser, Visual) =>
+                UniformType::Laser(glium::uniform! {
                     viewproj: scene_data.unwrap().viewer.viewproj,
                     layered: false,
                 }),
-            (LaserInfo, Transparent(_)) | (LaserInfo, LayeredVisual) =>
-                UniformType::LaserUniform(glium::uniform! {
+            (Laser, Transparent(_)) | (Laser, LayeredVisual) =>
+                UniformType::Laser(glium::uniform! {
                     viewproj: scene_data.unwrap().viewer.viewproj,
                     layered: true,
                 }),
-            (SkyboxInfo(SkyboxData {env_map}), Visual) | (SkyboxInfo(SkyboxData {env_map}), Transparent(_))
-            | (SkyboxInfo(SkyboxData {env_map}), LayeredVisual)
-            => UniformType::SkyboxUniform(glium::uniform! {
+            (Skybox(SkyboxData {env_map}), Visual) | (Skybox(SkyboxData {env_map}), Transparent(_))
+            | (Skybox(SkyboxData {env_map}), LayeredVisual)
+            => UniformType::Skybox(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 skybox: sample_linear_clamp!(env_map),
             }),
-            (EquiRectInfo(EqRectData{env_map}), Visual) | (EquiRectInfo(EqRectData{env_map}), Transparent(_))
-            | (EquiRectInfo(EqRectData{env_map}), LayeredVisual)
-            => UniformType::EqRectUniform(glium::uniform! {
+            (EquiRect(EqRectData{env_map}), Visual) | (EquiRect(EqRectData{env_map}), Transparent(_))
+            | (EquiRect(EqRectData{env_map}), LayeredVisual)
+            => UniformType::EqRect(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 equirectangular_map: sample_linear_clamp!(env_map),
             }),
-            (PBRInfo(PBRData { model, 
+            (Pbr(PBRData { model,
                 diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map,
                 instancing: _, bone_mats, trans_data, emission_strength, roughness_fac,
                 metallic_fac}), Visual) |
-            (PBRInfo(PBRData { model, 
+            (Pbr(PBRData { model,
                 diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map,
                 instancing: _, bone_mats, trans_data, emission_strength, roughness_fac,
                 metallic_fac}), Transparent(_)) |
-            (PBRInfo(PBRData { model, 
+            (Pbr(PBRData { model,
                 diffuse_tex, roughness_map, metallic_map, emission_map, normal_map, ao_map,
                 instancing: _, bone_mats, trans_data, emission_strength, roughness_fac,
                 metallic_fac}), LayeredVisual) 
@@ -796,19 +779,19 @@ impl ShaderManager {
                 let default = TransparencyData::default();
                 let trans_data = if pass_tp == Visual { trans_data.unwrap_or(&default) }
                 else { &default };
-                UniformType::PbrUniform(UniformsArray { name: "cascadeDepthMaps", 
+                UniformType::Pbr(UniformsArray { name: "cascadeDepthMaps",
                 vals: maps.iter().map(|x| 
                     sample_nearest_border!(*x)).collect::<Vec<Sampler<'b, glium::texture::DepthTexture2d>>>(), 
                 rest: UniformsArray { name: "cascadeTransMaps",
                 vals: cache.trans_cascade_maps.as_ref().map(|v| {
                         v.iter().map(|(d, _)| sample_nearest_border!(*d))
                         .collect::<Vec<Sampler<'b, glium::texture::DepthTexture2d>>>()})
-                        .unwrap_or(vec![sample_nearest_border!(self.empty_depth)]),
+                        .unwrap_or_else(|| vec![sample_nearest_border!(self.empty_depth)]),
                 rest: UniformsArray { name: "cascadeTransFacs",
                 vals: cache.trans_cascade_maps.as_ref().map(|v| {
                     v.iter().map(|(_, c)| sample_nearest_border!(*c))
                     .collect::<Vec<Sampler<'b, glium::texture::Texture2d>>>()})
-                    .unwrap_or(vec![sample_nearest_border!(self.empty_2d)]),
+                    .unwrap_or_else(|| vec![sample_nearest_border!(self.empty_2d)]),
                 rest: UniformsStruct { name: "transparencyData", 
                 data: glium::uniform! {
                     trans_fac: *trans_data.trans_fac.borrow(),
@@ -821,7 +804,7 @@ impl ShaderManager {
                     metallic_fac: *metallic_fac,
                     emission_strength: *emission_strength,
                     viewproj: sd.viewer.viewproj,
-                    model: model.clone(),
+                    model: *model,
                     albedo_map: sample_mip_repeat!(diffuse_tex),
                     roughness_map: sample_mip_repeat!(roughness_map.unwrap_or(&self.empty_2d)),
                     normal_map: sample_mip_repeat!(normal_map.unwrap()),
@@ -842,12 +825,12 @@ impl ShaderManager {
                     }
                 }})
             },
-            (CompositeInfo(CompositeData {model, textures, blend_function, transforms}), _) => {
+            (Composite(CompositeData {model, textures, blend_function, transforms}), _) => {
                 let subroutine_name = match blend_function.0 {
                     BlendFn::Overlay => "blendOverlay",
                     BlendFn::Add => "blendAdd",
                 };
-                UniformType::CompositeUniform(UniformsArray {
+                UniformType::Composite(UniformsArray {
                     vals: textures.iter().map(|tex| sample_linear_clamp!(tex)).collect(),
                     name: "textures",
                     rest: UniformsArray {
@@ -861,48 +844,48 @@ impl ShaderManager {
                     },
                 })
             },
-            (SepConvInfo(SepConvData {tex, horizontal_pass}), _) => UniformType::SepConvUniform(glium::uniform! {
+            (SepConv(SepConvData {tex, horizontal_pass}), _) => UniformType::SepConv(glium::uniform! {
                 model: cgmath::Matrix4::from_scale(1f32).into(),
                 diffuse: sample_linear_clamp!(tex),
                 horizontal_pass: *horizontal_pass,
             }),
-            (ExtractBrightInfo(ExtractBrightData {tex}), _) => UniformType::ExtractBrightUniform(glium::uniform! {
+            (ExtractBright(ExtractBrightData {tex}), _) => UniformType::ExtractBright(glium::uniform! {
                 model: cgmath::Matrix4::from_scale(1f32).into(),
                 diffuse: sample_linear_clamp!(tex),
             }),
-            (PrefilterHdrEnvInfo(PrefilterHdrEnvData {
+            (PrefilterHdrEnv(PrefilterHdrEnvData {
                 env_map, roughness }), _) 
-            => UniformType::PrefilterHdrEnvUniform(glium::uniform! {
+            => UniformType::PrefilterHdrEnv(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 env_map: sample_linear_clamp!(env_map),
                 roughness: *roughness,
             }),
-            (GenLutInfo, _) => UniformType::BrdfLutUniform(glium::uniform! {
+            (GenLut, _) => UniformType::BrdfLut(glium::uniform! {
                 model: cgmath::Matrix4::from_scale(1f32).into(),
             }),
-            (PBRInfo(PBRData {model, bone_mats, trans_data, ..}), Depth) |
-            (PBRInfo(PBRData {model, bone_mats, trans_data, ..}), TransparentDepth) => {
+            (Pbr(PBRData {model, bone_mats, trans_data, ..}), Depth) |
+            (Pbr(PBRData {model, bone_mats, trans_data, ..}), TransparentDepth) => {
                 bone_mats.map(|x| x.bind(4));
-                UniformType::DepthUniform(glium::uniform! {
+                UniformType::Depth(glium::uniform! {
                     viewproj: scene_data.unwrap().viewer.viewproj,
-                    model: model.clone(),
+                    model: *model,
                     inv_fac: trans_data.as_ref().map(|x| *x.trans_fac.borrow()).unwrap_or(0.),
                 })
             },
-            (CollisionDebugInfo(model), _) => UniformType::ColorUniform(glium::uniform! {
+            (CollisionDebug(model), _) => UniformType::Color(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
-                model: model.clone(),
+                model: *model,
                 color: [1.0, 0.0, 0.0, 1.0],
             }),
-            (BillboardInfo(tex, density), Visual) => UniformType::BillboardUniform(glium::uniform! {
+            (Billboard(tex, density), Visual) => UniformType::Billboard(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
                 tex: sample_mip_repeat!(tex),
                 cam_depth: sample_linear_clamp!(cache.unwrap().cam_depth.unwrap()),
                 particle_density: *density,
             }),
-            (CloudInfo(CloudData{volume, model}), Visual) => UniformType::CloudUniform(glium::uniform! {
+            (Cloud(CloudData{volume, model}), Visual) => UniformType::Cloud(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
                 model: *model,
                 light_dir: scene_data.unwrap().light_pos.unwrap_or([1f32, 0., 0.]),
@@ -913,20 +896,20 @@ impl ShaderManager {
                 proj: scene_data.unwrap().viewer.proj,
                 cam_depth: sample_linear_clamp!(cache.unwrap().cam_depth.unwrap()),
             }),
-            (LineInfo, Visual) | (LineInfo, Transparent(_)) => UniformType::LineUniform(glium::uniform! {
+            (Line, Visual) | (Line, Transparent(_)) => UniformType::Line(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
             }),
-            (TextInfo(tex, tex_width_height), Visual) => UniformType::TextUniform(glium::uniform! {
+            (Text(tex, tex_width_height), Visual) => UniformType::Text(glium::uniform! {
                 viewproj: scene_data.unwrap().viewer.viewproj,
                 tex_width_height: [tex_width_height[0] as f32, tex_width_height[1] as f32],
                 tex: sample_mip_clamp!(tex),
             }),
-            (MinimapInfo(MinimapData{ textures }), Visual) => UniformType::MinimapUniform(UniformsArray {
+            (Minimap(MinimapData{ textures }), Visual) => UniformType::Minimap(UniformsArray {
                 name: "textures",
                 vals: textures.iter().map(|t| sample_linear_border!(t)).collect(),
                 rest: EmptyUniforms,
             }),
-            (IconInfo(texture, model), Visual) => UniformType::IconUniform(glium::uniform! {
+            (Icon(texture, model), Visual) => UniformType::Icon(glium::uniform! {
                 model: *model,
                 tex: sample_linear_clamp!(texture),
             }),
@@ -939,7 +922,7 @@ impl ShaderManager {
     /// Executes a computer shader with `x * y * z` working groups
     pub fn execute_compute(&self, x: u32, y: u32, z: u32, args: UniformInfo, scene_data: Option<&SceneData>) {
         match args {
-            UniformInfo::LightCullInfo(LightCullData {depth_tex, scr_width, scr_height}) => {
+            UniformInfo::LightCull(LightCullData {depth_tex, scr_width, scr_height}) => {
                 let scene_data = scene_data.unwrap();
                 let uniform = glium::uniform! {
                     view: scene_data.viewer.view,
@@ -952,7 +935,7 @@ impl ShaderManager {
                 scene_data.lights.unwrap().bind(0);
                 compute.execute(uniform, x, y, z);
             },
-            UniformInfo::TriangleCollisionsInfo => {
+            UniformInfo::TriangleCollisions => {
                 let compute = self.compute_shaders.get(&ShaderType::TriIntersectionCompute).unwrap();
                 compute.execute(EmptyUniforms, x, y, z);
             }

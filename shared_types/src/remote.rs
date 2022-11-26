@@ -33,10 +33,10 @@ pub(crate) fn remove_end_chunk(mut chunks: ChunkedMsg) -> Result<ChunkedMsg, Box
             last_packet.truncate(last_packet.len() - 3);
             Ok(chunks)
         } else {
-            return Err("Invalid END position in chunk")?;
+            Err("Invalid END position in chunk")?
         }
     } else {
-        return Err("No end chunk")?;
+        Err("No end chunk")?
     }
 }
 
@@ -88,11 +88,7 @@ impl<T: Serializeable> RemoteData<T> {
                 .rev()
                 .next()
                 .map(|(last_pack_num, last_chunk)| {
-                    last_chunk
-                        .windows(3)
-                        .rev()
-                        .position(|x| x == b"END")
-                        .is_some()
+                    last_chunk.windows(3).rev().any(|x| x == b"END")
                         && *last_pack_num as usize == msg.len() - 1
                 })
                 .unwrap_or(false),
@@ -109,16 +105,12 @@ impl<T: Serializeable> RemoteData<T> {
         match self {
             Buffering(mut msg) if packet.len() >= CHUNK_METADATA_SIZE => {
                 let pk_id = packet[PKT_NM_INDEX];
-                if msg.contains_key(&pk_id) {
-                    Err("Duplicate packet")?
-                } else {
-                    msg.insert(pk_id, packet);
+                if let std::collections::btree_map::Entry::Vacant(e) = msg.entry(pk_id) {
+                    e.insert(packet);
                     let this = Buffering(msg);
-                    if this.is_ready() {
-                        Ok(this.to_ready()?)
-                    } else {
-                        Ok(this)
-                    }
+                    Ok(this.to_ready()?)
+                } else {
+                    Err("Duplicate packet")?
                 }
             }
             Ready(_) => Err("Cannot add packet to ready message")?,
@@ -325,7 +317,7 @@ fn send_with_retries(
     let mut total_send_attempts = 0;
     for (_, chunk) in chunks {
         let mut send_attempts = 0;
-        while let Err(_) = sock.send(&chunk) {
+        while sock.send(&chunk).is_err() {
             if send_attempts >= args.max_send_tries
                 || total_send_attempts >= args.total_send_attempts
             {

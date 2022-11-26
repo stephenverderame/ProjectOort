@@ -53,7 +53,7 @@ impl LocalGameController {
     pub fn new<M: Map, Dm: std::ops::Deref<Target = M>>(map: Dm) -> LocalGameController {
         let objs = map.initial_objects();
         let indices = (0..objs.len()).map(|i| (objs[i].id, i)).collect();
-        let player_id = objs.last().map(|o| o.id).unwrap_or(Default::default());
+        let player_id = objs.last().map(|o| o.id).unwrap_or_default();
         LocalGameController {
             last_id: player_id.next(),
             objects: objs,
@@ -68,6 +68,8 @@ impl LocalGameController {
         }
     }
 }
+
+type RemoteObjectMapPair = (Vec<RemoteObject>, HashMap<ObjectId, usize>);
 
 impl GameController for LocalGameController {
     fn get_game_objects(&self) -> &[RemoteObject] {
@@ -142,6 +144,7 @@ impl GameController for LocalGameController {
     }
 }
 
+#[allow(unused)]
 pub struct RemoteGameController {
     objects: Vec<RemoteObject>,
     indices: HashMap<ObjectId, usize>,
@@ -163,14 +166,14 @@ impl RemoteGameController {
         let mut trials = 0;
         while trials < 3 {
             match remote::send_important(
-                &sock,
+                sock,
                 &ClientCommandType::Login(username.to_owned()),
                 *last_out_id,
                 received_msgs,
                 Default::default(),
             ) {
                 Ok(ServerCommandType::ReturnLogin(login)) => {
-                    last_out_id.wrapping_add(1);
+                    *last_out_id = last_out_id.wrapping_add(1);
                     return Ok(login);
                 }
                 Err(_) => trials += 1,
@@ -185,14 +188,14 @@ impl RemoteGameController {
         player: RemoteObject,
         last_out_id: &mut MsgId,
         received_msgs: &mut ClientBuffer<ServerCommandType>,
-    ) -> Result<(Vec<RemoteObject>, HashMap<ObjectId, usize>), Box<dyn Error>> {
+    ) -> Result<RemoteObjectMapPair, Box<dyn Error>> {
         let mut trials = 0;
-        let mut objects = vec![player.clone()];
+        let mut objects = vec![player];
         let mut indices = HashMap::new();
         indices.insert(player.id, 0);
         while trials < 3 {
             match remote::send_important(
-                &sock,
+                sock,
                 &ClientCommandType::Update(vec![player]),
                 *last_out_id,
                 received_msgs,
@@ -203,7 +206,7 @@ impl RemoteGameController {
                         indices.insert(obj.id, idx);
                         objects.push(obj);
                     }
-                    last_out_id.wrapping_add(1);
+                    *last_out_id = last_out_id.wrapping_add(1);
                     return Ok((objects, indices));
                 }
                 Err(_) => trials += 1,

@@ -31,6 +31,7 @@ pub trait HighPCollision {
     ) -> Option<Hit>;
 }
 
+/// Implementation which does not perform any higher precision collision tests
 pub struct HighPNone {}
 
 impl HighPCollision for HighPNone {
@@ -93,6 +94,8 @@ struct ShaderTriangle {
     _c: [f32; 4],
     _d: [f32; 4],
 }
+
+/// Performs GPU accelerated triangle-triangle high-precision collision tests
 pub struct TriangleTriangleGPU<'a> {
     shader_manager: Option<&'a shader::ShaderManager>,
 }
@@ -182,7 +185,7 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
                 work_groups_x,
                 work_groups_y,
                 1,
-                shader::UniformInfo::TriangleCollisionsInfo,
+                shader::UniformInfo::TriangleCollisions,
                 None,
             );
         } else {
@@ -190,7 +193,7 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
                 work_groups_x,
                 work_groups_y,
                 1,
-                shader::UniformInfo::TriangleCollisionsInfo,
+                shader::UniformInfo::TriangleCollisions,
                 None,
             );
         }
@@ -236,6 +239,7 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
     }
 }
 
+/// Performs CPU triangle-triangle collision detection.
 pub struct TriangleTriangleCPU {}
 
 impl TriangleTriangleCPU {

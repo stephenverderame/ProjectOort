@@ -1,22 +1,22 @@
-pub mod model;
 pub mod camera;
+pub mod model;
 #[macro_use]
 pub mod pipeline;
-pub mod scene;
-pub mod shader;
+mod billboard;
 pub mod cubes;
-pub mod textures;
 pub mod drawable;
-pub mod window;
 pub mod entity;
 pub mod instancing;
-mod billboard;
 pub mod particles;
 pub mod primitives;
+pub mod scene;
+pub mod shader;
 pub mod text;
-use std::rc::Rc;
+pub mod textures;
+pub mod window;
 use std::cell::{Cell, RefCell};
 use std::mem::MaybeUninit;
+use std::rc::Rc;
 
 std::thread_local! {
     static ACTIVE_CTX: Cell<Option<Rc<RefCell<glium::Display>>>> = Cell::new(None);
@@ -51,18 +51,17 @@ pub struct ActiveCtx {
 
 impl ActiveCtx {
     /// Gets the mutable surface of the active context
-    pub fn as_surface(self) -> MutCtx {
+    pub fn into_surface(self) -> MutCtx {
         use std::ptr::addr_of_mut;
-        let mut ctx : MaybeUninit<MutCtx> = MaybeUninit::uninit();
+        let mut ctx: MaybeUninit<MutCtx> = MaybeUninit::uninit();
         let ptr = ctx.as_mut_ptr();
 
-        unsafe { 
-            addr_of_mut!((*ptr).ctx).write(self); 
+        unsafe {
+            addr_of_mut!((*ptr).ctx).write(self);
             addr_of_mut!((*ptr).display).write((*ptr).ctx.ctx.borrow());
             addr_of_mut!((*ptr).frame).write((*ptr).display.draw());
             ctx.assume_init()
         }
-
     }
 }
 
@@ -76,10 +75,9 @@ impl Drop for ActiveCtx {
 /// Panics if the active context has already been borrowed
 pub fn get_active_ctx() -> ActiveCtx {
     ActiveCtx {
-        ctx: ACTIVE_CTX.with(|v| 
-            v.take().expect("Active context not set or already in use")),
-        shader: ACTIVE_MANAGER.with(|v|
-            v.take().expect("Active manager not set or already in use")),
+        ctx: ACTIVE_CTX.with(|v| v.take().expect("Active context not set or already in use")),
+        shader: ACTIVE_MANAGER
+            .with(|v| v.take().expect("Active manager not set or already in use")),
     }
 }
 /// RAII for the draw frame of the shared active context
@@ -105,7 +103,6 @@ impl std::ops::Deref for MutCtx {
 }
 
 impl std::ops::DerefMut for MutCtx {
-
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.frame
     }

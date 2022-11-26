@@ -90,6 +90,9 @@ impl ObjectType {
     ///
     /// Requires `val` is a valid representation for an `ObjectType`
     /// Undefined behavior if this condition is not met
+    ///
+    /// # Safety
+    /// `val` must be between 0 and 5 inclusive
     pub unsafe fn from_unchecked(val: u8) -> Self {
         std::mem::transmute(val)
     }
@@ -97,16 +100,13 @@ impl ObjectType {
     /// Returns `true` if the object type does not have a corresponding rigid body,
     /// that is if it an entity only
     pub fn is_non_physical(&self) -> bool {
-        match self {
-            ObjectType::Cloud | ObjectType::Skybox => true,
-            _ => false,
-        }
+        matches!(self, ObjectType::Cloud | ObjectType::Skybox)
     }
 }
 
 type ObjectIdType = u32;
 #[repr(transparent)]
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, Default)]
 pub struct ObjectId {
     id: ObjectIdType,
 }
@@ -158,12 +158,6 @@ impl ObjectId {
     #[inline]
     pub fn as_underlying_type(&self) -> ObjectIdType {
         self.id
-    }
-}
-
-impl Default for ObjectId {
-    fn default() -> Self {
-        ObjectId { id: 0 }
     }
 }
 

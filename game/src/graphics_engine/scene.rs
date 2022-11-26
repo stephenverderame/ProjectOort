@@ -17,7 +17,7 @@ pub trait AbstractScene {
     ) -> Option<pipeline::TextureType>;
 
     /// Sets the lights used for this scene
-    fn set_lights(&mut self, lights: &Vec<shader::LightData>);
+    fn set_lights(&mut self, lights: &[shader::LightData]);
 }
 
 /// A Scene manages the scene parameters and
@@ -224,7 +224,7 @@ pub fn gen_ibl_from_hdr<F: glium::backend::Facade>(
             bg_skybox.set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
             let mut sd = drawable::default_scene_data(viewer);
             sd.pass_type = shader::RenderPassType::LayeredVisual;
-            drawable::render_drawable(bg_skybox, None, fbo, &sd, &cache, shader_manager);
+            drawable::render_drawable(bg_skybox, None, fbo, &sd, cache, shader_manager);
             iterations.set(its + 1);
         },
     );
@@ -279,14 +279,16 @@ impl AbstractScene for Scene {
         res
     }
 
-    fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
+    fn set_lights(&mut self, lights: &[shader::LightData]) {
         if let Some(this_lights) = self.lights.as_mut() {
             this_lights.update(lights)
         } else {
-            self.lights = Some(ssbo::Ssbo::dynamic(Some(&lights)))
+            self.lights = Some(ssbo::Ssbo::dynamic(Some(lights)))
         }
     }
 }
+
+pub type SceneModelPair = (Box<dyn AbstractScene>, Option<Matrix3<f32>>);
 
 use cgmath::*;
 use glium::*;
@@ -298,7 +300,7 @@ pub struct CompositorScene<
     GetSHolder: Fn() -> (SHolder, BlitTarget),
     CleanSHolder: Fn(SHolder),
 > {
-    scenes: Vec<(Box<dyn AbstractScene>, Option<Matrix3<f32>>)>,
+    scenes: Vec<SceneModelPair>,
     compositor: CompositorProcessor,
     blitter: BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>,
     viewer: Rc<RefCell<dyn Viewer>>,
@@ -320,7 +322,7 @@ pub fn compositor_scene_new<F: backend::Facade>(
     width: Rc<RefCell<u32>>,
     height: Rc<RefCell<u32>>,
     viewer: Rc<RefCell<dyn Viewer>>,
-    scenes: Vec<(Box<dyn AbstractScene>, Option<Matrix3<f32>>)>,
+    scenes: Vec<SceneModelPair>,
     fac: &F,
 ) -> CompositorScene<
     glium::Frame,
@@ -335,7 +337,7 @@ pub fn compositor_scene_new<F: backend::Facade>(
         compositor: CompositorProcessor::new(cur_width, cur_height, BlendFn::Overlay, fac),
         blitter: BlitTextureProcessor::new(
             move || {
-                let mut surface = super::get_active_ctx().as_surface();
+                let mut surface = super::get_active_ctx().into_surface();
                 surface.clear_color_and_depth((1., 0., 0., 1.), 1.);
                 //unsafe { gl::Viewport(0, 0, *width.borrow() as i32, *height.borrow() as i32) };
                 (
@@ -414,7 +416,7 @@ impl<
         None
     }
 
-    fn set_lights(&mut self, lights: &Vec<shader::LightData>) {
+    fn set_lights(&mut self, lights: &[shader::LightData]) {
         for (scene, _) in &mut self.scenes {
             scene.set_lights(lights);
         }

@@ -1,11 +1,11 @@
-use super::Emitter;
-use std::collections::VecDeque;
 use super::super::drawable::{Drawable, VertexHolder};
 use super::super::entity::{AbstractEntity, RenderOrder};
 use super::super::shader;
-use std::rc::Rc;
-use std::cell::RefCell;
+use super::Emitter;
 use crate::cg_support::Transformation;
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::rc::Rc;
 
 /// A collection of particle emitters
 pub struct ParticleSystem {
@@ -46,14 +46,17 @@ impl ParticleSystem {
     }
 
     /// Adds a billboard drawable at the next available index
-    /// 
+    ///
     /// `density` - participating medium density in spherical billboard
     pub fn with_billboard(mut self, path: &str, density: f32) -> Self {
         let ctx = super::super::get_active_ctx();
         let ctx = ctx.ctx.borrow();
-        self.drawables.push(Box::new(super::super::billboard::Rect3D::new(
-            super::super::textures::load_texture_srgb(path, &*ctx), density, &*ctx
-        )));
+        self.drawables
+            .push(Box::new(super::super::billboard::Rect3D::new(
+                super::super::textures::load_texture_srgb(path, &*ctx),
+                density,
+                &*ctx,
+            )));
         self
     }
 
@@ -66,34 +69,48 @@ impl ParticleSystem {
                 e.emit(dt);
             }
         }
-        self.emitters.retain(|(e, _)|
-            !death.iter().any(|d| *d == e as *const Box<dyn Emitter>));
+        self.emitters
+            .retain(|(e, _)| !death.iter().any(|d| *d == e as *const Box<dyn Emitter>));
     }
 
     pub fn lights(&self) -> Option<Vec<shader::LightData>> {
         let mut lights = Vec::new();
         for (e, _) in &self.emitters {
-            if let Some(x) = e.lights().as_mut() { lights.append(x) }
+            if let Some(x) = e.lights().as_mut() {
+                lights.append(x)
+            }
         }
-        if lights.is_empty() { None }
-        else { Some(lights) }
+        if lights.is_empty() {
+            None
+        } else {
+            Some(lights)
+        }
     }
-
 }
 
 impl Drawable for ParticleSystem {
-    fn render_args<'a>(&'a mut self, p: &[[[f32; 4]; 4]]) -> Vec<(shader::UniformInfo<'a>, VertexHolder<'a>, glium::index::IndicesSource<'a>)>
-    {
+    fn render_args<'a>(
+        &'a mut self,
+        p: &[[[f32; 4]; 4]],
+    ) -> Vec<(
+        shader::UniformInfo<'a>,
+        VertexHolder<'a>,
+        glium::index::IndicesSource<'a>,
+    )> {
         let mut v = Vec::new();
         let drawables = self.drawables.as_mut_ptr();
         for (e, draw_idx) in self.emitters.iter_mut() {
-            let (u, vh, i) = unsafe{ &mut *drawables.add(*draw_idx) }.render_args(p).swap_remove(0);
+            let (u, vh, i) = unsafe { &mut *drawables.add(*draw_idx) }
+                .render_args(p)
+                .swap_remove(0);
             v.push((u, vh.append(e.instance_data()), i));
         }
         v
     }
 
-    fn transparency(&self) -> Option<f32> { None }
+    fn transparency(&self) -> Option<f32> {
+        None
+    }
 }
 
 impl AbstractEntity for ParticleSystem {

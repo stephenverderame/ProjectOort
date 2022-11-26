@@ -117,6 +117,12 @@ impl RenderTarget for MsaaRenderTarget {
     }
 }
 
+type DepthFbo = (
+    framebuffer::SimpleFrameBuffer<'static>,
+    Pin<Box<texture::DepthTexture2d>>,
+    Pin<Box<texture::Texture2d>>,
+);
+
 /// RenderTarget which renders to Depth buffer
 ///
 /// ### Output
@@ -127,11 +133,7 @@ impl RenderTarget for MsaaRenderTarget {
 pub struct DepthRenderTarget {
     depth_tex: Pin<Box<texture::DepthTexture2d>>,
     main_fbo: framebuffer::SimpleFrameBuffer<'static>,
-    trans_fbo: Option<(
-        framebuffer::SimpleFrameBuffer<'static>,
-        Pin<Box<texture::DepthTexture2d>>,
-        Pin<Box<texture::Texture2d>>,
-    )>,
+    trans_fbo: Option<DepthFbo>,
     render_cascades: bool,
 }
 

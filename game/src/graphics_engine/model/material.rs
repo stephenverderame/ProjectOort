@@ -308,8 +308,8 @@ impl Material {
         emission_strength: f32,
     ) -> shader::UniformInfo {
         match &self.name[..] {
-            "Laser" => shader::UniformInfo::LaserInfo,
-            _ if self.pbr_data.is_some() => shader::UniformInfo::PBRInfo(shader::PBRData {
+            "Laser" => shader::UniformInfo::Laser,
+            _ if self.pbr_data.is_some() => shader::UniformInfo::Pbr(shader::PBRData {
                 diffuse_tex: self.diffuse_tex.as_ref().unwrap(),
                 model: model.unwrap_or_else(|| cgmath::Matrix4::from_scale(1f32).into()),
                 roughness_map: self

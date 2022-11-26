@@ -7,11 +7,10 @@ use shared_types::*;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
+    atomic::{AtomicBool, Ordering},
     Arc,
 };
 
-#[macro_use]
 extern crate static_assertions;
 
 #[cfg(test)]
@@ -23,7 +22,6 @@ mod test;
 ///
 /// For implementing a state machine
 enum ClientState {
-    WaitingForAck,
     WaitingForRequest,
 }
 
@@ -65,7 +63,7 @@ impl ServerState {
             .iter()
             .filter(|(client_addr, _)| requesting_client != *client_addr)
             .flat_map(|(_, client_data)| client_data.client_objects.iter())
-            .map(|e| *e)
+            .copied()
             .collect()
     }
 

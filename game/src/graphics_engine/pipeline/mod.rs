@@ -1,11 +1,11 @@
 mod render_pass;
 pub mod render_target;
 pub mod texture_processor;
-use glium::*;
+use super::drawable::*;
 use super::shader;
+use glium::*;
 use shader::PipelineCache;
 use shader::RenderPassType;
-use super::drawable::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -53,23 +53,33 @@ pub enum TargetType {
     Mipcube,
     Depth,
 }
-
 /// A RenderTarget is something that can be rendered to and produces a texture
 pub trait RenderTarget {
     /// Draws to the render target by passing a framebuffer to `func`. Must be called before `read()`.
-    /// 
+    ///
     /// `viewer` - the viewer for this render. May or may not be passed verbatim to `func`
-    /// 
+    ///
     /// `pipeline_inputs` - any texture inputs to this render target from the pipeline
-    /// 
+    ///
     /// `func` - the function called to render to the render target. Passed the render target
     /// framebuffer, viewer, type of the render target, and any pipeline inputs to this render target
-    /// 
+    ///
     /// Returns the texture output of rendering to this render target
-    fn draw(&mut self, viewer: &dyn Viewer, pipeline_inputs: Option<Vec<&TextureType>>,
+    #[allow(clippy::type_complexity)]
+    fn draw(
+        &mut self,
+        viewer: &dyn Viewer,
+        pipeline_inputs: Option<Vec<&TextureType>>,
         cache: &mut PipelineCache,
-        func: &mut dyn FnMut(&mut framebuffer::SimpleFrameBuffer, &dyn Viewer, RenderPassType,
-        &PipelineCache, TargetType, &Option<Vec<&TextureType>>)) -> Option<TextureType>;
+        func: &mut dyn FnMut(
+            &mut framebuffer::SimpleFrameBuffer,
+            &dyn Viewer,
+            RenderPassType,
+            &PipelineCache,
+            TargetType,
+            &Option<Vec<&TextureType>>,
+        ),
+    ) -> Option<TextureType>;
 
     /// Gets the type of this RenderTarget
     fn type_of(&self) -> TargetType;
@@ -79,12 +89,17 @@ pub trait RenderTarget {
 /// a function on textures
 pub trait TextureProcessor {
     /// `source` - input textures for the processor
-    /// 
+    ///
     /// `shader` - shader manager
-    /// 
+    ///
     /// `data` - the scene data for the processor or `None`
-    fn process<'a>(&mut self, source: Option<Vec<&'a TextureType>>, shader: &shader::ShaderManager,
-        cache: &mut PipelineCache<'a>, data: Option<&shader::SceneData>) -> Option<TextureType>;
+    fn process<'a>(
+        &mut self,
+        source: Option<Vec<&'a TextureType>>,
+        shader: &shader::ShaderManager,
+        cache: &mut PipelineCache<'a>,
+        data: Option<&shader::SceneData>,
+    ) -> Option<TextureType>;
 }
 
 /// A pipeline is a connected DAG with start nodes. Pipeline stores the indices of
@@ -96,15 +111,15 @@ pub struct Pipeline {
 
 impl Pipeline {
     /// Creates a new pipleline from a **connected DAG**.
-    /// 
+    ///
     /// **Requires**: pipeline node indexes are consecutive. That is to say that if there is an edge `(0, 10)`,
     /// there must be a node `10` and must have nodes `0 - 9`.
     /// ## Arguments
     /// `starts` - a vector of the start node id's
-    /// 
+    ///
     /// `edges` - a set of edges `(u, (v, idx))` that indicates a directed edge from `u` to `v`. Where
     /// `u` and `v` are indexes of nodes. `idx` is the index of `v`s input list that the output from `u` will
-    /// be sent to. Requires that all consecutive inputs are used. 
+    /// be sent to. Requires that all consecutive inputs are used.
     pub fn new(starts: Vec<u16>, edges: Vec<(u16, (u16, usize))>) -> Pipeline {
         Pipeline {
             starts,
@@ -120,7 +135,7 @@ impl Pipeline {
                 Some(lst) => lst.push(v),
                 None => {
                     adj_list.insert(u, vec![v]);
-                },
+                }
             }
         }
         adj_list
@@ -128,22 +143,19 @@ impl Pipeline {
     /// Topologically sorts the graph starting from `node`
     /// # Arguments
     /// `node` - starting node
-    /// 
+    ///
     /// `order` - the reverse topological order. Results are stored here
-    /// 
+    ///
     /// `discovered` - the set of all nodes that have been discovered
     fn topo_sort(&self, node: u16, order: &mut Vec<u16>, discovered: &mut HashSet<u16>) {
-        match self.adj_list.get(&node) {
-            Some(neighbors) => {
-                for (ns, _) in neighbors {
-                    if discovered.get(ns).is_none() {
-                        discovered.insert(*ns);
-                        self.topo_sort(*ns, order, discovered);
-                    }
+        if let Some(neighbors) = self.adj_list.get(&node) {
+            for (ns, _) in neighbors {
+                if discovered.get(ns).is_none() {
+                    discovered.insert(*ns);
+                    self.topo_sort(*ns, order, discovered);
                 }
-            },
-            _ => ()
-        };
+            }
+        }
         order.push(node);
     }
 
@@ -153,9 +165,8 @@ impl Pipeline {
         let mut discovered = HashSet::<u16>::new();
         for start in &self.starts {
             self.topo_sort(*start, &mut order, &mut discovered);
-        }     
-        order.iter().rev().map(|x| *x).collect()
-
+        }
+        order.iter().rev().copied().collect()
     }
 }
 
@@ -171,22 +182,18 @@ macro_rules! pipeline_map_and_list {
             map.insert(stringify!($process).to_string(), _id);
             _id += 1;
         )*
-        let mut adj_list : Vec<(u16, (u16, usize))> = Vec::new();
-        $(
-            adj_list.push((map[stringify!($stage_a)], 
-            (map[stringify!($stage_b)], $b_in)));
-        )*
+        let adj_list = vec![$((map[stringify!($stage_a)], (map[stringify!($stage_b)], $b_in))),*];
         (map, adj_list)
     }};
 }
 
 /// Constructs a pipeline using a DSL
-/// 
+///
 /// Expects `[<render_targets>], [<texture_processors>], <stage_a> -> <stage_b>.<b_in>`
 /// where `b_in` is the number of the input to put the output of `stage_a` into `stage_b`
-/// 
+///
 /// The first render target will automatically be the starting stage
-/// 
+///
 /// The stage flow block can be followed by `{}`, which can contain expressions for conditional stages
 /// For example: `{ stage_a | stage_b if 1 > var }` which will execute `stage_a` and `stage_b`
 /// only if `1 > var`. Any variables used in the if expression will be moved into the underlying active
@@ -194,13 +201,13 @@ macro_rules! pipeline_map_and_list {
 macro_rules! pipeline {
     ([$($target:ident),+], [$($process:ident),*], $($stage_a:ident -> $stage_b:ident.$b_in:expr),*) => {{
             let (_, adj_list) = pipeline_map_and_list!([$($target),+], [$($process),*], $($stage_a -> $stage_b.$b_in),*);
-            RenderPass::new(vec![$($target),*], vec![$($process),*], 
+            RenderPass::new(vec![$($target),*], vec![$($process),*],
                 Pipeline::new(vec![0], adj_list))
     }};
     ([$($target:ident),+], [$($process:ident),*], $($stage_a:ident -> $stage_b:ident.$b_in:expr),*,
         {$($($conditional_stage:ident)|+ if $condition:expr),*}) => {{
         let (map, adj_list) = pipeline_map_and_list!([$($target),+], [$($process),*], $($stage_a -> $stage_b.$b_in),*);
-        RenderPass::new(vec![$($target),*], vec![$($process),*], 
+        RenderPass::new(vec![$($target),*], vec![$($process),*],
             Pipeline::new(vec![0], adj_list)).with_active_pred(Box::new(move |stage| {
                 match stage {
                     $(

@@ -153,7 +153,7 @@ fn update_important() {
                 if let ServerCommandType::Update(objs) = resp {
                     assert_eq!(objs.len(), (id - 1) as usize);
                     for (obj_node, vel, rot_vel, typ, obj_id) in
-                        objs.iter().map(|o| node::from_remote_object(o))
+                        objs.iter().map(node::from_remote_object)
                     {
                         let obj_id = obj_id.as_underlying_type();
                         assert!(obj_id < (id as u32));

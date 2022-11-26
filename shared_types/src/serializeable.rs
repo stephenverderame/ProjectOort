@@ -83,7 +83,10 @@ where
         Some(opt_val) if *opt_val != val => {
             Err(format!("Option mismatch: {:?} != {:?}", opt_val, val).into())
         }
-        None => Ok(*opt = Some(val)),
+        None => {
+            *opt = Some(val);
+            Ok(())
+        }
         _ => Ok(()),
     }
 }
@@ -103,16 +106,15 @@ fn dechunk_serialized_data(
     let mut res = Vec::new();
     let mut last_cmd_id: Option<CommandId> = None;
     let mut last_msg_id: Option<MsgId> = None;
-    let mut expected_packet_num: PacketNum = 0;
-    for (_, chunk) in chunks {
+    for (expected_packet_num, (_, chunk)) in (0_u8..).zip(chunks.into_iter()) {
         let chunk_len = chunk.len();
         if chunk_len < CHUNK_METADATA_SIZE {
             return Err(format!("Chunk too short: {}", chunk.len()).into());
         }
-        if &chunk[0..CHUNK_HEADER_SIZE] != CHUNK_HEADER {
+        if chunk[0..CHUNK_HEADER_SIZE] != CHUNK_HEADER {
             return Err(format!("Invalid chunk title: {:?}", &chunk[0..CHUNK_TITLE_SIZE]).into());
         }
-        if &chunk[chunk_len - CHUNK_FOOTER_SIZE..] != CHUNK_FOOTER {
+        if chunk[chunk_len - CHUNK_FOOTER_SIZE..] != CHUNK_FOOTER {
             return Err(format!(
                 "Invalid chunk footer: {:?}",
                 &chunk[chunk_len - CHUNK_FOOTER_SIZE..]
@@ -126,7 +128,6 @@ fn dechunk_serialized_data(
         if expected_packet_num != chunk[PKT_NM_INDEX] {
             return Err("Chunk packet numbers are not in order")?;
         }
-        expected_packet_num += 1;
         res.extend_from_slice(&chunk[CHUNK_TITLE_SIZE..chunk_len - CHUNK_FOOTER_SIZE]);
     }
     Ok((res, last_cmd_id.unwrap(), last_msg_id.unwrap()))
@@ -151,7 +152,7 @@ fn serialize_objects(objects: &[RemoteObject]) -> (Vec<u8>, u8) {
 
 fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>> {
     if data.len() % REMOTE_OBJECT_SIZE != 0 {
-        return Err("Invalid update length")?;
+        Err("Invalid update length")?
     } else {
         let objs = data
             .into_iter()
@@ -162,7 +163,7 @@ fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>
                 const MAT_SIZE: usize = std::mem::size_of::<ObjData>();
                 let floats = vec
                     .iter()
-                    .map(|e| *e)
+                    .copied()
                     .take(MAT_SIZE)
                     .chunks(std::mem::size_of::<f64>())
                     .into_iter()
@@ -213,9 +214,9 @@ fn serialize_login(login: &LoginInfo) -> (Vec<u8>, u8) {
         .chain(login.starting_ids.0.to_be_bytes().into_iter())
         .chain(login.starting_ids.1.to_be_bytes().into_iter())
         .chain(std::iter::once(login.lighting.hdr.len() as u8))
-        .chain(login.lighting.hdr.as_bytes().iter().map(|e| *e))
+        .chain(login.lighting.hdr.as_bytes().iter().copied())
         .chain(std::iter::once(login.lighting.skybox.len() as u8))
-        .chain(login.lighting.skybox.as_bytes().iter().map(|e| *e))
+        .chain(login.lighting.skybox.as_bytes().iter().copied())
         .collect();
     (data, b'L')
 }
@@ -260,8 +261,7 @@ impl Serializeable for ClientCommandType {
                 if name.len() > 256 {
                     return Err("Login name too long")?;
                 }
-                let mut data = Vec::new();
-                data.push(name.len() as u8);
+                let mut data = vec![name.len() as u8];
                 data.extend(name.bytes());
                 (data, b'L')
             }
