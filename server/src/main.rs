@@ -1,3 +1,15 @@
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::wildcard_imports,
+    clippy::enum_glob_use,
+    clippy::similar_names,
+    clippy::module_name_repetitions
+)]
+#![allow(dead_code)]
 mod argument_parser;
 use std::net::*;
 use std::ops::Deref;
@@ -58,7 +70,10 @@ struct ServerState {
 }
 
 impl ServerState {
-    fn get_all_objects(&self, requesting_client: &SocketAddr) -> Vec<RemoteObject> {
+    fn get_all_objects(
+        &self,
+        requesting_client: &SocketAddr,
+    ) -> Vec<RemoteObject> {
         self.users
             .iter()
             .filter(|(client_addr, _)| requesting_client != *client_addr)
@@ -69,10 +84,10 @@ impl ServerState {
 
     fn new<Dm: Deref<Target = dyn game_map::Map>>(map: Dm) -> Self {
         ServerState {
-            users: Default::default(),
+            users: HashMap::default(),
             server_objects: map.initial_objects(),
             server_lighting: map.lighting_info(),
-            last_obj_id: Default::default(),
+            last_obj_id: ObjectId::default(),
         }
     }
 }
@@ -116,8 +131,8 @@ fn respond_to_msg(
 }
 
 fn run_game_server(
-    config: ServerConfiguration,
-    stop_token: Arc<AtomicBool>,
+    config: &ServerConfiguration,
+    stop_token: &Arc<AtomicBool>,
 ) -> Result<(), Box<dyn Error>> {
     use std::time::Duration;
     let socket = UdpSocket::bind(("127.0.0.1", config.port))?;
@@ -127,7 +142,10 @@ fn run_game_server(
     while !stop_token.load(Ordering::SeqCst) {
         state = match recv_data(&socket, &mut data) {
             Ok(Some((cmd, src))) => {
-                clear_old_messages(&mut data, std::time::Duration::from_secs(10));
+                clear_old_messages(
+                    &mut data,
+                    std::time::Duration::from_secs(10),
+                );
                 respond_to_msg(cmd, &socket, src, state)
             }
             _ => state,
@@ -141,5 +159,5 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Starting server with config:\n{}", config);
 
-    run_game_server(config, Arc::new(AtomicBool::new(false)))
+    run_game_server(&config, &Arc::new(AtomicBool::new(false)))
 }

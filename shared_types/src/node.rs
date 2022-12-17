@@ -57,6 +57,7 @@ impl Node {
     /// `scale` - node scale or `None` for uniform scale of `1`
     ///
     /// `anchor` - the center of rotation/scaling or `None` for `(0, 0, 0)`
+    #[must_use]
     pub fn new(
         trans: Option<Point3<f64>>,
         rot: Option<Quaternion<f64>>,
@@ -80,7 +81,12 @@ impl Node {
             None => point3(0., 0., 0.),
         };
         Node {
-            transform: Cell::new(Some(transform_matrix(&anchor, &pos, &orientation, &scale))),
+            transform: Cell::new(Some(transform_matrix(
+                &anchor,
+                &pos,
+                &orientation,
+                &scale,
+            ))),
             pos,
             scale,
             orientation,
@@ -93,6 +99,7 @@ impl Node {
 
     /// Sets the translation
     #[inline]
+    #[must_use]
     pub fn pos(mut self, pos: Point3<f64>) -> Self {
         self.set_pos(pos);
         self
@@ -100,6 +107,7 @@ impl Node {
 
     /// Sets the xyz scale factors
     #[inline]
+    #[must_use]
     pub fn scale(mut self, scale: Vector3<f64>) -> Self {
         self.set_scale(scale);
         self
@@ -107,6 +115,7 @@ impl Node {
 
     /// Sets the uniform scale factor
     #[inline]
+    #[must_use]
     pub fn u_scale(mut self, scale: f64) -> Self {
         self.set_u_scale(scale);
         self
@@ -114,6 +123,7 @@ impl Node {
 
     /// Sets the orientation
     #[inline]
+    #[must_use]
     pub fn rot(mut self, rot: Quaternion<f64>) -> Self {
         self.set_rot(rot);
         self
@@ -121,6 +131,7 @@ impl Node {
 
     /// Sets the anchor shift
     #[inline]
+    #[must_use]
     pub fn anchor(mut self, anchor: Point3<f64>) -> Self {
         self.set_anchor(anchor);
         self
@@ -140,12 +151,15 @@ impl Node {
 
     /// Sets the parent
     #[inline]
+    #[must_use]
     pub fn parent(mut self, parent: Rc<RefCell<Node>>) -> Self {
         self.set_parent(parent);
         self
     }
 
     /// Gets the transformation matrix
+    /// # Panics
+    /// Panics if another thread is using the node's matrix
     #[inline]
     pub fn mat(&self) -> Matrix4<f64> {
         if self.needs_to_recompute() {
@@ -216,21 +230,23 @@ impl Node {
         self.transform.set(t);
         let last_par_ver = self.last_parent_ver.take();
         local_recompute
-            || self
-                .parent
-                .as_ref()
-                .map(|parent| {
-                    let ver = parent.borrow().trans_ver.take();
-                    let recompute = last_par_ver != ver || parent.borrow().needs_to_recompute();
-                    parent.borrow().trans_ver.set(ver);
-                    recompute
-                })
-                .unwrap_or(false)
+            || self.parent.as_ref().map_or(false, |parent| {
+                let ver = parent.borrow().trans_ver.take();
+                let recompute =
+                    last_par_ver != ver || parent.borrow().needs_to_recompute();
+                parent.borrow().trans_ver.set(ver);
+                recompute
+            })
     }
 
     /// Updates `self.transform` and returns the new matrix
     fn update_matrix(&self) -> Matrix4<f64> {
-        let mat = transform_matrix(&self.anchor, &self.pos, &self.orientation, &self.scale);
+        let mat = transform_matrix(
+            &self.anchor,
+            &self.pos,
+            &self.orientation,
+            &self.scale,
+        );
         let t_prime = match &self.parent {
             Some(node) => {
                 let parent = node.borrow().mat();
@@ -239,16 +255,12 @@ impl Node {
             None => mat,
         };
         self.transform.set(Some(t_prime));
-        self.last_parent_ver.set(
-            self.parent
-                .as_ref()
-                .map(|parent| {
-                    let t = parent.borrow().trans_ver.take();
-                    parent.borrow().trans_ver.set(t);
-                    t
-                })
-                .unwrap_or(0),
-        );
+        self.last_parent_ver
+            .set(self.parent.as_ref().map_or(0, |parent| {
+                let t = parent.borrow().trans_ver.take();
+                parent.borrow().trans_ver.set(t);
+                t
+            }));
         self.trans_ver.set(self.trans_ver.take() + 1);
         t_prime
     }
@@ -408,7 +420,10 @@ mod test {
     }
 }
 
-/// Converts a node,
+/// Converts a node, to a remote object
+/// Requires that `node` does not have a parent
+/// # Panics
+/// Panics if the node has a parent
 pub fn to_remote_object(
     node: &Node,
     vel: &cgmath::Vector3<f64>,
@@ -434,6 +449,9 @@ pub fn to_remote_object(
 
 /// Converts a remote object into a node, velocity, rotational velocity,
 /// object type and id
+/// # Panics
+/// Panics if the remote object does not have a valid matrix
+#[must_use]
 pub fn from_remote_object(
     obj: &super::RemoteObject,
 ) -> (

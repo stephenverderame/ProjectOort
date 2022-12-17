@@ -11,7 +11,8 @@ pub struct IdList {
 }
 
 impl IdList {
-    /// Creates a new empty IdList
+    /// Creates a new empty `IdList`
+    #[must_use]
     pub fn new() -> Self {
         IdList {
             ids: VecDeque::new(),
@@ -26,13 +27,13 @@ impl IdList {
         let mut next_id: Option<ObjectId> = None;
         if let Some(prev_id) = &self.prev_id {
             if let Some((_, end)) = self.ids.front() {
-                if prev_id.next() != *end {
-                    next_id = Some(prev_id.next());
-                } else {
+                if prev_id.next() == *end {
                     self.ids.pop_front();
                     if let Some((begin, _)) = self.ids.front() {
                         next_id = Some(*begin);
                     }
+                } else {
+                    next_id = Some(prev_id.next());
                 }
             }
         } else if let Some((begin, _)) = self.ids.front() {
@@ -48,6 +49,7 @@ impl IdList {
     }
 
     /// Computes the number of remaining IDs in the list
+    #[must_use]
     pub fn remaining(&self) -> usize {
         let begin_size = if let Some(prev) = &self.prev_id {
             if let Some((_, end)) = self.ids.front() {
@@ -103,6 +105,8 @@ fn id_list_add_remove_cnt() {
     }
     assert_eq!(
         cnt,
-        (400 - 10) + (600 - 500) + (5 as ObjectIdType).wrapping_sub(ObjectIdType::MAX - 10)
+        (400 - 10)
+            + (600 - 500)
+            + (5 as ObjectIdType).wrapping_sub(ObjectIdType::MAX - 10)
     );
 }

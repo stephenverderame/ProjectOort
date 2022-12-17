@@ -1,3 +1,4 @@
+#![allow(clippy::unreadable_literal)]
 use super::*;
 
 #[test]
@@ -58,7 +59,7 @@ fn sct_serialize_deserialize() {
 
     let mut objs = Vec::new();
     for i in 0..20 {
-        let idx = i as f64;
+        let idx = f64::from(i);
         objs.push(RemoteObject {
             mat: [
                 [1.0 * idx, 2.0 * idx, 3.0 * idx, 4.0 * idx],

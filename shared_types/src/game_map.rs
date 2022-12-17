@@ -64,7 +64,11 @@ impl AsteroidMap {
             .zip(scale_distrib.sample_iter(&mut rng_s))
             .take(count)
         {
-            let x = vec3(phi.sin() * theta.cos(), phi.sin() * theta.sin(), phi.cos()) * radius;
+            let x = vec3(
+                phi.sin() * theta.cos(),
+                phi.sin() * theta.sin(),
+                phi.cos(),
+            ) * radius;
             let pos: [f64; 3] = (center.to_vec() + x).into();
             let axis = vec3(
                 axis_distrib.sample(&mut rng_a),
@@ -85,8 +89,9 @@ impl AsteroidMap {
 
 impl Map for AsteroidMap {
     fn initial_objects(&self) -> Vec<RemoteObject> {
-        let mut vec = Vec::new();
         use std::f64::consts::PI;
+
+        let mut vec = Vec::new();
         let mut ids = ObjectId::default();
         Self::randomize_spherical(
             point3(0., 0., 0.),

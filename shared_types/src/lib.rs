@@ -1,3 +1,14 @@
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::wildcard_imports,
+    clippy::enum_glob_use,
+    clippy::similar_names,
+    clippy::module_name_repetitions
+)]
 use itertools::Itertools;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -80,7 +91,9 @@ impl TryFrom<u8> for ObjectType {
             3 => Ok(ObjectType::Skybox),
             4 => Ok(ObjectType::Hook),
             5 => Ok(ObjectType::Cloud),
-            _ => Err(format!("Invalid object type byte representation: {}", val)),
+            _ => {
+                Err(format!("Invalid object type byte representation: {}", val))
+            }
         }
     }
 }
@@ -93,12 +106,14 @@ impl ObjectType {
     ///
     /// # Safety
     /// `val` must be between 0 and 5 inclusive
+    #[must_use]
     pub unsafe fn from_unchecked(val: u8) -> Self {
         std::mem::transmute(val)
     }
 
     /// Returns `true` if the object type does not have a corresponding rigid body,
     /// that is if it an entity only
+    #[must_use]
     pub fn is_non_physical(&self) -> bool {
         matches!(self, ObjectType::Cloud | ObjectType::Skybox)
     }
@@ -113,12 +128,14 @@ pub struct ObjectId {
 
 impl ObjectId {
     #[inline]
+    #[must_use]
     pub const fn new(id: ObjectIdType) -> Self {
         ObjectId { id }
     }
 
     /// Gets the next object ID after this one
     #[inline]
+    #[must_use]
     pub fn next(&self) -> Self {
         ObjectId {
             id: self.id.wrapping_add(1),
@@ -127,6 +144,7 @@ impl ObjectId {
 
     /// Gets the current object ID and consumes (increments) it
     #[inline]
+    #[must_use]
     pub fn consume(&mut self) -> ObjectId {
         let id = self.id;
         self.id = self.id.wrapping_add(1);
@@ -135,6 +153,7 @@ impl ObjectId {
 
     /// Converts this ID to the ID n ids after this one
     #[inline]
+    #[must_use]
     pub fn incr(self, n: u32) -> Self {
         ObjectId {
             id: self.id.wrapping_add(n),
@@ -143,19 +162,24 @@ impl ObjectId {
 
     /// Converts this ID to its big endian byte representation
     #[inline]
+    #[must_use]
     pub fn to_be_bytes(&self) -> [u8; std::mem::size_of::<ObjectIdType>()] {
         self.id.to_be_bytes()
     }
 
     /// Creates an `ObjectId` from its big endian byte representation
     #[inline]
-    pub fn from_be_bytes(bytes: [u8; std::mem::size_of::<ObjectIdType>()]) -> Self {
+    #[must_use]
+    pub fn from_be_bytes(
+        bytes: [u8; std::mem::size_of::<ObjectIdType>()],
+    ) -> Self {
         ObjectId {
             id: u32::from_be_bytes(bytes),
         }
     }
 
     #[inline]
+    #[must_use]
     pub fn as_underlying_type(&self) -> ObjectIdType {
         self.id
     }
@@ -171,9 +195,9 @@ pub struct RemoteObject {
     pub typ: ObjectType,
 }
 
-/// The packed size for a RemoteObject
+/// The packed size for a `RemoteObject`
 ///
-/// This is the amount of bytes sent over the network for a RemoteObject
+/// This is the amount of bytes sent over the network for a `RemoteObject`
 const REMOTE_OBJECT_SIZE: usize = std::mem::size_of::<ObjData>()
     + std::mem::size_of::<ObjectId>()
     + std::mem::size_of::<ObjectType>();
@@ -186,7 +210,7 @@ pub struct RemoteObjectUpdate {
 }
 
 impl RemoteObject {
-    #[inline(always)]
+    #[inline]
     fn base_eq(&self, other: &Self) -> bool {
         self.id == other.id && self.typ == other.typ
     }
@@ -195,10 +219,14 @@ impl RemoteObject {
 impl PartialEq for RemoteObject {
     #[cfg(test)]
     fn eq(&self, other: &Self) -> bool {
-        const ARRAY_SIZE: usize = std::mem::size_of::<ObjData>() / std::mem::size_of::<f64>();
+        const ARRAY_SIZE: usize =
+            std::mem::size_of::<ObjData>() / std::mem::size_of::<f64>();
         self.base_eq(other)
-            && unsafe { std::mem::transmute_copy::<_, [u64; ARRAY_SIZE]>(&self.mat) }
-                == unsafe { std::mem::transmute_copy::<_, [u64; ARRAY_SIZE]>(&other.mat) }
+            && unsafe {
+                std::mem::transmute_copy::<_, [u64; ARRAY_SIZE]>(&self.mat)
+            } == unsafe {
+                std::mem::transmute_copy::<_, [u64; ARRAY_SIZE]>(&other.mat)
+            }
     }
 
     #[cfg(not(test))]

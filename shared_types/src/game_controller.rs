@@ -1,6 +1,6 @@
 use super::*;
 pub use game_map::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::IpAddr;
 
 pub struct GameStats {}
@@ -50,7 +50,9 @@ pub struct LocalGameController {
 }
 
 impl LocalGameController {
-    pub fn new<M: Map, Dm: std::ops::Deref<Target = M>>(map: Dm) -> LocalGameController {
+    pub fn new<M: Map, Dm: std::ops::Deref<Target = M>>(
+        map: Dm,
+    ) -> LocalGameController {
         let objs = map.initial_objects();
         let indices = (0..objs.len()).map(|i| (objs[i].id, i)).collect();
         let player_id = objs.last().map(|o| o.id).unwrap_or_default();
@@ -59,7 +61,7 @@ impl LocalGameController {
             objects: objs,
             start_time: std::time::Instant::now(),
             indices,
-            requested_ids: Default::default(),
+            requested_ids: VecDeque::default(),
             lighting: map.lighting_info(),
             player: PlayerStats {
                 pid: player_id,
@@ -109,7 +111,8 @@ impl GameController for LocalGameController {
 
                 // TODO: update position here?
 
-                self.objects[*idx] = node::to_remote_object(&node, &vel, &rot, typ, id);
+                self.objects[*idx] =
+                    node::to_remote_object(&node, &vel, &rot, typ, id);
             }
         }
     }
@@ -170,7 +173,7 @@ impl RemoteGameController {
                 &ClientCommandType::Login(username.to_owned()),
                 *last_out_id,
                 received_msgs,
-                Default::default(),
+                &ImportantArguments::default(),
             ) {
                 Ok(ServerCommandType::ReturnLogin(login)) => {
                     *last_out_id = last_out_id.wrapping_add(1);
@@ -199,7 +202,7 @@ impl RemoteGameController {
                 &ClientCommandType::Update(vec![player]),
                 *last_out_id,
                 received_msgs,
-                Default::default(),
+                &ImportantArguments::default(),
             ) {
                 Ok(ServerCommandType::Update(objs)) => {
                     for (obj, idx) in objs.into_iter().zip(1..) {
@@ -216,13 +219,20 @@ impl RemoteGameController {
         Err("Could not receive data")?
     }
 
-    pub fn new(username: &str, server: (IpAddr, u16)) -> Result<Self, Box<dyn Error>> {
+    /// Creates a new `RemoteGameController` and connects to the server
+    /// # Errors
+    /// If the socket cannot be created or bound or connecting fails
+    pub fn new(
+        username: &str,
+        server: (IpAddr, u16),
+    ) -> Result<Self, Box<dyn Error>> {
         let sock = UdpSocket::bind(&server)?;
         sock.connect(&server)?;
         let mut last_out_id = 0 as MsgId;
         let mut recieved_msgs = ClientBuffer::<ServerCommandType>::new();
         let mut available_ids = id_list::IdList::new();
-        let login_info = Self::login(username, &sock, &mut last_out_id, &mut recieved_msgs)?;
+        let login_info =
+            Self::login(username, &sock, &mut last_out_id, &mut recieved_msgs)?;
         available_ids.add_ids(login_info.starting_ids);
         let player = node::to_remote_object(
             &node::Node::default().pos(From::from(login_info.spawn_pos)),
@@ -231,8 +241,12 @@ impl RemoteGameController {
             ObjectType::Ship,
             login_info.pid,
         );
-        let (objects, indices) =
-            Self::get_initial_objects(&sock, player, &mut last_out_id, &mut recieved_msgs)?;
+        let (objects, indices) = Self::get_initial_objects(
+            &sock,
+            player,
+            &mut last_out_id,
+            &mut recieved_msgs,
+        )?;
         Ok(Self {
             objects,
             indices,

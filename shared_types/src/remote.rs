@@ -21,7 +21,9 @@ pub(crate) fn add_end_chunk(mut chunks: ChunkedMsg) -> ChunkedMsg {
 /// Removes the string `"END"` from the end of the data
 ///
 /// Fails if END is not at the beginning nor end of the last chunk
-pub(crate) fn remove_end_chunk(mut chunks: ChunkedMsg) -> Result<ChunkedMsg, Box<dyn Error>> {
+pub(crate) fn remove_end_chunk(
+    mut chunks: ChunkedMsg,
+) -> Result<ChunkedMsg, Box<dyn Error>> {
     let (last_pack_num, last_packet) = chunks.iter().rev().next().unwrap();
     if let Some(pos) = last_packet.windows(3).rposition(|x| x == b"END") {
         if pos == CHUNK_TITLE_SIZE {
@@ -43,6 +45,8 @@ pub(crate) fn remove_end_chunk(mut chunks: ChunkedMsg) -> Result<ChunkedMsg, Box
 /// Sends a command to the specified socket
 ///
 /// Adds an `END` token to the end of the data
+/// # Errors
+/// Returns an error of the data cannot be serialized or the socket cannot be sent to
 pub fn send_data<T: Serializeable, S: ToSocketAddrs>(
     sock: &UdpSocket,
     addr: S,
@@ -66,6 +70,8 @@ impl<T: Serializeable> RemoteData<T> {
     /// Converts the message to a ready message
     ///
     /// Fails if a buffered message cannot be deserialized
+    /// # Errors
+    /// Returns an error if the message cannot be deserialized
     pub fn to_ready(self) -> Result<Self, Box<dyn Error>> {
         use RemoteData::*;
         match self {
@@ -83,15 +89,13 @@ impl<T: Serializeable> RemoteData<T> {
         use RemoteData::*;
         match self {
             Ready(_) => true,
-            Buffering(msg) => msg
-                .iter()
-                .rev()
-                .next()
-                .map(|(last_pack_num, last_chunk)| {
+            Buffering(msg) => msg.iter().rev().next().map_or(
+                false,
+                |(last_pack_num, last_chunk)| {
                     last_chunk.windows(3).rev().any(|x| x == b"END")
                         && *last_pack_num as usize == msg.len() - 1
-                })
-                .unwrap_or(false),
+                },
+            ),
         }
     }
 
@@ -105,7 +109,9 @@ impl<T: Serializeable> RemoteData<T> {
         match self {
             Buffering(mut msg) if packet.len() >= CHUNK_METADATA_SIZE => {
                 let pk_id = packet[PKT_NM_INDEX];
-                if let std::collections::btree_map::Entry::Vacant(e) = msg.entry(pk_id) {
+                if let std::collections::btree_map::Entry::Vacant(e) =
+                    msg.entry(pk_id)
+                {
                     e.insert(packet);
                     let this = Buffering(msg);
                     Ok(this.to_ready()?)
@@ -128,7 +134,7 @@ pub struct TimestampedRemoteData<T: Serializeable> {
 impl<T: Serializeable> Default for TimestampedRemoteData<T> {
     fn default() -> Self {
         TimestampedRemoteData {
-            data: RemoteData::Buffering(Default::default()),
+            data: RemoteData::Buffering(BTreeMap::default()),
             last_access: std::time::Instant::now(),
         }
     }
@@ -172,14 +178,18 @@ impl<T: Serializeable> From<RemoteData<T>> for TimestampedRemoteData<T> {
 fn get_cmd_ids_and_nums(chunk: &[u8]) -> (CommandId, MsgId, PacketNum) {
     (
         chunk[CMD_ID_INDEX],
-        u32::from_be_bytes(chunk[MSG_ID_INDEX..MSG_ID_INDEX + 4].try_into().unwrap()),
+        u32::from_be_bytes(
+            chunk[MSG_ID_INDEX..MSG_ID_INDEX + 4].try_into().unwrap(),
+        ),
         chunk[PKT_NM_INDEX],
     )
 }
 
 pub type ClientData<T> = TimestampedRemoteData<T>;
-pub type ClientBuffer<T> =
-    std::collections::HashMap<SocketAddr, BTreeMap<(CommandId, MsgId), ClientData<T>>>;
+pub type ClientBuffer<T> = std::collections::HashMap<
+    SocketAddr,
+    BTreeMap<(CommandId, MsgId), ClientData<T>>,
+>;
 
 /// Receives a single packet from `socket`. If the packet is well-formed,
 /// adds the packet to a buffering command. If the packet completes a buffering
@@ -193,7 +203,9 @@ fn recv_data_helper<T: Serializeable, F>(
     recv_func: F,
 ) -> Result<Option<(T, SocketAddr)>, Box<dyn Error>>
 where
-    F: Fn(&std::rc::Rc<RefCell<[u8; MAX_DATAGRAM_SIZE]>>) -> std::io::Result<(usize, SocketAddr)>,
+    F: Fn(
+        &std::rc::Rc<RefCell<[u8; MAX_DATAGRAM_SIZE]>>,
+    ) -> std::io::Result<(usize, SocketAddr)>,
 {
     use std::rc::Rc;
     std::thread_local!(
@@ -201,7 +213,7 @@ where
     );
     if let Ok((amt, src)) = BUF.with(recv_func) {
         if amt > CHUNK_METADATA_SIZE {
-            let msg = BUF.with(|buf| buf.clone());
+            let msg = BUF.with(Clone::clone);
             let msg = msg.borrow();
             let (cmd_id, msg_id, _pn) = get_cmd_ids_and_nums(&*msg);
             let client_data = data.entry(src).or_insert(BTreeMap::new());
@@ -241,6 +253,8 @@ where
 /// Returns An error if the packet is too small, malformed, or the socket read fails,
 /// returns `None` if the new packet does not finish a command, and returns the command
 /// and sender address if the packet completes a command
+/// # Errors
+/// Returns an error if the packet is too small, malformed, or the socket read fails
 pub fn recv_data<T: Serializeable>(
     socket: &UdpSocket,
     data: &mut ClientBuffer<T>,
@@ -251,6 +265,8 @@ pub fn recv_data<T: Serializeable>(
 /// Same as `recv_data` except only receives packets from the connected peer
 ///
 /// Requires `socket` is a connected socket
+/// # Errors
+/// Returns an error if the packet is too small, malformed, or the socket read fails
 pub fn recv_data_filtered<T: Serializeable>(
     socket: &UdpSocket,
     data: &mut ClientBuffer<T>,
@@ -339,17 +355,23 @@ fn recv_with_retries<R: Serializeable>(
 ) -> Result<R, Box<dyn Error>> {
     let mut recv_attempts = 0;
     let old_timeout = sock.read_timeout();
-    let _ = sock.set_read_timeout(Some(args.trial_recv_timeout));
+    std::mem::drop(sock.set_read_timeout(Some(args.trial_recv_timeout)));
     loop {
         match recv_data_filtered(sock, recv_data) {
             Err(_) if recv_attempts < args.max_recv_tries => recv_attempts += 1,
             Err(_) => {
-                let _ = old_timeout.map(|old_timeout| sock.set_read_timeout(old_timeout));
+                std::mem::drop(
+                    old_timeout
+                        .map(|old_timeout| sock.set_read_timeout(old_timeout)),
+                );
                 return Err("Failed to receive data")?;
             }
             Ok(None) => (),
             Ok(Some(msg)) => {
-                let _ = old_timeout.map(|old_timeout| sock.set_read_timeout(old_timeout));
+                std::mem::drop(
+                    old_timeout
+                        .map(|old_timeout| sock.set_read_timeout(old_timeout)),
+                );
                 return Ok(msg);
             }
         }
@@ -360,16 +382,18 @@ fn recv_with_retries<R: Serializeable>(
 /// Utilizes `args` to determine the timeouts and max send attempts
 ///
 /// Requires `socket` is a connected socket and blocking
+/// # Errors
+/// Returns an error if the packet is too small, malformed, or the socket read fails
 pub fn send_important<S: Serializeable, R: Serializeable>(
     sock: &UdpSocket,
     send_data: &S,
     send_msg_id: MsgId,
     recv_data: &mut ClientBuffer<R>,
-    args: ImportantArguments,
+    args: &ImportantArguments,
 ) -> Result<R, Box<dyn Error>> {
     let chunks = add_end_chunk(send_data.serialize(send_msg_id)?);
-    send_with_retries(chunks, &args, sock)?;
-    recv_with_retries(sock, &args, recv_data)
+    send_with_retries(chunks, args, sock)?;
+    recv_with_retries(sock, args, recv_data)
     // TODO: This assumes that the message was received by the peer successfully.
     // Also, it does not guarantee that the response is for the request that was just sent
 }

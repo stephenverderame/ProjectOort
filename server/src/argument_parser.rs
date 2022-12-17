@@ -78,8 +78,10 @@ fn parse_args_helper(
     }
 }
 
-#[inline(always)]
-pub fn parse_args(mut args: env::Args) -> Result<ServerConfiguration, Box<dyn Error>> {
+#[inline]
+pub fn parse_args(
+    mut args: env::Args,
+) -> Result<ServerConfiguration, Box<dyn Error>> {
     args.next(); // skip the program name
-    parse_args_helper(args, Default::default())
+    parse_args_helper(args, ServerConfiguration::default())
 }

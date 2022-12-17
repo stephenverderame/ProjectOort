@@ -7,6 +7,7 @@ pub trait Serializeable {
     /// `msg_id` - the message id of the message. Must be unique for each message, for
     ///            each sender.
     ///
+    /// # Errors
     /// Fails if the object is not well-formed or violates invariants for the particular
     ///     implementor of the trait.
     fn serialize(&self, msg_id: MsgId) -> Result<ChunkedMsg, Box<dyn Error>>;
@@ -15,6 +16,7 @@ pub trait Serializeable {
     ///
     /// Returns the object and its message id if its well-formed
     ///
+    /// # Errors
     /// Fails if `chunks` is missing packets, contains malformed packets,
     ///    contains packets of different commands or message ids, or its data
     ///    cannot be deserialized as determined by the implementor of the trait.
@@ -30,7 +32,11 @@ pub trait Serializeable {
 /// Panics if the data cannot fit into `255` of `MAX_DATAGRAM_SIZE` sized chunks (~260 KB)
 /// If `data` serializes to an empty message, returns
 /// one packet containing a header and footer only
-fn chunk_serialized_data<T>(cmd_id: CommandId, data: T, msg_id: MsgId) -> ChunkedMsg
+fn chunk_serialized_data<T>(
+    cmd_id: CommandId,
+    data: T,
+    msg_id: MsgId,
+) -> ChunkedMsg
 where
     T: Iterator<Item = u8>,
 {
@@ -75,7 +81,10 @@ where
 /// If `opt` is `None`, sets `val` as the contained value and does not fail
 ///
 /// Fails only if `opt` is `Some` and the contained value is not `val`
-fn check_option_equals<T>(opt: &mut Option<T>, val: T) -> Result<(), Box<dyn Error>>
+fn check_option_equals<T>(
+    opt: &mut Option<T>,
+    val: T,
+) -> Result<(), Box<dyn Error>>
 where
     T: PartialEq + std::fmt::Debug,
 {
@@ -112,7 +121,11 @@ fn dechunk_serialized_data(
             return Err(format!("Chunk too short: {}", chunk.len()).into());
         }
         if chunk[0..CHUNK_HEADER_SIZE] != CHUNK_HEADER {
-            return Err(format!("Invalid chunk title: {:?}", &chunk[0..CHUNK_TITLE_SIZE]).into());
+            return Err(format!(
+                "Invalid chunk title: {:?}",
+                &chunk[0..CHUNK_TITLE_SIZE]
+            )
+            .into());
         }
         if chunk[chunk_len - CHUNK_FOOTER_SIZE..] != CHUNK_FOOTER {
             return Err(format!(
@@ -122,13 +135,17 @@ fn dechunk_serialized_data(
             .into());
         }
         let cmd_id = chunk[CMD_ID_INDEX];
-        let msg_id = MsgId::from_be_bytes(chunk[MSG_ID_INDEX..MSG_ID_INDEX + 4].try_into()?);
+        let msg_id = MsgId::from_be_bytes(
+            chunk[MSG_ID_INDEX..MSG_ID_INDEX + 4].try_into()?,
+        );
         check_option_equals(&mut last_cmd_id, cmd_id)?;
         check_option_equals(&mut last_msg_id, msg_id)?;
         if expected_packet_num != chunk[PKT_NM_INDEX] {
             return Err("Chunk packet numbers are not in order")?;
         }
-        res.extend_from_slice(&chunk[CHUNK_TITLE_SIZE..chunk_len - CHUNK_FOOTER_SIZE]);
+        res.extend_from_slice(
+            &chunk[CHUNK_TITLE_SIZE..chunk_len - CHUNK_FOOTER_SIZE],
+        );
     }
     Ok((res, last_cmd_id.unwrap(), last_msg_id.unwrap()))
 }
@@ -150,7 +167,11 @@ fn serialize_objects(objects: &[RemoteObject]) -> (Vec<u8>, u8) {
     )
 }
 
-fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>> {
+fn deserialize_update(
+    data: Vec<u8>,
+) -> Result<Vec<RemoteObject>, Box<dyn Error>> {
+    const MAT_SIZE: usize = std::mem::size_of::<ObjData>();
+    #[allow(clippy::if_not_else)]
     if data.len() % REMOTE_OBJECT_SIZE != 0 {
         Err("Invalid update length")?
     } else {
@@ -160,7 +181,6 @@ fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>
             .into_iter()
             .map(|chunk| {
                 let vec: Vec<_> = chunk.collect();
-                const MAT_SIZE: usize = std::mem::size_of::<ObjData>();
                 let floats = vec
                     .iter()
                     .copied()
@@ -189,7 +209,9 @@ fn deserialize_update(data: Vec<u8>) -> Result<Vec<RemoteObject>, Box<dyn Error>
                     .collect::<Result<Vec<_>, _>>()?
                     .try_into()
                     .map_err(|_| "Invalid # matrix rows")?;
-                let id = ObjectId::from_be_bytes(vec[MAT_SIZE..MAT_SIZE + 4].try_into()?);
+                let id = ObjectId::from_be_bytes(
+                    vec[MAT_SIZE..MAT_SIZE + 4].try_into()?,
+                );
                 let typ = vec[MAT_SIZE + 4].try_into()?;
                 Ok(RemoteObject { mat, id, typ })
             })
@@ -241,7 +263,9 @@ fn deserialize_login(data: &[u8]) -> Result<LoginInfo, Box<dyn Error>> {
     let hdr_len = data[48] as usize;
     let hdr = std::str::from_utf8(&data[49..49 + hdr_len])?.to_string();
     let skybox_len = data[49 + hdr_len] as usize;
-    let skybox = std::str::from_utf8(&data[50 + hdr_len..50 + hdr_len + skybox_len])?.to_string();
+    let skybox =
+        std::str::from_utf8(&data[50 + hdr_len..50 + hdr_len + skybox_len])?
+            .to_string();
     Ok(LoginInfo {
         pid,
         spawn_pos,
@@ -271,7 +295,9 @@ impl Serializeable for ClientCommandType {
         Ok(chunk_serialized_data(cmd_id, data.into_iter(), msg_id))
     }
 
-    fn deserialize(chunks: ChunkedMsg) -> Result<(Self, MsgId), Box<dyn Error>> {
+    fn deserialize(
+        chunks: ChunkedMsg,
+    ) -> Result<(Self, MsgId), Box<dyn Error>> {
         let (data, cmd_id, msg_id) = dechunk_serialized_data(chunks)?;
         match cmd_id {
             b'L' => {
@@ -285,7 +311,10 @@ impl Serializeable for ClientCommandType {
                 let name = std::str::from_utf8(&data[1..])?;
                 Ok((ClientCommandType::Login(name.to_string()), msg_id))
             }
-            b'U' => Ok((ClientCommandType::Update(deserialize_update(data)?), msg_id)),
+            b'U' => Ok((
+                ClientCommandType::Update(deserialize_update(data)?),
+                msg_id,
+            )),
             _ => Err("Unknown command")?,
         }
     }
@@ -300,14 +329,19 @@ impl Serializeable for ServerCommandType {
         Ok(chunk_serialized_data(cmd_id, data.into_iter(), msg_id))
     }
 
-    fn deserialize(chunks: ChunkedMsg) -> Result<(Self, MsgId), Box<dyn Error>> {
+    fn deserialize(
+        chunks: ChunkedMsg,
+    ) -> Result<(Self, MsgId), Box<dyn Error>> {
         let (data, cmd_id, msg_id) = dechunk_serialized_data(chunks)?;
         match cmd_id {
             b'L' => {
                 let login = deserialize_login(&data)?;
                 Ok((ServerCommandType::ReturnLogin(login), msg_id))
             }
-            b'U' => Ok((ServerCommandType::Update(deserialize_update(data)?), msg_id)),
+            b'U' => Ok((
+                ServerCommandType::Update(deserialize_update(data)?),
+                msg_id,
+            )),
             _ => Err("Unknown command")?,
         }
     }

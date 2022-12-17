@@ -9,6 +9,9 @@ use std::sync::{
 };
 extern crate cgmath;
 extern crate serial_test;
+#[cfg(test)]
+use super::ServerConfiguration;
+use std::collections::HashMap;
 
 #[serial_test::serial]
 #[test]
@@ -50,7 +53,7 @@ fn login() {
     let done = Arc::new(AtomicBool::new(false));
     let d2 = done.clone();
     let server = thread::spawn(move || {
-        let _ = run_game_server(Default::default(), d2);
+        std::mem::drop(run_game_server(&ServerConfiguration::default(), &d2));
     });
     let make_client = |id: u16| {
         assert!(id > 0);
@@ -59,9 +62,10 @@ fn login() {
             let server_addr = ("127.0.0.1", DEFAULT_PORT);
             let sock = UdpSocket::bind(client_addr).unwrap();
             let cmd = ClientCommandType::Login(format!("Client_{}", id));
-            let _ = send_data(&sock, server_addr, &cmd, 0);
+            std::mem::drop(send_data(&sock, server_addr, &cmd, 0));
             //println!("Client {} sent", id);
-            let mut data: ClientBuffer<ServerCommandType> = Default::default();
+            let mut data: ClientBuffer<ServerCommandType> =
+                ClientBuffer::default();
             if let Ok(Some((response, _))) = recv_data(&sock, &mut data) {
                 #[allow(irrefutable_let_patterns)]
                 if let ServerCommandType::ReturnLogin(_) = response {
@@ -91,7 +95,7 @@ fn login_important() {
     let done = Arc::new(AtomicBool::new(false));
     let d2 = done.clone();
     let server = thread::spawn(move || {
-        let _ = run_game_server(Default::default(), d2);
+        std::mem::drop(run_game_server(&ServerConfiguration::default(), &d2));
     });
     let make_client = |id: u16| {
         assert!(id > 0);
@@ -101,8 +105,15 @@ fn login_important() {
             let sock = UdpSocket::bind(client_addr).unwrap();
             sock.connect(server_addr).unwrap();
             let cmd = ClientCommandType::Login(format!("Client_{}", id));
-            let mut data: ClientBuffer<ServerCommandType> = Default::default();
-            if let Ok(resp) = send_important(&sock, &cmd, 0, &mut data, Default::default()) {
+            let mut data: ClientBuffer<ServerCommandType> =
+                ClientBuffer::default();
+            if let Ok(resp) = send_important(
+                &sock,
+                &cmd,
+                0,
+                &mut data,
+                &ImportantArguments::default(),
+            ) {
                 #[allow(irrefutable_let_patterns)]
                 if let ServerCommandType::ReturnLogin(_) = resp {
                 } else {
@@ -132,7 +143,7 @@ fn update_important() {
     let done = Arc::new(AtomicBool::new(false));
     let d2 = done.clone();
     let server = thread::spawn(move || {
-        let _ = run_game_server(Default::default(), d2);
+        std::mem::drop(run_game_server(&ServerConfiguration::default(), &d2));
     });
     let make_client = |id: u16| {
         assert!(id > 0);
@@ -142,24 +153,38 @@ fn update_important() {
             let sock = UdpSocket::bind(client_addr).unwrap();
             sock.connect(server_addr).unwrap();
             let cmd = ClientCommandType::Update(vec![node::to_remote_object(
-                &Node::default().pos(point3(id as f64, id as f64, id as f64)),
+                &Node::default().pos(point3(
+                    f64::from(id),
+                    f64::from(id),
+                    f64::from(id),
+                )),
                 &vec3(0., 0., 0.),
                 &vec3(0., 0., 0.),
                 ObjectType::Ship,
-                ObjectId::new(id as u32),
+                ObjectId::new(u32::from(id)),
             )]);
-            let mut data: ClientBuffer<ServerCommandType> = Default::default();
-            if let Ok(resp) = send_important(&sock, &cmd, 0, &mut data, Default::default()) {
+            let mut data: ClientBuffer<ServerCommandType> = HashMap::default();
+            if let Ok(resp) = send_important(
+                &sock,
+                &cmd,
+                0,
+                &mut data,
+                &ImportantArguments::default(),
+            ) {
                 if let ServerCommandType::Update(objs) = resp {
                     assert_eq!(objs.len(), (id - 1) as usize);
                     for (obj_node, vel, rot_vel, typ, obj_id) in
                         objs.iter().map(node::from_remote_object)
                     {
                         let obj_id = obj_id.as_underlying_type();
-                        assert!(obj_id < (id as u32));
+                        assert!(obj_id < u32::from(id));
                         assert_relative_eq!(
                             obj_node.get_pos(),
-                            point3(obj_id as f64, obj_id as f64, obj_id as f64)
+                            point3(
+                                f64::from(obj_id),
+                                f64::from(obj_id),
+                                f64::from(obj_id)
+                            )
                         );
                         assert_relative_eq!(vel, vec3(0., 0., 0.));
                         assert_relative_eq!(rot_vel, vec3(0., 0., 0.));
