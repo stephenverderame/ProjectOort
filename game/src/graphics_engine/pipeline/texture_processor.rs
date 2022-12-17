@@ -718,6 +718,7 @@ impl ToCacheProcessor {
         Self {}
     }
 
+    #[allow(clippy::too_many_lines)]
     fn cascade_maps_to_cache<'b>(
         input: Vec<&'b TextureType>,
         cache: &mut PipelineCache<'b>,

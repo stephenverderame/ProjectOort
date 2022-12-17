@@ -222,6 +222,7 @@ pub fn default_scene_data(viewer: &dyn Viewer) -> shader::SceneData {
 ///
 /// `matrices` - model matrices to render the drawable at, or `None` to render a single drawable using the identity matrix
 /// for its transformation matrix
+#[allow(clippy::too_many_lines)]
 pub fn render_drawable<S: glium::Surface>(
     drawable: &mut dyn Drawable,
     matrices: Option<&[[[f32; 4]; 4]]>,

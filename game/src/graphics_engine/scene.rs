@@ -85,6 +85,8 @@ impl Scene {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
+    /// Renders the transparency pass for `obj`
     fn render_transparency(
         entities: &[Rc<RefCell<dyn AbstractEntity>>],
         obj: usize,
@@ -147,6 +149,7 @@ impl Scene {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render_entities(
         entities: &[Rc<RefCell<dyn AbstractEntity>>],
         viewer: &dyn Viewer,
@@ -215,6 +218,7 @@ impl Scene {
 /// `hdr_path` - the path to the hdr diffuse ibl image
 ///
 /// `bg_skybox` - the skybox storing the texture to generate the specular ibl from
+#[allow(clippy::too_many_lines)]
 pub fn gen_ibl_from_hdr<F: glium::backend::Facade>(
     hdr_path: &str,
     bg_skybox: &mut cubes::Skybox,

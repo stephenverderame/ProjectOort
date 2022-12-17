@@ -1,0 +1,2 @@
+too-many-lines-threshold = 50
+too-many-arguments-threshold = 6 # (5 arguments, excluding self. A tad higher than ideal)

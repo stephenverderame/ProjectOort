@@ -311,10 +311,7 @@ impl Serializeable for ClientCommandType {
                 let name = std::str::from_utf8(&data[1..])?;
                 Ok((Self::Login(name.to_string()), msg_id))
             }
-            b'U' => Ok((
-                Self::Update(deserialize_update(data)?),
-                msg_id,
-            )),
+            b'U' => Ok((Self::Update(deserialize_update(data)?), msg_id)),
             _ => Err("Unknown command")?,
         }
     }
@@ -338,10 +335,7 @@ impl Serializeable for ServerCommandType {
                 let login = deserialize_login(&data)?;
                 Ok((Self::ReturnLogin(login), msg_id))
             }
-            b'U' => Ok((
-                Self::Update(deserialize_update(data)?),
-                msg_id,
-            )),
+            b'U' => Ok((Self::Update(deserialize_update(data)?), msg_id)),
             _ => Err("Unknown command")?,
         }
     }

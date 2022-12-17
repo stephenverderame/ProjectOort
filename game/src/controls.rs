@@ -62,11 +62,15 @@ impl PlayerControls {
                 .as_secs_f32()
                 / 3.)
                 .min(1.);
-            self.inv_fac = dt.mul_add(goal_fac - self.inv_trans_fac_start, self.inv_trans_fac_start);
+            self.inv_fac = dt.mul_add(
+                goal_fac - self.inv_trans_fac_start,
+                self.inv_trans_fac_start,
+            );
         }
         self.inv_fac
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn on_input(&mut self, ev: &DeviceEvent) {
         let ctx = crate::graphics_engine::get_active_ctx();
         match ev {

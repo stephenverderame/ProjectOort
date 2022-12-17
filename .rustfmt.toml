@@ -1,3 +1,6 @@
 max_width = 80
 newline_style = "Unix"
 edition = "2018"
+wrap_comments = true
+fn_single_line = true
+format_strings = true

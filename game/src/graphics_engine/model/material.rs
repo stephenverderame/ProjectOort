@@ -61,6 +61,7 @@ fn get_pbr_data(dir: &str, mat_name: &str) -> Option<BTreeMap<String, String>> {
 /// Loads the pbr textures for the material with name `mat_name` which has a home
 /// directory of `dir`. Also returns an extra tex data which are optionally specified textures
 /// that don't have to go in the pbr file.
+#[allow(clippy::too_many_lines)]
 fn get_pbr_textures<F>(
     dir: &str,
     mat_name: &str,
@@ -220,6 +221,7 @@ impl Material {
     /// Creates a material from an Assimp material
     ///
     /// `dir` - the directory of the model file where textures are relative to
+    #[allow(clippy::too_many_lines)]
     pub fn new<F: glium::backend::Facade>(
         mat: &assimp_sys::AiMaterial,
         dir: &str,
@@ -257,8 +259,8 @@ impl Material {
             dir,
             &load_rgb,
         );
-        let name = Self::get_property(mat, "?mat.name")
-            .expect("No material name!");
+        let name =
+            Self::get_property(mat, "?mat.name").expect("No material name!");
         let (pbr, extras) = get_pbr_textures(dir, &name, ctx);
         let pbr = pbr.map(|mut pbr| {
             if pbr.ao_tex.is_none() && !ao.is_empty() {

@@ -10,6 +10,7 @@ fn cct_serialize_deserialize() {
     assert_eq!((cct, msg_id), cct2);
 }
 
+#[allow(clippy::too_many_lines)]
 #[test]
 fn sct_serialize_deserialize() {
     let sct = ServerCommandType::ReturnLogin(LoginInfo {

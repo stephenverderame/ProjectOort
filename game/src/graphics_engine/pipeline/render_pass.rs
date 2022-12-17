@@ -115,7 +115,7 @@ impl RenderPass {
 
     /// Calls the render function, saving the results to the render target
     /// Then runs the render target through the process pipeline until it procudes a texture
-    #[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity, clippy::too_many_lines)]
     pub fn run_pass(
         &mut self,
         viewer: &dyn Viewer,

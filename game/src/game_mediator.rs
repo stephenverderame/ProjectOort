@@ -86,6 +86,7 @@ struct GameMediatorBase<State> {
     _state: std::marker::PhantomData<State>,
 }
 
+#[allow(clippy::too_many_lines)]
 fn init_objs<F: glium::backend::Facade, C: GameController>(
     _sm: &shader::ShaderManager,
     controller: &C,

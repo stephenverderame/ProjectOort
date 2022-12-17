@@ -164,6 +164,7 @@ impl Drawable for Skybox {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn gen_cubemap_from_sphere<F: glium::backend::Facade>(
     tex_path: &str,
     cubemap_size: u32,

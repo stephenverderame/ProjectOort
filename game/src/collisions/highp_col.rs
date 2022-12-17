@@ -100,6 +100,11 @@ pub struct TriangleTriangleGPU<'a> {
     shader_manager: Option<&'a shader::ShaderManager>,
 }
 
+struct ComputeInputBuffer {
+    buf: ssbo::Ssbo<ShaderTriangle>,
+    len: u32,
+}
+
 impl<'a> TriangleTriangleGPU<'a> {
     const WORK_GROUP_SIZE: u32 = 8;
 
@@ -117,72 +122,58 @@ impl<'a> TriangleTriangleGPU<'a> {
             shader_manager: None,
         }
     }
-}
 
-impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
-    fn collide(
-        &self,
-        a_triangles: &[Triangle<f32>],
-        a_mat: &Matrix4<f64>,
-        b_triangles: &[Triangle<f32>],
-        b_mat: &Matrix4<f64>,
-    ) -> Option<Hit> {
-        let map_func = |mat: Matrix4<f64>| {
-            move |x: &Triangle<f32>| {
-                let verts = x.verts();
-                ShaderTriangle {
-                    _a: (mat
-                        * vec4(verts[0].x, verts[0].y, verts[0].z, 1.0)
-                            .cast()
-                            .unwrap())
-                    .cast()
-                    .unwrap()
-                    .into(),
-                    _b: (mat
-                        * vec4(verts[1].x, verts[1].y, verts[1].z, 1.0)
-                            .cast()
-                            .unwrap())
-                    .cast()
-                    .unwrap()
-                    .into(),
-                    _c: (mat
-                        * vec4(verts[2].x, verts[2].y, verts[2].z, 1.0)
-                            .cast()
-                            .unwrap())
-                    .cast()
-                    .unwrap()
-                    .into(),
-                    _d: [0., 0., 0., 0.],
-                }
+    fn get_triangle_to_mat_func(
+        mat: Matrix4<f64>,
+    ) -> impl Fn(&Triangle<f32>) -> ShaderTriangle {
+        move |x: &Triangle<f32>| {
+            let verts = x.verts();
+            ShaderTriangle {
+                _a: (mat
+                    * vec4(verts[0].x, verts[0].y, verts[0].z, 1.0)
+                        .cast()
+                        .unwrap())
+                .cast()
+                .unwrap()
+                .into(),
+                _b: (mat
+                    * vec4(verts[1].x, verts[1].y, verts[1].z, 1.0)
+                        .cast()
+                        .unwrap())
+                .cast()
+                .unwrap()
+                .into(),
+                _c: (mat
+                    * vec4(verts[2].x, verts[2].y, verts[2].z, 1.0)
+                        .cast()
+                        .unwrap())
+                .cast()
+                .unwrap()
+                .into(),
+                _d: [0., 0., 0., 0.],
             }
-        };
+        }
+    }
 
-        let a_in_triangles: Vec<ShaderTriangle> =
-            a_triangles.iter().map(map_func(*a_mat)).collect();
-        let b_in_triangles: Vec<ShaderTriangle> =
-            b_triangles.iter().map(map_func(*b_mat)).collect();
-
-        let a_len = a_triangles.len() as u32;
-        let b_len = b_triangles.len() as u32;
-
-        let input_a = ssbo::Ssbo::create_static(&a_in_triangles);
-        let input_b = ssbo::Ssbo::create_static(&b_in_triangles);
-
-        let work_groups_x = ((a_len
-            + a_len % TriangleTriangleGPU::WORK_GROUP_SIZE)
-            / TriangleTriangleGPU::WORK_GROUP_SIZE)
-            .max(1);
-        let work_groups_y = ((b_len
-            + b_len % TriangleTriangleGPU::WORK_GROUP_SIZE)
-            / TriangleTriangleGPU::WORK_GROUP_SIZE)
-            .max(1);
-
+    /// Executes the collision compute shader
+    /// # Arguments
+    /// * `a` - The first set of triangles to test
+    /// * `b` - The second set of triangles to test
+    /// * `work_groups_x` - The number of work groups to execute in the x direction
+    /// * `work_groups_y` - The number of work groups to execute in the y direction
+    fn execute_collision_compute(
+        &self,
+        a: &ComputeInputBuffer,
+        b: &ComputeInputBuffer,
+        work_groups_x: u32,
+        work_groups_y: u32,
+    ) -> ssbo::Ssbo<[u32; 4]> {
         let output: ssbo::Ssbo<[u32; 4]> =
-            ssbo::Ssbo::static_empty(a_len + b_len);
+            ssbo::Ssbo::static_empty(a.len + b.len);
         output.zero_bytes();
 
-        input_a.bind(5);
-        input_b.bind(6);
+        a.buf.bind(5);
+        b.buf.bind(6);
         output.bind(7);
         if self.shader_manager.is_none() {
             let ctx = crate::graphics_engine::get_active_ctx();
@@ -203,46 +194,86 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
             );
         }
 
-        /*let a_data = input_a.get_data();
-        assert_eq!(a_data.len(), a_triangles.len());
-        let rng = 0 .. 2;
-        for (e, idx) in a_data.iter().zip(rng.clone()) {
-            println!("GPU {:?}\n", e);
-            println!("CPU {:?}\n\n", a_triangles[idx]);
-        }
-        for (e, idx) in a_data.into_iter().zip(rng) {
-            assert_relative_eq!(point3(e._a[0], e._a[1], e._a[2]),
-                point3(a_triangles[idx]._a[0], a_triangles[idx]._a[1], a_triangles[idx]._a[2]));
-            assert_relative_eq!(point3(e._b[0], e._b[1], e._b[2]),
-                point3(a_triangles[idx]._b[0], a_triangles[idx]._b[1], a_triangles[idx]._b[2]));
-            assert_relative_eq!(point3(e._c[0], e._c[1], e._c[2]),
-                point3(a_triangles[idx]._c[0], a_triangles[idx]._c[1], a_triangles[idx]._c[2]));
-        }*/
+        output
+    }
 
-        let mut a_colliders = Vec::new();
-        let mut b_colliders = Vec::new();
-        for (e, idx) in
-            output.map_read().as_slice().iter().zip(0..a_len + b_len)
-        {
-            //println!("Output got {:?}", e);
-            if e[0] > 0 {
-                if idx < a_len {
-                    a_colliders.push(&a_triangles[idx as usize]);
-                } else {
-                    b_colliders.push(&b_triangles[(idx - a_len) as usize]);
-                }
-            }
-        }
+    /// Converts the output of the computer shader into a `Hit` structure
+    fn colliders_from_output(
+        a_mat: &Matrix4<f64>,
+        b_mat: &Matrix4<f64>,
+        a_colliders: &[&Triangle<f32>],
+        b_colliders: &[&Triangle<f32>],
+    ) -> Option<Hit> {
         if !a_colliders.is_empty() && !b_colliders.is_empty() {
             Some(Hit::Hit(hit_from_colliders(
-                &a_colliders,
-                &b_colliders,
+                a_colliders,
+                b_colliders,
                 a_mat,
                 b_mat,
             )))
         } else {
             None
         }
+    }
+}
+
+impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
+    fn collide(
+        &self,
+        a_triangles: &[Triangle<f32>],
+        a_mat: &Matrix4<f64>,
+        b_triangles: &[Triangle<f32>],
+        b_mat: &Matrix4<f64>,
+    ) -> Option<Hit> {
+        let a_in_triangles: Vec<ShaderTriangle> = a_triangles
+            .iter()
+            .map(Self::get_triangle_to_mat_func(*a_mat))
+            .collect();
+        let b_in_triangles: Vec<ShaderTriangle> = b_triangles
+            .iter()
+            .map(Self::get_triangle_to_mat_func(*b_mat))
+            .collect();
+
+        let a = ComputeInputBuffer {
+            buf: ssbo::Ssbo::create_static(&a_in_triangles),
+            len: a_triangles.len() as u32,
+        };
+        let b = ComputeInputBuffer {
+            buf: ssbo::Ssbo::create_static(&b_in_triangles),
+            len: b_triangles.len() as u32,
+        };
+
+        let work_groups_x = ((a.len
+            + a.len % TriangleTriangleGPU::WORK_GROUP_SIZE)
+            / TriangleTriangleGPU::WORK_GROUP_SIZE)
+            .max(1);
+        let work_groups_y = ((b.len
+            + b.len % TriangleTriangleGPU::WORK_GROUP_SIZE)
+            / TriangleTriangleGPU::WORK_GROUP_SIZE)
+            .max(1);
+
+        let output = self.execute_collision_compute(
+            &a,
+            &b,
+            work_groups_x,
+            work_groups_y,
+        );
+
+        let mut a_colliders = Vec::new();
+        let mut b_colliders = Vec::new();
+        for (e, idx) in
+            output.map_read().as_slice().iter().zip(0..a.len + b.len)
+        {
+            //println!("Output got {:?}", e);
+            if e[0] > 0 {
+                if idx < a.len {
+                    a_colliders.push(&a_triangles[idx as usize]);
+                } else {
+                    b_colliders.push(&b_triangles[(idx - a.len) as usize]);
+                }
+            }
+        }
+        Self::colliders_from_output(a_mat, b_mat, &a_colliders, &b_colliders)
     }
 }
 
@@ -381,19 +412,10 @@ impl TriangleTriangleCPU {
             && (-f64::EPSILON..=1. + f64::EPSILON).contains(&u)
     }
 
-    fn coplanar_test(
-        plane_norm: Vector3<f64>,
-        a_verts: &[Point3<f64>],
-        b_verts: &[Point3<f64>],
+    fn triangle_intersection(
+        a_verts: &[Point2<f64>],
+        b_verts: &[Point2<f64>],
     ) -> bool {
-        let axis = Self::abs_max_dim(&plane_norm);
-        let x = (axis + 1) % 3;
-        let y = (axis + 2) % 3;
-        let a_verts: Vec<Point2<f64>> =
-            a_verts.iter().map(|p| point2(p[x], p[y])).collect();
-        let b_verts: Vec<Point2<f64>> =
-            b_verts.iter().map(|p| point2(p[x], p[y])).collect();
-
         Self::line_intersection_2d(
             &a_verts[0],
             &a_verts[1],
@@ -440,6 +462,22 @@ impl TriangleTriangleCPU {
             &b_verts[1],
             &b_verts[2],
         )
+    }
+
+    fn coplanar_test(
+        plane_norm: Vector3<f64>,
+        a_verts: &[Point3<f64>],
+        b_verts: &[Point3<f64>],
+    ) -> bool {
+        let axis = Self::abs_max_dim(&plane_norm);
+        let x = (axis + 1) % 3;
+        let y = (axis + 2) % 3;
+        let a_verts: Vec<Point2<f64>> =
+            a_verts.iter().map(|p| point2(p[x], p[y])).collect();
+        let b_verts: Vec<Point2<f64>> =
+            b_verts.iter().map(|p| point2(p[x], p[y])).collect();
+
+        Self::triangle_intersection(&a_verts, &b_verts)
     }
 
     fn moller_test(a_verts: &[Point3<f64>], b_verts: &[Point3<f64>]) -> bool {

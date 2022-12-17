@@ -149,6 +149,7 @@ pub struct OrthoCamera {
 
 impl OrthoCamera {
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         width: f32,
         height: f32,

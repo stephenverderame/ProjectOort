@@ -122,6 +122,7 @@ type HitCb<'a, T> = Option<
 /// and half width of the scene in each dimension
 ///
 /// If a rigid body is moved to stay within the scene, calls `on_hit` with the rigid body
+#[allow(clippy::too_many_lines)]
 fn apply_bounds<'a, T>(
     objs: &[&RigidBody<T>],
     resolvers: &mut [CollisionResolution],
@@ -321,6 +322,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     /// needed to resolve each object of collisions
     ///
     /// Each `CollisionResolution` struct handles the collision for a single rigid body
+    #[allow(clippy::too_many_lines)]
     fn get_resolving_forces(
         &self,
         objects: &[&RigidBody<T>],

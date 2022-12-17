@@ -59,7 +59,7 @@ fn get_cascade_target(
         },
     ))
 }
-
+#[allow(clippy::too_many_lines)]
 fn get_main_render_pass(
     render_width: u32,
     render_height: u32,

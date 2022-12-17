@@ -32,6 +32,7 @@ impl AsteroidMap {
     /// `phi` - the range of radians to place objects from the zenith
     ///
     /// `scale` - the range of uniform scale factors
+    #[allow(clippy::too_many_arguments)]
     fn randomize_spherical<F>(
         center: Point3<f64>,
         radius: Range<f64>,

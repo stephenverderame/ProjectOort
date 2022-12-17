@@ -440,6 +440,7 @@ impl<'a> std::fmt::Debug for UniformInfo<'a> {
 impl<'a> UniformInfo<'a> {
     /// Gets the corresponding shader type based on the type of
     /// shader inputs
+    #[allow(clippy::too_many_lines)]
     fn corresp_shader_type(&self, pass: RenderPassType) -> ShaderType {
         use RenderPassType::*;
         use UniformInfo::*;

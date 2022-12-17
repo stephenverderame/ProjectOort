@@ -70,6 +70,7 @@ pub fn dust_emitter<F : glium::backend::Facade>(facade: &F, pos: cgmath::Point3<
 /// `particle_gen` - generator for new particles
 ///
 /// `particle_step` - callback function each time particles are drawn
+#[allow(clippy::too_many_arguments)]
 pub fn simple_emitter<G, S, F>(
     pos: cgmath::Point3<f64>,
     are_lights: bool,
