@@ -86,12 +86,12 @@ impl TryFrom<u8> for ObjectType {
     type Error = String;
     fn try_from(val: u8) -> Result<Self, Self::Error> {
         match val {
-            0 => Ok(ObjectType::Laser),
-            1 => Ok(ObjectType::Ship),
-            2 => Ok(ObjectType::Asteroid),
-            3 => Ok(ObjectType::Skybox),
-            4 => Ok(ObjectType::Hook),
-            5 => Ok(ObjectType::Cloud),
+            0 => Ok(Self::Laser),
+            1 => Ok(Self::Ship),
+            2 => Ok(Self::Asteroid),
+            3 => Ok(Self::Skybox),
+            4 => Ok(Self::Hook),
+            5 => Ok(Self::Cloud),
             _ => {
                 Err(format!("Invalid object type byte representation: {}", val))
             }
@@ -115,8 +115,8 @@ impl ObjectType {
     /// Returns `true` if the object type does not have a corresponding rigid body,
     /// that is if it an entity only
     #[must_use]
-    pub fn is_non_physical(&self) -> bool {
-        matches!(self, ObjectType::Cloud | ObjectType::Skybox)
+    pub const fn is_non_physical(&self) -> bool {
+        matches!(self, Self::Cloud | Self::Skybox)
     }
 }
 
@@ -131,14 +131,14 @@ impl ObjectId {
     #[inline]
     #[must_use]
     pub const fn new(id: ObjectIdType) -> Self {
-        ObjectId { id }
+        Self { id }
     }
 
     /// Gets the next object ID after this one
     #[inline]
     #[must_use]
-    pub fn next(&self) -> Self {
-        ObjectId {
+    pub const fn next(&self) -> Self {
+        Self {
             id: self.id.wrapping_add(1),
         }
     }
@@ -146,17 +146,17 @@ impl ObjectId {
     /// Gets the current object ID and consumes (increments) it
     #[inline]
     #[must_use]
-    pub fn consume(&mut self) -> ObjectId {
+    pub fn consume(&mut self) -> Self {
         let id = self.id;
         self.id = self.id.wrapping_add(1);
-        ObjectId { id }
+        Self { id }
     }
 
     /// Converts this ID to the ID n ids after this one
     #[inline]
     #[must_use]
-    pub fn incr(self, n: u32) -> Self {
-        ObjectId {
+    pub const fn incr(self, n: u32) -> Self {
+        Self {
             id: self.id.wrapping_add(n),
         }
     }
@@ -164,24 +164,26 @@ impl ObjectId {
     /// Converts this ID to its big endian byte representation
     #[inline]
     #[must_use]
-    pub fn to_be_bytes(&self) -> [u8; std::mem::size_of::<ObjectIdType>()] {
+    pub const fn to_be_bytes(
+        &self,
+    ) -> [u8; std::mem::size_of::<ObjectIdType>()] {
         self.id.to_be_bytes()
     }
 
     /// Creates an `ObjectId` from its big endian byte representation
     #[inline]
     #[must_use]
-    pub fn from_be_bytes(
+    pub const fn from_be_bytes(
         bytes: [u8; std::mem::size_of::<ObjectIdType>()],
     ) -> Self {
-        ObjectId {
+        Self {
             id: u32::from_be_bytes(bytes),
         }
     }
 
     #[inline]
     #[must_use]
-    pub fn as_underlying_type(&self) -> ObjectIdType {
+    pub const fn as_underlying_type(&self) -> ObjectIdType {
         self.id
     }
 }

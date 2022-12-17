@@ -11,6 +11,7 @@ use cgmath::*;
 use shared_types::{game_controller::*, id_list::IdList};
 use std::cell::{Cell, Ref, RefCell};
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::rc::Rc;
 
 pub trait GameMediator {
@@ -264,7 +265,7 @@ impl<State> GameMediatorBase<State> {
         self.objs[&ObjectType::Laser]
             .borrow()
             .iter_positions(|node| {
-                let mat: Matrix4<f32> = From::from(node);
+                let mat: Matrix4<f32> = TryFrom::try_from(node).unwrap();
                 let start = mat.transform_point(point3(0., 0., 3.));
                 let end = mat.transform_point(point3(0., 0., -3.));
                 let radius = 1.5;

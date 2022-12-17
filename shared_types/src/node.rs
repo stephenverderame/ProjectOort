@@ -63,7 +63,7 @@ impl Node {
         rot: Option<Quaternion<f64>>,
         scale: Option<cgmath::Vector3<f64>>,
         anchor: Option<Point3<f64>>,
-    ) -> Node {
+    ) -> Self {
         let pos = match trans {
             Some(p) => p,
             None => point3(0., 0., 0.),
@@ -80,7 +80,7 @@ impl Node {
             Some(pt) => pt,
             None => point3(0., 0., 0.),
         };
-        Node {
+        Self {
             transform: Cell::new(Some(transform_matrix(
                 &anchor,
                 &pos,
@@ -138,7 +138,7 @@ impl Node {
     }
 
     #[inline]
-    pub fn set_parent(&mut self, parent: Rc<RefCell<Node>>) {
+    pub fn set_parent(&mut self, parent: Rc<RefCell<Self>>) {
         self.parent = Some(parent);
         self.transform.set(None);
     }
@@ -152,7 +152,7 @@ impl Node {
     /// Sets the parent
     #[inline]
     #[must_use]
-    pub fn parent(mut self, parent: Rc<RefCell<Node>>) -> Self {
+    pub fn parent(mut self, parent: Rc<RefCell<Self>>) -> Self {
         self.set_parent(parent);
         self
     }
@@ -267,19 +267,19 @@ impl Node {
 
     /// Gets the scale factor, ignoring any parent transforms
     #[inline]
-    pub fn local_scale(&self) -> Vector3<f64> {
+    pub const fn local_scale(&self) -> Vector3<f64> {
         self.scale
     }
 
     /// Gets the rotation, ignoring any parent transforms
     #[inline]
-    pub fn local_rot(&self) -> Quaternion<f64> {
+    pub const fn local_rot(&self) -> Quaternion<f64> {
         self.orientation
     }
 
     /// Gets the node position, ignoring any parent transforms
     #[inline]
-    pub fn local_pos(&self) -> Point3<f64> {
+    pub const fn local_pos(&self) -> Point3<f64> {
         self.pos
     }
 
@@ -317,38 +317,45 @@ impl Node {
     }
 
     #[inline]
-    pub fn get_parent(&self) -> Option<Rc<RefCell<Node>>> {
+    pub fn get_parent(&self) -> Option<Rc<RefCell<Self>>> {
         self.parent.clone()
     }
 }
 
 impl From<&'_ Node> for Matrix4<f64> {
-    fn from(node: &'_ Node) -> Matrix4<f64> {
+    fn from(node: &'_ Node) -> Self {
         node.mat()
     }
 }
 
 impl From<Node> for Matrix4<f64> {
-    fn from(node: Node) -> Matrix4<f64> {
+    fn from(node: Node) -> Self {
         node.mat()
     }
 }
 
 impl std::default::Default for Node {
-    fn default() -> Node {
-        Node::new(None, None, None, None)
+    fn default() -> Self {
+        Self::new(None, None, None, None)
     }
 }
 
-impl From<&'_ Node> for Matrix4<f32> {
-    fn from(node: &'_ Node) -> Matrix4<f32> {
-        node.mat().cast::<f32>().unwrap()
+impl TryFrom<&'_ Node> for Matrix4<f32> {
+    type Error = String;
+
+    fn try_from(node: &'_ Node) -> Result<Self, Self::Error> {
+        node.mat()
+            .cast::<f32>()
+            .ok_or_else(|| "Failed cast from node to Matrix4<f32>".to_string())
     }
 }
 
-impl From<Node> for Matrix4<f32> {
-    fn from(node: Node) -> Matrix4<f32> {
-        node.mat().cast::<f32>().unwrap()
+impl TryFrom<Node> for Matrix4<f32> {
+    type Error = String;
+    fn try_from(node: Node) -> Result<Self, Self::Error> {
+        node.mat()
+            .cast::<f32>()
+            .ok_or_else(|| "Failed cast from node to Matrix4<f32>".to_string())
     }
 }
 
@@ -373,11 +380,8 @@ mod test {
         t.set_pos(point3(10., 0., 0.));
         t.set_rot(From::from(Euler::new(Deg(0.), Deg(0f64), Deg(-60.))));
         let p = t.mat().transform_point(point3(0., 2., 0.));
-        let q = point3(
-            10. + f64::cos(30. * std::f64::consts::PI / 180.0) * 2.0,
-            1.0,
-            0.,
-        );
+        let q =
+            point3(f64::cos(30.0_f64.to_radians()).mul_add(2.0, 10.), 1.0, 0.);
         assert_relative_eq!(p.x, q.x);
         assert_relative_eq!(p.y, q.y);
         assert_relative_eq!(p.z, q.z);

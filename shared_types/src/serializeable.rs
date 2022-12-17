@@ -309,10 +309,10 @@ impl Serializeable for ClientCommandType {
                     return Err("Login command too short")?;
                 }
                 let name = std::str::from_utf8(&data[1..])?;
-                Ok((ClientCommandType::Login(name.to_string()), msg_id))
+                Ok((Self::Login(name.to_string()), msg_id))
             }
             b'U' => Ok((
-                ClientCommandType::Update(deserialize_update(data)?),
+                Self::Update(deserialize_update(data)?),
                 msg_id,
             )),
             _ => Err("Unknown command")?,
@@ -336,10 +336,10 @@ impl Serializeable for ServerCommandType {
         match cmd_id {
             b'L' => {
                 let login = deserialize_login(&data)?;
-                Ok((ServerCommandType::ReturnLogin(login), msg_id))
+                Ok((Self::ReturnLogin(login), msg_id))
             }
             b'U' => Ok((
-                ServerCommandType::Update(deserialize_update(data)?),
+                Self::Update(deserialize_update(data)?),
                 msg_id,
             )),
             _ => Err("Unknown command")?,

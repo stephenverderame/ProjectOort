@@ -14,7 +14,7 @@ impl IdList {
     /// Creates a new empty `IdList`
     #[must_use]
     pub fn new() -> Self {
-        IdList {
+        Self {
             ids: VecDeque::new(),
             prev_id: None,
         }
@@ -51,17 +51,18 @@ impl IdList {
     /// Computes the number of remaining IDs in the list
     #[must_use]
     pub fn remaining(&self) -> usize {
-        let begin_size = if let Some(prev) = &self.prev_id {
-            if let Some((_, end)) = self.ids.front() {
-                end.id.wrapping_sub(prev.id.wrapping_add(1)) as usize
-            } else {
-                0
-            }
-        } else if let Some((begin, end)) = self.ids.front() {
-            end.id.wrapping_sub(begin.id) as usize
-        } else {
-            0
-        };
+        let begin_size = self.prev_id.as_ref().map_or_else(
+            || {
+                self.ids.front().map_or(0, |(begin, end)| {
+                    end.id.wrapping_sub(begin.id) as usize
+                })
+            },
+            |prev| {
+                self.ids.front().map_or(0, |(_, end)| {
+                    end.id.wrapping_sub(prev.id.wrapping_add(1)) as usize
+                })
+            },
+        );
         let rest_size: usize = self
             .ids
             .iter()
@@ -82,7 +83,7 @@ impl Iterator for IdList {
 
 impl Default for IdList {
     fn default() -> Self {
-        IdList::new()
+        Self::new()
     }
 }
 

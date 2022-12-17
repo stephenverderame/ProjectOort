@@ -51,8 +51,8 @@ struct ClientData {
 }
 
 impl ClientData {
-    fn new(id: ObjectId) -> Self {
-        ClientData {
+    const fn new(id: ObjectId) -> Self {
+        Self {
             state: ClientState::WaitingForRequest,
             username: String::new(),
             id,
@@ -84,7 +84,7 @@ impl ServerState {
     }
 
     fn new<Dm: Deref<Target = dyn game_map::Map>>(map: Dm) -> Self {
-        ServerState {
+        Self {
             users: HashMap::default(),
             server_objects: map.initial_objects(),
             server_lighting: map.lighting_info(),

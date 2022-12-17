@@ -13,7 +13,7 @@ pub enum MapType {
 impl MapType {
     pub fn get_game_map(&self) -> Box<dyn game_map::Map> {
         match self {
-            MapType::AsteroidMap => Box::new(game_map::AsteroidMap {}),
+            Self::AsteroidMap => Box::new(game_map::AsteroidMap {}),
         }
     }
 }
@@ -22,7 +22,7 @@ impl TryFrom<&str> for MapType {
     type Error = String;
     fn try_from(val: &str) -> Result<Self, Self::Error> {
         match val {
-            "asteroid" => Ok(MapType::AsteroidMap),
+            "asteroid" => Ok(Self::AsteroidMap),
             _ => Err(format!("Invalid map type: {}", val)),
         }
     }
@@ -38,7 +38,7 @@ pub struct ServerConfiguration {
 
 impl Default for ServerConfiguration {
     fn default() -> Self {
-        ServerConfiguration {
+        Self {
             port: DEFAULT_PORT,
             map: DEFAULT_MAP,
         }

@@ -133,7 +133,7 @@ pub struct TimestampedRemoteData<T: Serializeable> {
 
 impl<T: Serializeable> Default for TimestampedRemoteData<T> {
     fn default() -> Self {
-        TimestampedRemoteData {
+        Self {
             data: RemoteData::Buffering(BTreeMap::default()),
             last_access: std::time::Instant::now(),
         }
@@ -155,7 +155,7 @@ impl<T: Serializeable> std::ops::DerefMut for TimestampedRemoteData<T> {
 
 impl<T: Serializeable> TimestampedRemoteData<T> {
     pub fn from(data: RemoteData<T>) -> Self {
-        TimestampedRemoteData {
+        Self {
             data,
             last_access: std::time::Instant::now(),
         }
@@ -164,7 +164,7 @@ impl<T: Serializeable> TimestampedRemoteData<T> {
 
 impl<T: Serializeable> From<RemoteData<T>> for TimestampedRemoteData<T> {
     fn from(data: RemoteData<T>) -> Self {
-        TimestampedRemoteData {
+        Self {
             data,
             last_access: std::time::Instant::now(),
         }
@@ -313,7 +313,7 @@ pub struct ImportantArguments {
 
 impl Default for ImportantArguments {
     fn default() -> Self {
-        ImportantArguments {
+        Self {
             max_recv_tries: 5,
             max_send_tries: 3,
             total_send_attempts: 5,
