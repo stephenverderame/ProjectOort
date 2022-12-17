@@ -24,7 +24,7 @@ impl Transformation for super::node::Node {
     }
 
     fn transform_vec(&self, v: Vector3<f64>) -> Vector3<f64> {
-        self.transform_vec(v)
+        Self::transform_vec(self, v)
     }
 }
 impl Transformation for Matrix4<f64> {

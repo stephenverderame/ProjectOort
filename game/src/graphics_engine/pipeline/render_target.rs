@@ -30,10 +30,12 @@ impl MsaaRenderTarget {
         width: u32,
         height: u32,
         facade: &F,
-    ) -> MsaaRenderTarget {
+    ) -> Self {
         let depth_tex = Box::pin(
-            glium::texture::DepthTexture2dMultisample::empty(facade, width, height, samples)
-                .unwrap(),
+            glium::texture::DepthTexture2dMultisample::empty(
+                facade, width, height, samples,
+            )
+            .unwrap(),
         );
         let tex = Box::pin(
             glium::texture::Texture2dMultisample::empty_with_format(
@@ -60,12 +62,15 @@ impl MsaaRenderTarget {
         let rbo_ptr = std::ptr::addr_of!(*depth_tex);
         let out_ptr = std::ptr::addr_of!(*out_tex);
         unsafe {
-            MsaaRenderTarget {
+            Self {
                 fbo: glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(
                     facade, &*ms_tex, &*rbo_ptr,
                 )
                 .unwrap(),
-                out_fbo: glium::framebuffer::SimpleFrameBuffer::new(facade, &*out_ptr).unwrap(),
+                out_fbo: glium::framebuffer::SimpleFrameBuffer::new(
+                    facade, &*out_ptr,
+                )
+                .unwrap(),
                 _tex: tex,
                 _depth_tex: depth_tex,
                 out_tex,
@@ -146,14 +151,19 @@ impl DepthRenderTarget {
     /// `transparency` - `true` to also render transparent objects (to a separate texture)
     ///
     /// `render_cascades` - `true` if this depth target is part of a cascade
-    fn make(width: u32, height: u32, transparency: bool, render_cascades: bool) -> Self {
-        let (main_fbo, depth_tex) = DepthRenderTarget::get_fbo_rbo(width, height);
+    fn make(
+        width: u32,
+        height: u32,
+        transparency: bool,
+        render_cascades: bool,
+    ) -> Self {
+        let (main_fbo, depth_tex) = Self::get_fbo_rbo(width, height);
         let trans_fbo = if transparency {
-            Some(DepthRenderTarget::get_tex_fbo_rbo(width, height))
+            Some(Self::get_tex_fbo_rbo(width, height))
         } else {
             None
         };
-        DepthRenderTarget {
+        Self {
             depth_tex,
             main_fbo,
             trans_fbo,
@@ -166,12 +176,12 @@ impl DepthRenderTarget {
     ///
     /// `transparency` - `true` to also render transparent objects (to a separate texture)
     #[inline]
-    pub fn new(width: u32, height: u32, transparency: bool) -> DepthRenderTarget {
+    pub fn new(width: u32, height: u32, transparency: bool) -> Self {
         Self::make(width, height, transparency, false)
     }
 
     #[inline]
-    pub fn new_cascade(width: u32, height: u32, transparency: bool) -> DepthRenderTarget {
+    pub fn new_cascade(width: u32, height: u32, transparency: bool) -> Self {
         Self::make(width, height, transparency, true)
     }
 
@@ -197,7 +207,10 @@ impl DepthRenderTarget {
         unsafe {
             let ctx = ctx.ctx.borrow();
             (
-                glium::framebuffer::SimpleFrameBuffer::depth_only(&*ctx, &*rbo_ptr).unwrap(),
+                glium::framebuffer::SimpleFrameBuffer::depth_only(
+                    &*ctx, &*rbo_ptr,
+                )
+                .unwrap(),
                 rbo,
             )
         }
@@ -314,8 +327,8 @@ impl CubemapRenderBase {
     fn new(
         view_dist: f32,
         get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>,
-    ) -> CubemapRenderBase {
-        CubemapRenderBase {
+    ) -> Self {
+        Self {
             view_dist,
             get_view_pos,
             view_matrices: ssbo::Ssbo::static_alloc_dyn(6, None),
@@ -323,7 +336,8 @@ impl CubemapRenderBase {
     }
 
     /// Gets an array of tuples of view target direction, `CubeFace`, and up vector
-    fn get_target_up() -> [(cgmath::Point3<f32>, cgmath::Vector3<f32>); 6] {
+    const fn get_target_up() -> [(cgmath::Point3<f32>, cgmath::Vector3<f32>); 6]
+    {
         use cgmath::*;
         [
             (point3(1., 0., 0.), vec3(0., -1., 0.)),
@@ -355,7 +369,8 @@ impl CubemapRenderBase {
             .iter()
             .zip(self.view_matrices.map_write().as_slice().iter_mut())
         {
-            let target: (f32, f32, f32) = (target.to_vec() + cam.cam.to_vec()).into();
+            let target: (f32, f32, f32) =
+                (target.to_vec() + cam.cam.to_vec()).into();
             cam.target = std::convert::From::from(target);
             cam.up = *up;
             *mat_dst = (cam.proj_mat() * cam.view_mat()).into();
@@ -393,7 +408,7 @@ impl CubemapRenderTarget {
         view_dist: f32,
         get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>,
         facade: &F,
-    ) -> CubemapRenderTarget {
+    ) -> Self {
         let depth_buffer = Box::pin(
             texture::DepthCubemap::empty_with_format(
                 facade,
@@ -422,7 +437,7 @@ impl CubemapRenderTarget {
             )
             .unwrap()
         };
-        CubemapRenderTarget {
+        Self {
             _size: size,
             cubemap: CubemapRenderBase::new(view_dist, get_view_pos),
             cbo_tex,
@@ -434,7 +449,7 @@ impl CubemapRenderTarget {
     }
 
     /// Sets the render pass type of this Render Target
-    pub fn with_pass(mut self, pass: RenderPassType) -> Self {
+    pub const fn with_pass(mut self, pass: RenderPassType) -> Self {
         self.pass_type = pass;
         self
     }
@@ -516,8 +531,8 @@ impl MipCubemapRenderTarget {
         mip_levels: u32,
         view_dist: f32,
         get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>,
-    ) -> MipCubemapRenderTarget {
-        MipCubemapRenderTarget {
+    ) -> Self {
+        Self {
             mip_levels,
             size,
             cubemap: CubemapRenderBase::new(view_dist, get_view_pos),
@@ -544,14 +559,18 @@ impl RenderTarget for MipCubemapRenderTarget {
         let cbo_tex = texture::Cubemap::empty_with_format(
             &*ctx.ctx.borrow(),
             texture::UncompressedFloatFormat::F16F16F16,
-            texture::MipmapsOption::AutoGeneratedMipmapsMax(self.mip_levels - 1),
+            texture::MipmapsOption::AutoGeneratedMipmapsMax(
+                self.mip_levels - 1,
+            ),
             self.size,
         )
         .unwrap();
         let depth_tex = texture::DepthCubemap::empty_with_format(
             &*ctx.ctx.borrow(),
             texture::DepthFormat::I24,
-            texture::MipmapsOption::AutoGeneratedMipmapsMax(self.mip_levels - 1),
+            texture::MipmapsOption::AutoGeneratedMipmapsMax(
+                self.mip_levels - 1,
+            ),
             self.size,
         )
         .unwrap();
@@ -584,7 +603,11 @@ impl RenderTarget for MipCubemapRenderTarget {
 
 /// A `RenderTarget` decorator wich supplies the target with an arbitrary view
 /// on draw
-pub struct CustomViewRenderTargetDecorator<V: Viewer, F: Fn(&dyn Viewer) -> V, Rt: RenderTarget> {
+pub struct CustomViewRenderTargetDecorator<
+    V: Viewer,
+    F: Fn(&dyn Viewer) -> V,
+    Rt: RenderTarget,
+> {
     target: Rt,
     get_viewer: F,
 }
@@ -595,7 +618,7 @@ impl<V: Viewer, F: Fn(&dyn Viewer) -> V, Rt: RenderTarget>
     /// `target` - the render target to supply the view to
     ///
     /// `get_viewer` - a function which computes the view to use
-    pub fn new(target: Rt, get_viewer: F) -> Self {
+    pub const fn new(target: Rt, get_viewer: F) -> Self {
         Self { target, get_viewer }
     }
 }

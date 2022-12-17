@@ -62,8 +62,8 @@ pub struct InstanceBuffer<T: Copy + glium::Vertex> {
 }
 
 impl<T: Copy + glium::Vertex> InstanceBuffer<T> {
-    pub fn new() -> InstanceBuffer<T> {
-        InstanceBuffer {
+    pub const fn new() -> Self {
+        Self {
             instance_data: None,
             buffer_count: 0,
         }
@@ -73,7 +73,7 @@ impl<T: Copy + glium::Vertex> InstanceBuffer<T> {
         num: usize,
         facade: &F,
     ) -> Self {
-        InstanceBuffer {
+        Self {
             instance_data: Some(
                 glium::VertexBuffer::empty_dynamic(facade, num).unwrap(),
             ),
@@ -99,7 +99,7 @@ impl<T: Copy + glium::Vertex> InstanceBuffer<T> {
         facade: &F,
     ) {
         if data.len() != self.buffer_count {
-            let (buffer, size) = InstanceBuffer::resize_buffer(data, facade);
+            let (buffer, size) = Self::resize_buffer(data, facade);
             self.instance_data = Some(buffer);
             self.buffer_count = size;
         } else if let Some(buffer) = &mut self.instance_data {
@@ -133,7 +133,9 @@ impl<T: Copy + glium::Vertex> InstanceBuffer<T> {
 
     /// Gets the stored instance buffer or `None` if there has been no instances stored
     /// in the buffer
-    pub fn get_stored_buffer(&self) -> Option<&glium::vertex::VertexBuffer<T>> {
+    pub const fn get_stored_buffer(
+        &self,
+    ) -> Option<&glium::vertex::VertexBuffer<T>> {
         self.instance_data.as_ref()
     }
 }

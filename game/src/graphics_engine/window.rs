@@ -20,7 +20,7 @@ pub struct SceneManager {
 
 impl SceneManager {
     pub fn new() -> Self {
-        SceneManager {
+        Self {
             scenes: std::collections::HashMap::new(),
             active_scene: None,
         }
@@ -104,7 +104,7 @@ pub struct Window {
 }
 
 impl Window {
-    fn from_builder(builder: WindowMaker) -> Window {
+    fn from_builder(builder: WindowMaker) -> Self {
         let e_loop = builder.e_loop.unwrap_or_else(EventLoop::new);
         let mut window_builder = WindowBuilder::new()
             .with_decorations(true)
@@ -130,7 +130,7 @@ impl Window {
         gl::load_with(|s| wnd_ctx.borrow().gl_window().get_proc_address(s));
         super::set_active_ctx(wnd_ctx.clone(), shaders.clone());
 
-        Window {
+        Self {
             e_loop: RefCell::new(e_loop),
             shaders,
             wnd_ctx,
@@ -210,8 +210,9 @@ pub struct WindowMaker {
 }
 #[allow(dead_code)]
 impl WindowMaker {
-    pub fn new(width: u32, height: u32) -> WindowMaker {
-        WindowMaker {
+    #[must_use]
+    pub const fn new(width: u32, height: u32) -> Self {
+        Self {
             width,
             height,
             title: None,
@@ -222,26 +223,31 @@ impl WindowMaker {
         }
     }
 
-    pub fn title(mut self, title: &'static str) -> Self {
+    #[must_use]
+    pub const fn title(mut self, title: &'static str) -> Self {
         self.title = Some(title);
         self
     }
 
-    pub fn invisible(mut self) -> Self {
+    #[must_use]
+    pub const fn invisible(mut self) -> Self {
         self.visible = false;
         self
     }
 
-    pub fn msaa(mut self, samples: u16) -> Self {
+    #[must_use]
+    pub const fn msaa(mut self, samples: u16) -> Self {
         self.msaa = Some(samples);
         self
     }
 
-    pub fn depth_buffer(mut self, bits: u8) -> Self {
+    #[must_use]
+    pub const fn depth_buffer(mut self, bits: u8) -> Self {
         self.depth_bits = Some(bits);
         self
     }
 
+    #[must_use]
     pub fn build(self) -> Window {
         Window::from_builder(self)
     }

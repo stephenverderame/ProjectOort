@@ -34,7 +34,7 @@ fn get_mesh_data(mesh: &tobj::Mesh) -> (Vec<CollisionVertex<f32>>, Vec<u32>) {
 }
 
 impl CollisionMesh {
-    pub fn new(file: &str, stop_method: TreeStopCriteria) -> CollisionMesh {
+    pub fn new(file: &str, stop_method: TreeStopCriteria) -> Self {
         let (meshes, _) = tobj::load_obj(
             file,
             &tobj::LoadOptions {
@@ -53,14 +53,14 @@ impl CollisionMesh {
             })
             .collect();
         println!("Created mesh");
-        CollisionMesh { sub_meshes: meshes }
+        Self { sub_meshes: meshes }
     }
 
     /// See `HighPStrat::collision`
     pub fn collision(
         &self,
         self_transform: &Matrix4<f64>,
-        other: &CollisionMesh,
+        other: &Self,
         other_transform: &Matrix4<f64>,
         highp_strat: &dyn HighPCollision,
     ) -> Option<Hit> {
@@ -68,7 +68,9 @@ impl CollisionMesh {
         let mut other_tris = Vec::new();
         for m in &self.sub_meshes {
             for i in &other.sub_meshes {
-                if let Some((mut a, mut b)) = m.collision(self_transform, i, other_transform) {
+                if let Some((mut a, mut b)) =
+                    m.collision(self_transform, i, other_transform)
+                {
                     our_tris.append(&mut a);
                     other_tris.append(&mut b);
                 }
@@ -78,7 +80,12 @@ impl CollisionMesh {
         if our_tris.is_empty() || other_tris.is_empty() {
             None
         } else {
-            highp_strat.collide(&our_tris, self_transform, &other_tris, other_transform)
+            highp_strat.collide(
+                &our_tris,
+                self_transform,
+                &other_tris,
+                other_transform,
+            )
         }
     }
 
@@ -97,7 +104,8 @@ impl CollisionMesh {
         }
         c /= self.sub_meshes.len() as f64;
         let center = point3(c.x, c.y, c.z);
-        let extents = vec3(max_x - center.x, max_y - center.y, max_z - center.z);
+        let extents =
+            vec3(max_x - center.x, max_y - center.y, max_z - center.z);
         (center, extents.x.max(extents.y.max(extents.z)))
     }
 
@@ -119,15 +127,18 @@ impl CollisionMesh {
     pub fn get_colliding_volumes(
         &self,
         self_transform: &Matrix4<f64>,
-        other: &CollisionMesh,
+        other: &Self,
         other_transform: &Matrix4<f64>,
     ) -> (Vec<obb::Aabb>, Vec<obb::Aabb>) {
         let mut our_v = Vec::new();
         let mut other_v = Vec::new();
         for sb in &self.sub_meshes {
             for o_sb in &other.sub_meshes {
-                let (mut our, mut other) =
-                    sb.get_colliding_volumes(self_transform, o_sb, other_transform);
+                let (mut our, mut other) = sb.get_colliding_volumes(
+                    self_transform,
+                    o_sb,
+                    other_transform,
+                );
                 our_v.append(&mut our);
                 other_v.append(&mut other);
             }
@@ -178,12 +189,12 @@ mod test {
         use glutin::window::WindowBuilder;
         use glutin::ContextBuilder;
         let e_loop = get_event_loop();
-        let window_builder = WindowBuilder::new().with_visible(false).with_inner_size(
-            glium::glutin::dpi::PhysicalSize::<u32> {
+        let window_builder = WindowBuilder::new()
+            .with_visible(false)
+            .with_inner_size(glium::glutin::dpi::PhysicalSize::<u32> {
                 width: 128,
                 height: 128,
-            },
-        );
+            });
         let wnd_ctx = ContextBuilder::new();
         let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
         gl::load_with(|s| wnd_ctx.gl_window().get_proc_address(s));
@@ -217,8 +228,10 @@ mod test {
 
         let mut t_ast = node::Node::default();
         let mut t_ship = node::Node::default();
-        let asteroid =
-            CollisionMesh::new("assets/asteroid1/Asteroid.obj", TreeStopCriteria::default());
+        let asteroid = CollisionMesh::new(
+            "assets/asteroid1/Asteroid.obj",
+            TreeStopCriteria::default(),
+        );
         t_ast = t_ast
             .pos(point3(
                 11.743949077465658,
@@ -310,7 +323,10 @@ mod test {
                 norm: vec3(0., 0., 1.),
             },
         ];
-        let triangle = bvh::Triangle::array_from(vec![0, 1, 2], std::ptr::addr_of!(vertices));
+        let triangle = bvh::Triangle::array_from(
+            vec![0, 1, 2],
+            std::ptr::addr_of!(vertices),
+        );
         let mut t_b = node::Node::default();
         let mut t_a = node::Node::default();
         assert!(strat
@@ -364,7 +380,10 @@ mod test {
         t_a = t_a
             .pos(point3(0., 0f64, 0.))
             .rot(Matrix3::from_angle_x(Deg(0.)).into());
-        let triangle2 = bvh::Triangle::array_from(vec![0, 1, 2], std::ptr::addr_of!(vertices2));
+        let triangle2 = bvh::Triangle::array_from(
+            vec![0, 1, 2],
+            std::ptr::addr_of!(vertices2),
+        );
         assert!(strat
             .collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat())
             .is_none()); // random triangle no intersect
@@ -388,7 +407,7 @@ mod test {
     #[serial]
     fn collision_tests() {
         let (shader, _) = init();
-        let strat = /*highp_col::TriangleTriangleCPU {};*/highp_col::TriangleTriangleGPU::new(&shader);
+        let strat = highp_col::TriangleTriangleGPU::new(&shader);
         let ship = CollisionMesh::new(
             "assets/Ships/StarSparrow01.obj",
             TreeStopCriteria::AlwaysStop,

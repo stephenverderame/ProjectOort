@@ -30,8 +30,8 @@ const CUBE_VERTS: [Vertex; 8] = [
 ];
 
 const CUBE_INDICES: [u16; 36] = [
-    0, 1, 2, 2, 3, 0, 1, 5, 6, 6, 2, 1, 7, 6, 5, 5, 4, 7, 4, 0, 3, 3, 7, 4, 4, 5, 1, 1, 0, 4, 3, 2,
-    6, 6, 7, 3,
+    0, 1, 2, 2, 3, 0, 1, 5, 6, 6, 2, 1, 7, 6, 5, 5, 4, 7, 4, 0, 3, 3, 7, 4, 4,
+    5, 1, 1, 0, 4, 3, 2, 6, 6, 7, 3,
 ];
 
 /// The type of texture for the skybox. Either a cubemap or a 2d texture
@@ -51,11 +51,11 @@ pub struct Skybox {
 }
 
 impl Skybox {
-    pub fn new<F>(tex: SkyboxTex, facade: &F) -> Skybox
+    pub fn new<F>(tex: SkyboxTex, facade: &F) -> Self
     where
         F: glium::backend::Facade,
     {
-        Skybox {
+        Self {
             vbo: glium::VertexBuffer::new(facade, &CUBE_VERTS).unwrap(),
             ebo: glium::IndexBuffer::new(
                 facade,
@@ -70,7 +70,10 @@ impl Skybox {
 
     /// Creates a skybox from a equirectangular texture
     #[allow(dead_code)]
-    pub fn from_sphere<F: glium::backend::Facade>(path: &str, facade: &F) -> Skybox {
+    pub fn from_sphere<F: glium::backend::Facade>(
+        path: &str,
+        facade: &F,
+    ) -> Self {
         use super::textures;
         let t = SkyboxTex::Sphere(textures::load_texture_2d(path, facade));
         Self::new(t, facade)
@@ -83,7 +86,7 @@ impl Skybox {
         cubemap_size: u32,
         shader_manager: &shader::ShaderManager,
         facade: &F,
-    ) -> Skybox {
+    ) -> Self {
         let t = SkyboxTex::Cube(gen_cubemap_from_sphere(
             path,
             cubemap_size,
@@ -114,7 +117,9 @@ impl Skybox {
                 shader::RenderPassType::transparent_tag(),
                 shader::RenderPassType::LayeredVisual,
             ],
-            locations: vec![Rc::new(RefCell::new(cgmath::Matrix4::from_scale(1f64)))],
+            locations: vec![Rc::new(RefCell::new(
+                cgmath::Matrix4::from_scale(1f64),
+            ))],
             order: entity::RenderOrder::First,
         }
     }
@@ -131,16 +136,20 @@ impl Drawable for Skybox {
     )> {
         let args = match (&self.tex, self.mip_progress) {
             (SkyboxTex::Sphere(map), _) => {
-                shader::UniformInfo::EquiRect(shader::EqRectData { env_map: map })
+                shader::UniformInfo::EquiRect(shader::EqRectData {
+                    env_map: map,
+                })
             }
             (SkyboxTex::Cube(map), None) => {
                 shader::UniformInfo::Skybox(shader::SkyboxData { env_map: map })
             }
             (SkyboxTex::Cube(map), Some(progress)) => {
-                shader::UniformInfo::PrefilterHdrEnv(shader::PrefilterHdrEnvData {
-                    env_map: map,
-                    roughness: progress,
-                })
+                shader::UniformInfo::PrefilterHdrEnv(
+                    shader::PrefilterHdrEnvData {
+                        env_map: map,
+                        roughness: progress,
+                    },
+                )
             }
         };
         vec![(
@@ -202,7 +211,14 @@ pub fn gen_cubemap_from_sphere<F: glium::backend::Facade>(
             {
                 sd.borrow_mut().viewer = viewer_data_from(viewer);
             }
-            drawable::render_drawable(&mut sky, None, fbo, &*sd.borrow(), cache, shader_manager);
+            drawable::render_drawable(
+                &mut sky,
+                None,
+                fbo,
+                &*sd.borrow(),
+                cache,
+                shader_manager,
+            );
         },
     );
     if let TextureType::TexCube(pipeline::Ownership::Own(x)) = cbo.unwrap() {
@@ -220,8 +236,8 @@ pub struct DebugCube {
 
 impl DebugCube {
     #[allow(dead_code)]
-    pub fn new<F: glium::backend::Facade>(facade: &F) -> DebugCube {
-        DebugCube {
+    pub fn new<F: glium::backend::Facade>(facade: &F) -> Self {
+        Self {
             vbo: glium::VertexBuffer::new(facade, &CUBE_VERTS).unwrap(),
             ebo: glium::IndexBuffer::new(
                 facade,
@@ -247,7 +263,9 @@ impl Drawable for DebugCube {
             let args = shader::UniformInfo::CollisionDebug(*m);
             v.push((
                 args,
-                VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))),
+                VertexHolder::new(VertexSourceData::Single(From::from(
+                    &self.vbo,
+                ))),
                 From::from(&self.ebo),
             ));
         }
@@ -277,7 +295,9 @@ impl Volumetric {
                 &CUBE_INDICES,
             )
             .unwrap(),
-            vol: textures::gen_cloud_noise_vol(tex_size, tex_size, tex_size, facade),
+            vol: textures::gen_cloud_noise_vol(
+                tex_size, tex_size, tex_size, facade,
+            ),
         }
     }
 }
@@ -299,7 +319,9 @@ impl Drawable for Volumetric {
             });
             out.push((
                 arg,
-                VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))),
+                VertexHolder::new(VertexSourceData::Single(From::from(
+                    &self.vbo,
+                ))),
                 From::from(&self.ebo),
             ));
         }

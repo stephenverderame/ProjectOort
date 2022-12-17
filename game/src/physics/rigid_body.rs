@@ -14,12 +14,13 @@ struct RaceyCell<T> {
 }
 
 impl<T> RaceyCell<T> {
-    fn new(t: T) -> Self {
-        RaceyCell {
+    const fn new(t: T) -> Self {
+        Self {
             cell: UnsafeCell::new(t),
         }
     }
 
+    #[allow(clippy::missing_const_for_fn)]
     unsafe fn borrow(&self) -> &T {
         &*self.cell.get()
     }
@@ -30,7 +31,6 @@ impl<T> RaceyCell<T> {
     }
 }
 
-unsafe impl<T> Send for RaceyCell<T> {}
 unsafe impl<T> Sync for RaceyCell<T> {}
 
 #[derive(PartialEq, Eq, Copy, Clone, Hash)]
@@ -71,9 +71,9 @@ impl SharedRigidBody {
         let mut iyz = 0.;
         collider.forall_verts(|pt| {
             let pt: Point3<f64> = pt.pos.cast().unwrap();
-            ixx += pt.y * pt.y + pt.z * pt.z;
-            iyy += pt.x * pt.x + pt.z * pt.z;
-            izz += pt.x * pt.x + pt.y * pt.y;
+            ixx += pt.y.mul_add(pt.y, pt.z * pt.z);
+            iyy += pt.x.mul_add(pt.x, pt.z * pt.z);
+            izz += pt.x.mul_add(pt.x, pt.y * pt.y);
             ixy += pt.x * pt.y;
             ixz += pt.x * pt.z;
             iyz += pt.y * pt.z;
@@ -98,15 +98,15 @@ impl SharedRigidBody {
     }
 
     fn get_ptr_id(collider: &Option<collisions::CollisionObject>) -> usize {
-        if let Some(collider) = collider {
-            let id = collider.geometry_id();
-            unsafe { SHARED_BODIES.borrow_mut() }
-                .entry(id)
-                .or_insert_with(|| Self::new(collider));
-            id
-        } else {
-            INVALID_SHARED_BODY_ID
-        }
+        collider
+            .as_ref()
+            .map_or(INVALID_SHARED_BODY_ID, |collider| {
+                let id = collider.geometry_id();
+                unsafe { SHARED_BODIES.borrow_mut() }
+                    .entry(id)
+                    .or_insert_with(|| Self::new(collider));
+                id
+            })
     }
 }
 
@@ -125,14 +125,15 @@ pub struct BaseRigidBody {
 impl BaseRigidBody {
     /// Get's the world space center of this rigid body
     pub fn center(&self) -> Point3<f64> {
-        if let Some(collider) = &self.collider {
-            collider.bounding_sphere().0
-        } else {
-            self.transform
-                .borrow()
-                .mat()
-                .transform_point(point3(0., 0., 0.))
-        }
+        self.collider.as_ref().map_or_else(
+            || {
+                self.transform
+                    .borrow()
+                    .mat()
+                    .transform_point(point3(0., 0., 0.))
+            },
+            |collider| collider.bounding_sphere().0,
+        )
     }
 
     /// Gets the maximum distance from the object center a point on the

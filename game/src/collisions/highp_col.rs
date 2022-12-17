@@ -104,7 +104,7 @@ impl<'a> TriangleTriangleGPU<'a> {
     const WORK_GROUP_SIZE: u32 = 8;
 
     #[allow(dead_code)]
-    pub fn new(
+    pub const fn new(
         shader_manager: &'a shader::ShaderManager,
     ) -> TriangleTriangleGPU<'a> {
         TriangleTriangleGPU {
@@ -112,7 +112,7 @@ impl<'a> TriangleTriangleGPU<'a> {
         }
     }
 
-    pub fn from_active_ctx() -> TriangleTriangleGPU<'static> {
+    pub const fn from_active_ctx() -> TriangleTriangleGPU<'static> {
         TriangleTriangleGPU {
             shader_manager: None,
         }
@@ -270,13 +270,13 @@ impl TriangleTriangleCPU {
         vert_indices: (usize, usize, usize),
     ) -> (f64, f64) {
         (
-            TriangleTriangleCPU::get_t(
+            Self::get_t(
                 project_on_l,
                 signed_dists,
                 vert_indices.0,
                 vert_indices.1,
             ),
-            TriangleTriangleCPU::get_t(
+            Self::get_t(
                 project_on_l,
                 signed_dists,
                 vert_indices.0,
@@ -294,8 +294,8 @@ impl TriangleTriangleCPU {
     }
 
     fn interval_overlap(a_t: (f64, f64), b_t: (f64, f64)) -> bool {
-        let a_t = TriangleTriangleCPU::order_interval(a_t);
-        let b_t = TriangleTriangleCPU::order_interval(b_t);
+        let a_t = Self::order_interval(a_t);
+        let b_t = Self::order_interval(b_t);
         a_t.0 - f64::EPSILON <= b_t.0 && a_t.1 + f64::EPSILON >= b_t.0
             || a_t.0 - f64::EPSILON <= b_t.1 && a_t.1 + f64::EPSILON >= b_t.1
             || b_t.0 - f64::EPSILON <= a_t.0 && b_t.1 + f64::EPSILON >= a_t.0
@@ -369,7 +369,7 @@ impl TriangleTriangleCPU {
             let l = a.normalize();
             let t_a = (dot(start_a.to_vec(), l), dot(end_a.to_vec(), l));
             let t_b = (dot(start_b.to_vec(), l), dot(end_b.to_vec(), l));
-            return TriangleTriangleCPU::interval_overlap(t_a, t_b);
+            return Self::interval_overlap(t_a, t_b);
         } else if rs.abs() < f64::EPSILON {
             return false;
         }
@@ -386,7 +386,7 @@ impl TriangleTriangleCPU {
         a_verts: &[Point3<f64>],
         b_verts: &[Point3<f64>],
     ) -> bool {
-        let axis = TriangleTriangleCPU::abs_max_dim(&plane_norm);
+        let axis = Self::abs_max_dim(&plane_norm);
         let x = (axis + 1) % 3;
         let y = (axis + 2) % 3;
         let a_verts: Vec<Point2<f64>> =
@@ -394,47 +394,47 @@ impl TriangleTriangleCPU {
         let b_verts: Vec<Point2<f64>> =
             b_verts.iter().map(|p| point2(p[x], p[y])).collect();
 
-        TriangleTriangleCPU::line_intersection_2d(
+        Self::line_intersection_2d(
             &a_verts[0],
             &a_verts[1],
             &b_verts[0],
             &b_verts[1],
-        ) || TriangleTriangleCPU::line_intersection_2d(
+        ) || Self::line_intersection_2d(
             &a_verts[0],
             &a_verts[1],
             &b_verts[0],
             &b_verts[2],
-        ) || TriangleTriangleCPU::line_intersection_2d(
+        ) || Self::line_intersection_2d(
             &a_verts[0],
             &a_verts[1],
             &b_verts[1],
             &b_verts[2],
-        ) || TriangleTriangleCPU::line_intersection_2d(
+        ) || Self::line_intersection_2d(
             &a_verts[0],
             &a_verts[2],
             &b_verts[0],
             &b_verts[1],
-        ) || TriangleTriangleCPU::line_intersection_2d(
+        ) || Self::line_intersection_2d(
             &a_verts[0],
             &a_verts[2],
             &b_verts[0],
             &b_verts[2],
-        ) || TriangleTriangleCPU::line_intersection_2d(
+        ) || Self::line_intersection_2d(
             &a_verts[0],
             &a_verts[2],
             &b_verts[1],
             &b_verts[2],
-        ) || TriangleTriangleCPU::line_intersection_2d(
+        ) || Self::line_intersection_2d(
             &a_verts[1],
             &a_verts[2],
             &b_verts[0],
             &b_verts[0],
-        ) || TriangleTriangleCPU::line_intersection_2d(
+        ) || Self::line_intersection_2d(
             &a_verts[1],
             &a_verts[2],
             &b_verts[0],
             &b_verts[2],
-        ) || TriangleTriangleCPU::line_intersection_2d(
+        ) || Self::line_intersection_2d(
             &a_verts[1],
             &a_verts[2],
             &b_verts[1],
@@ -451,32 +451,30 @@ impl TriangleTriangleCPU {
             .normalize();
 
         let (b_same_side, b_dist_to_a) =
-            TriangleTriangleCPU::plane_test(&a_verts[0], b_verts, &a_norm);
+            Self::plane_test(&a_verts[0], b_verts, &a_norm);
         let (a_same_side, a_dist_to_b) =
-            TriangleTriangleCPU::plane_test(&b_verts[0], a_verts, &b_norm);
+            Self::plane_test(&b_verts[0], a_verts, &b_norm);
         if !b_same_side && !a_same_side {
-            if TriangleTriangleCPU::is_coplanar(&b_dist_to_a) {
-                return TriangleTriangleCPU::coplanar_test(
-                    a_norm, a_verts, b_verts,
-                );
+            if Self::is_coplanar(&b_dist_to_a) {
+                return Self::coplanar_test(a_norm, a_verts, b_verts);
             }
             let line = a_norm.cross(b_norm).normalize();
-            let idx = TriangleTriangleCPU::abs_max_dim(&line);
+            let idx = Self::abs_max_dim(&line);
             let a_onto_line =
                 vec3(a_verts[0][idx], a_verts[1][idx], a_verts[2][idx]);
             let b_onto_line =
                 vec3(b_verts[0][idx], b_verts[1][idx], b_verts[2][idx]);
-            let a_int = TriangleTriangleCPU::get_interval(
+            let a_int = Self::get_interval(
                 &a_onto_line,
                 &a_dist_to_b,
-                TriangleTriangleCPU::opp_vert(&a_dist_to_b),
+                Self::opp_vert(&a_dist_to_b),
             );
-            let b_int = TriangleTriangleCPU::get_interval(
+            let b_int = Self::get_interval(
                 &b_onto_line,
                 &b_dist_to_a,
-                TriangleTriangleCPU::opp_vert(&b_dist_to_a),
+                Self::opp_vert(&b_dist_to_a),
             );
-            TriangleTriangleCPU::interval_overlap(a_int, b_int)
+            Self::interval_overlap(a_int, b_int)
         } else {
             false
         }
@@ -503,7 +501,7 @@ impl HighPCollision for TriangleTriangleCPU {
                     .into_iter()
                     .map(|x| b_mat.transform_point(x.cast().unwrap()))
                     .collect();
-                if TriangleTriangleCPU::moller_test(&a_verts, &b_verts) {
+                if Self::moller_test(&a_verts, &b_verts) {
                     return Some(Hit::NoData);
                 }
             }

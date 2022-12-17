@@ -47,7 +47,7 @@ pub struct AnimGameObject {
 impl AnimGameObject {
     #[allow(dead_code)]
     pub fn new(model: &model::Model) -> Self {
-        AnimGameObject::from(model, &node::Node::default(), ObjectId::default())
+        Self::from(model, &node::Node::default(), ObjectId::default())
     }
 
     pub fn from(
@@ -84,7 +84,7 @@ impl AnimGameObject {
     /// Indicates the object cannot move
     #[inline]
     #[allow(dead_code)]
-    pub fn immobile(mut self) -> Self {
+    pub const fn immobile(mut self) -> Self {
         self.data.base.body_type = BodyType::Static;
         self
     }
@@ -109,7 +109,7 @@ impl AnimGameObject {
     /// Gets the transform of this object
     #[inline]
     #[allow(dead_code)]
-    pub fn transform(&self) -> &Rc<RefCell<node::Node>> {
+    pub const fn transform(&self) -> &Rc<RefCell<node::Node>> {
         &self.data.base.transform
     }
 

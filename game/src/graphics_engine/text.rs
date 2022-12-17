@@ -167,7 +167,7 @@ impl Font {
     }
 
     /// `path` - path to the `fnt` file which contains the textual metadata
-    pub fn new<F: backend::Facade>(path: &str, f: &F) -> Font {
+    pub fn new<F: backend::Facade>(path: &str, f: &F) -> Self {
         let dir = dir_stem(path);
         let mut file = File::open(path)
             .unwrap_or_else(|_| panic!("Could not open font file: {}", path));
@@ -201,7 +201,7 @@ impl Font {
         }
 
         let sdf = load_texture_2d(&format!("{}/{}", dir, tex_path), f);
-        Font {
+        Self {
             glyphs,
             kernings,
             sdf,
@@ -224,8 +224,8 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new<F: backend::Facade>(font: Rc<Font>, facade: &F) -> Text {
-        Text {
+    pub fn new<F: backend::Facade>(font: Rc<Font>, facade: &F) -> Self {
+        Self {
             vertices: VertexBuffer::new(facade, &RECT_VERTS).unwrap(),
             indicies: IndexBuffer::new(
                 facade,
@@ -258,11 +258,10 @@ impl Text {
             .iter()
             .filter_map(|c| fnt.glyphs.get(c).map(|g| (g, c)))
         {
-            let offset = if let Some(offsets) = fnt.kernings.get(&last_char) {
-                offsets.get(c).copied().unwrap_or(0)
-            } else {
-                0
-            };
+            let offset = fnt
+                .kernings
+                .get(&last_char)
+                .map_or(0, |offsets| offsets.get(c).copied().unwrap_or(0));
             let pt = pos.borrow().transform_pt(point3(
                 f64::from(last_x + offset),
                 0.,
@@ -379,9 +378,9 @@ pub struct Icon {
 }
 
 impl Icon {
-    pub fn new<F: backend::Facade>(tex_path: &str, f: &F) -> Icon {
+    pub fn new<F: backend::Facade>(tex_path: &str, f: &F) -> Self {
         let tex = load_texture_srgb(tex_path, f);
-        Icon {
+        Self {
             vertices: VertexBuffer::new(f, &RECT_VERTS).unwrap(),
             indicies: IndexBuffer::new(
                 f,

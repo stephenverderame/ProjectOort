@@ -73,7 +73,7 @@ macro_rules! assert_no_error {
 impl<T: Copy> Ssbo<T> {
     /// Creates a dynamic shader storage buffer.
     /// Resizing is handled by this wrapper
-    pub fn dynamic(data: Option<&[T]>) -> Ssbo<T> {
+    pub fn dynamic(data: Option<&[T]>) -> Self {
         let mut buffer = 0 as gl::types::GLuint;
         let length = data.map_or(0, <[T]>::len);
         let size_w_padding = [length as u32, 0u32, 0u32, 0u32];
@@ -106,7 +106,7 @@ impl<T: Copy> Ssbo<T> {
                 assert_no_error!();
             }
         }
-        Ssbo {
+        Self {
             buffer,
             buffer_count: Cell::new(length as u32),
             phantom: std::marker::PhantomData,
@@ -118,7 +118,11 @@ impl<T: Copy> Ssbo<T> {
     /// buffer should be a variable sized `T` array
     ///
     /// `data` - optional initial data. If specified, data length must be equal to `buffer_size`
-    fn new_static(buffer_size: usize, data: Option<&[T]>, mode: SSBOMode) -> Ssbo<T> {
+    fn new_static(
+        buffer_size: usize,
+        data: Option<&[T]>,
+        mode: SSBOMode,
+    ) -> Self {
         let mut buffer = 0 as gl::types::GLuint;
         unsafe {
             gl::GenBuffers(1, std::ptr::addr_of_mut!(buffer));
@@ -138,7 +142,7 @@ impl<T: Copy> Ssbo<T> {
             );
             assert_no_error!();
         }
-        Ssbo {
+        Self {
             buffer,
             buffer_count: Cell::new(buffer_size as u32),
             phantom: std::marker::PhantomData,
@@ -147,20 +151,20 @@ impl<T: Copy> Ssbo<T> {
     }
     /// Creates a SSBO that cannot be easily resized
     #[inline]
-    pub fn static_empty(count: u32) -> Ssbo<T> {
-        Ssbo::new_static(count as usize, None, SSBOMode::Static)
+    pub fn static_empty(count: u32) -> Self {
+        Self::new_static(count as usize, None, SSBOMode::Static)
     }
 
     /// Creates a SSBO that cannot be easily resized
     #[inline]
-    pub fn create_static(data: &[T]) -> Ssbo<T> {
-        Ssbo::new_static(data.len(), Some(data), SSBOMode::Static)
+    pub fn create_static(data: &[T]) -> Self {
+        Self::new_static(data.len(), Some(data), SSBOMode::Static)
     }
 
     /// Creates a new SSBO that cannot be resized but whose data can change
     #[inline]
-    pub fn static_alloc_dyn(buffer_size: usize, data: Option<&[T]>) -> Ssbo<T> {
-        Ssbo::new_static(buffer_size, data, SSBOMode::StaticAllocDynamic)
+    pub fn static_alloc_dyn(buffer_size: usize, data: Option<&[T]>) -> Self {
+        Self::new_static(buffer_size, data, SSBOMode::StaticAllocDynamic)
     }
     /// Resizes the buffer to fit `data_size` elements.
     /// Requires to be operating in dynamic mode.
@@ -175,7 +179,8 @@ impl<T: Copy> Ssbo<T> {
         gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
         gl::BufferData(
             gl::SHADER_STORAGE_BUFFER,
-            (16 + std::mem::size_of::<T>() as u32 * self.buffer_count.get()) as isize,
+            (16 + std::mem::size_of::<T>() as u32 * self.buffer_count.get())
+                as isize,
             std::ptr::null::<std::ffi::c_void>(),
             gl::DYNAMIC_COPY,
         );
@@ -266,7 +271,8 @@ impl<T: Copy> Ssbo<T> {
             gl::GetBufferSubData(
                 gl::SHADER_STORAGE_BUFFER,
                 0,
-                (std::mem::size_of::<T>() * self.buffer_count.get() as usize) as isize,
+                (std::mem::size_of::<T>() * self.buffer_count.get() as usize)
+                    as isize,
                 v.as_mut_ptr().cast::<std::ffi::c_void>(),
             );
             assert_no_error!();
@@ -278,7 +284,8 @@ impl<T: Copy> Ssbo<T> {
     pub fn map_read(&self) -> MappedBuffer<T> {
         unsafe {
             gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
-            let buf = gl::MapBuffer(gl::SHADER_STORAGE_BUFFER, gl::READ_ONLY) as *const T;
+            let buf = gl::MapBuffer(gl::SHADER_STORAGE_BUFFER, gl::READ_ONLY)
+                as *const T;
             assert_no_error!();
             if buf.is_null() {
                 assert_no_error!();
@@ -296,7 +303,8 @@ impl<T: Copy> Ssbo<T> {
     pub fn map_write(&self) -> MutMappedBuffer<T> {
         unsafe {
             gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
-            let buf = gl::MapBuffer(gl::SHADER_STORAGE_BUFFER, gl::WRITE_ONLY).cast::<T>();
+            let buf = gl::MapBuffer(gl::SHADER_STORAGE_BUFFER, gl::WRITE_ONLY)
+                .cast::<T>();
             assert_no_error!();
             if buf.is_null() {
                 assert_no_error!();
@@ -336,7 +344,10 @@ impl<T: Copy> MappedBuffer<T> {
     pub fn as_slice<'a, 'b>(&'b self) -> MappedBufferSlice<'a, 'b, T> {
         unsafe {
             MappedBufferSlice {
-                slice: std::slice::from_raw_parts(self.buf.cast::<T>(), self.size as usize),
+                slice: std::slice::from_raw_parts(
+                    self.buf.cast::<T>(),
+                    self.size as usize,
+                ),
                 _owner: self,
             }
         }
@@ -380,7 +391,10 @@ impl<T: Copy> MutMappedBuffer<T> {
     pub fn as_slice<'a, 'b>(&'b self) -> MutMappedBufferSlice<'a, 'b, T> {
         unsafe {
             MutMappedBufferSlice {
-                slice: std::slice::from_raw_parts_mut(self.buf.cast::<T>(), self.size as usize),
+                slice: std::slice::from_raw_parts_mut(
+                    self.buf.cast::<T>(),
+                    self.size as usize,
+                ),
                 _owner: self,
             }
         }
@@ -436,12 +450,12 @@ mod test {
         use glutin::window::WindowBuilder;
         use glutin::ContextBuilder;
         let e_loop = get_event_loop();
-        let window_builder = WindowBuilder::new().with_visible(false).with_inner_size(
-            glium::glutin::dpi::PhysicalSize::<u32> {
+        let window_builder = WindowBuilder::new()
+            .with_visible(false)
+            .with_inner_size(glium::glutin::dpi::PhysicalSize::<u32> {
                 width: 128,
                 height: 128,
-            },
-        );
+            });
         let wnd_ctx = ContextBuilder::new(); //.build_headless(&e_loop, glutin::dpi::PhysicalSize::from((128, 128)));
         let wnd_ctx = Display::new(window_builder, wnd_ctx, &e_loop).unwrap();
         gl::load_with(|s| wnd_ctx.gl_window().get_proc_address(s));

@@ -92,7 +92,9 @@ where
         particle_num,
         facade,
         particle_gen,
-        |particle| Instant::now().duration_since(particle.birth) > particle.lifetime,
+        |particle| {
+            Instant::now().duration_since(particle.birth) > particle.lifetime
+        },
         move |particle, dt| {
             if let Some(step) = particle_step.as_mut() {
                 step(particle, dt);
@@ -106,7 +108,10 @@ where
             let scale = particle.transform.local_scale();
             instancing::BillboardAttributes {
                 instance_color: particle.color.into(),
-                instance_pos_rot: vec4(pos.x, pos.y, pos.z, rot).cast().unwrap().into(),
+                instance_pos_rot: vec4(pos.x, pos.y, pos.z, rot)
+                    .cast()
+                    .unwrap()
+                    .into(),
                 instance_scale: [scale.x as f32, scale.y as f32],
             }
         },
@@ -114,7 +119,8 @@ where
             if !are_lights {
                 return None;
             }
-            let pt = particle.transform.mat().transform_point(point3(0., 0., 0.));
+            let pt =
+                particle.transform.mat().transform_point(point3(0., 0., 0.));
             let c = vec3(particle.color.x, particle.color.y, particle.color.z);
             Some(shader::LightData::point_light(
                 pt.cast().unwrap(),

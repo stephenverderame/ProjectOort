@@ -30,10 +30,13 @@ impl Spring {
     pub fn force(&self) -> Option<(Vector3<f64>, Vector3<f64>)> {
         self.obj_a_ptr.upgrade().and_then(|obj_a_ptr| {
             self.obj_b_ptr.upgrade().map(|obj_b_ptr| {
-                let a_to_b = obj_b_ptr.borrow().transform_point(self.attach_pt_b)
-                    - obj_a_ptr.borrow().transform_point(self.attach_pt_a);
+                let a_to_b =
+                    obj_b_ptr.borrow().transform_point(self.attach_pt_b)
+                        - obj_a_ptr.borrow().transform_point(self.attach_pt_a);
                 let x = a_to_b.magnitude();
-                if self.mode == RestoringMode::String && x <= self.natural_length {
+                if self.mode == RestoringMode::String
+                    && x <= self.natural_length
+                {
                     (vec3(0., 0., 0.), vec3(0., 0., 0.))
                 } else {
                     let kx = self.k * (x - self.natural_length);
@@ -45,16 +48,22 @@ impl Spring {
 }
 
 impl super::Forcer for Spring {
-    fn get_force(&self, body: &super::BaseRigidBody) -> Option<(Point3<f64>, Vector3<f64>)> {
+    fn get_force(
+        &self,
+        body: &super::BaseRigidBody,
+    ) -> Option<(Point3<f64>, Vector3<f64>)> {
         let a_ptr = self.obj_a_ptr.upgrade();
         let b_ptr = self.obj_b_ptr.upgrade();
-        let (force_a, force_b) = self.force().unwrap_or((vec3(0., 0., 0.), vec3(0., 0., 0.)));
+        let (force_a, force_b) =
+            self.force().unwrap_or((vec3(0., 0., 0.), vec3(0., 0., 0.)));
         if a_ptr.is_some() && Rc::ptr_eq(&body.transform, &a_ptr.unwrap()) {
             Some((
                 body.transform.borrow().transform_point(self.attach_pt_a),
                 force_a,
             ))
-        } else if b_ptr.is_some() && Rc::ptr_eq(&body.transform, &b_ptr.unwrap()) {
+        } else if b_ptr.is_some()
+            && Rc::ptr_eq(&body.transform, &b_ptr.unwrap())
+        {
             Some((
                 body.transform.borrow().transform_point(self.attach_pt_b),
                 force_b,
@@ -76,7 +85,10 @@ pub struct Centripetal {
 }
 
 impl super::Forcer for Centripetal {
-    fn get_force(&self, body: &super::BaseRigidBody) -> Option<(Point3<f64>, Vector3<f64>)> {
+    fn get_force(
+        &self,
+        body: &super::BaseRigidBody,
+    ) -> Option<(Point3<f64>, Vector3<f64>)> {
         let a_ptr = self.obj_a_ptr.upgrade();
         let b_ptr = self.obj_b_ptr.upgrade();
         if a_ptr.is_none() || b_ptr.is_none() {
@@ -87,7 +99,8 @@ impl super::Forcer for Centripetal {
         if Rc::ptr_eq(&body.transform, &a) {
             let r = b.borrow().transform_point(self.attach_pt_b)
                 - a.borrow().transform_point(self.attach_pt_a);
-            let force = body.mass * body.velocity.magnitude2() / r.magnitude() * r.normalize();
+            let force = body.mass * body.velocity.magnitude2() / r.magnitude()
+                * r.normalize();
             Some((
                 body.transform.borrow().transform_point(self.attach_pt_a),
                 force,
@@ -95,7 +108,8 @@ impl super::Forcer for Centripetal {
         } else if Rc::ptr_eq(&body.transform, &b) {
             let r = a.borrow().transform_point(self.attach_pt_a)
                 - b.borrow().transform_point(self.attach_pt_b);
-            let force = body.mass * body.velocity.magnitude2() / r.magnitude() * r.normalize();
+            let force = body.mass * body.velocity.magnitude2() / r.magnitude()
+                * r.normalize();
             Some((
                 body.transform.borrow().transform_point(self.attach_pt_b),
                 force,

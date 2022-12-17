@@ -58,7 +58,7 @@ impl ExtractBrightProcessor {
         facade: &F,
         width: u32,
         height: u32,
-    ) -> ExtractBrightProcessor {
+    ) -> Self {
         let bright_color_tex = Box::pin(
             glium::texture::Texture2d::empty_with_format(
                 facade,
@@ -72,7 +72,7 @@ impl ExtractBrightProcessor {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
         unsafe {
             let tex_ptr = std::ptr::addr_of!(*bright_color_tex);
-            ExtractBrightProcessor {
+            Self {
                 bright_color_tex,
                 bright_color_fbo: glium::framebuffer::SimpleFrameBuffer::new(
                     facade, &*tex_ptr,
@@ -139,7 +139,7 @@ impl SepConvProcessor {
         height: u32,
         iterations: usize,
         facade: &F,
-    ) -> SepConvProcessor {
+    ) -> Self {
         use std::mem::MaybeUninit;
         const UNINIT_TEX: MaybeUninit<Pin<Box<texture::Texture2d>>> =
             MaybeUninit::uninit();
@@ -171,7 +171,7 @@ impl SepConvProcessor {
             }
         }
         unsafe {
-            SepConvProcessor {
+            Self {
                 iterations,
                 ping_pong_fbo: std::mem::transmute::<
                     _,
@@ -219,7 +219,7 @@ impl TextureProcessor for SepConvProcessor {
     ) -> Option<TextureType> {
         if let TextureType::Tex2d(source) = source.unwrap()[0] {
             let source = source.to_ref();
-            SepConvProcessor::pass(
+            Self::pass(
                 &mut self.ping_pong_fbo[0],
                 source,
                 &self.vbo,
@@ -230,9 +230,7 @@ impl TextureProcessor for SepConvProcessor {
             for i in 1..self.iterations {
                 let tex = &*self.ping_pong_tex[(i - 1) % 2];
                 let dst = &mut self.ping_pong_fbo[i % 2];
-                SepConvProcessor::pass(
-                    dst, tex, &self.vbo, &self.ebo, i, shader,
-                );
+                Self::pass(dst, tex, &self.vbo, &self.ebo, i, shader);
             }
             Some(TextureType::Tex2d(Ref(
                 &*self.ping_pong_tex[(self.iterations - 1) % 2]
@@ -267,7 +265,7 @@ impl CompositorProcessor {
         height: u32,
         mode: shader::BlendFn,
         facade: &Fac,
-    ) -> CompositorProcessor {
+    ) -> Self {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
         let tex = Box::pin(
             glium::texture::Texture2d::empty_with_format(
@@ -282,7 +280,7 @@ impl CompositorProcessor {
 
         unsafe {
             let tex_ptr = std::ptr::addr_of!(*tex);
-            CompositorProcessor {
+            Self {
                 vbo,
                 ebo,
                 fbo: glium::framebuffer::SimpleFrameBuffer::new(
@@ -396,11 +394,11 @@ impl<
     /// `clean_surface` - callable that accepts the returned surface and performs
     /// any necessary cleanup after drawing is finished
     ///
-    pub fn new(
+    pub const fn new(
         get_surface: GetSHolder,
         clean_surface: CleanSHolder,
-    ) -> BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder> {
-        BlitTextureProcessor {
+    ) -> Self {
+        Self {
             get_surface,
             clean_surface,
         }
@@ -480,8 +478,8 @@ impl CopyTextureProcessor {
         height: u32,
         fmt: Option<texture::UncompressedFloatFormat>,
         mipmap: Option<texture::MipmapsOption>,
-    ) -> CopyTextureProcessor {
-        CopyTextureProcessor {
+    ) -> Self {
+        Self {
             width,
             height,
             tex_format: fmt
@@ -587,9 +585,9 @@ impl GenLutProcessor {
         width: u32,
         height: u32,
         facade: &F,
-    ) -> GenLutProcessor {
+    ) -> Self {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
-        GenLutProcessor {
+        Self {
             vbo,
             ebo,
             width,
@@ -659,11 +657,11 @@ pub struct CullLightProcessor {
 }
 
 impl CullLightProcessor {
-    pub fn new(width: u32, height: u32, tile_size: u32) -> CullLightProcessor {
+    pub fn new(width: u32, height: u32, tile_size: u32) -> Self {
         let max_lights = 1024;
         let work_groups_x = (width + width % tile_size) / tile_size;
         let work_groups_y = (height + height % tile_size) / tile_size;
-        CullLightProcessor {
+        Self {
             work_groups_x,
             work_groups_y,
             visible_light_buffer: ssbo::Ssbo::<i32>::static_empty(
@@ -675,7 +673,7 @@ impl CullLightProcessor {
     }
 
     #[allow(dead_code)]
-    pub fn get_groups_x(&self) -> u32 {
+    pub const fn get_groups_x(&self) -> u32 {
         self.work_groups_x
     }
 }
@@ -716,8 +714,8 @@ impl TextureProcessor for CullLightProcessor {
 pub struct ToCacheProcessor {}
 
 impl ToCacheProcessor {
-    pub fn new() -> ToCacheProcessor {
-        ToCacheProcessor {}
+    pub const fn new() -> Self {
+        Self {}
     }
 
     fn cascade_maps_to_cache<'b>(
@@ -825,7 +823,7 @@ impl TextureProcessor for ToCacheProcessor {
                     }
                 }
                 if is_cascade {
-                    ToCacheProcessor::cascade_maps_to_cache(input, cache);
+                    Self::cascade_maps_to_cache(input, cache);
                     None
                 } else {
                     panic!("Unrecognized cache input")

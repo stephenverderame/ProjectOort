@@ -19,7 +19,7 @@ pub enum Ownership<'a, T> {
 
 impl<'a, T> Ownership<'a, T> {
     /// Gets a reference of the data, regardless of the onwership type
-    pub fn to_ref(&self) -> &T {
+    pub const fn to_ref(&self) -> &T {
         match &self {
             Own(s) => s,
             Ref(s) => s,
@@ -120,15 +120,17 @@ impl Pipeline {
     /// `edges` - a set of edges `(u, (v, idx))` that indicates a directed edge from `u` to `v`. Where
     /// `u` and `v` are indexes of nodes. `idx` is the index of `v`s input list that the output from `u` will
     /// be sent to. Requires that all consecutive inputs are used.
-    pub fn new(starts: Vec<u16>, edges: Vec<(u16, (u16, usize))>) -> Pipeline {
-        Pipeline {
+    pub fn new(starts: Vec<u16>, edges: Vec<(u16, (u16, usize))>) -> Self {
+        Self {
             starts,
-            adj_list: Pipeline::to_adj_list(edges),
+            adj_list: Self::to_adj_list(edges),
         }
     }
 
     /// Creates an adjacency list for the graph defined by the edge set `edges`
-    fn to_adj_list(edges: Vec<(u16, (u16, usize))>) -> HashMap<u16, Vec<(u16, usize)>> {
+    fn to_adj_list(
+        edges: Vec<(u16, (u16, usize))>,
+    ) -> HashMap<u16, Vec<(u16, usize)>> {
         let mut adj_list = HashMap::<u16, Vec<(u16, usize)>>::new();
         for (u, v) in edges {
             match adj_list.get_mut(&u) {
@@ -147,7 +149,12 @@ impl Pipeline {
     /// `order` - the reverse topological order. Results are stored here
     ///
     /// `discovered` - the set of all nodes that have been discovered
-    fn topo_sort(&self, node: u16, order: &mut Vec<u16>, discovered: &mut HashSet<u16>) {
+    fn topo_sort(
+        &self,
+        node: u16,
+        order: &mut Vec<u16>,
+        discovered: &mut HashSet<u16>,
+    ) {
         if let Some(neighbors) = self.adj_list.get(&node) {
             for (ns, _) in neighbors {
                 if discovered.get(ns).is_none() {

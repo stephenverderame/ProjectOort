@@ -15,8 +15,8 @@ pub struct PerspectiveCamera {
 }
 
 impl PerspectiveCamera {
-    pub fn default(aspect: f32) -> PerspectiveCamera {
-        PerspectiveCamera {
+    pub const fn default(aspect: f32) -> Self {
+        Self {
             cam: point3(0., 0., 0.),
             aspect,
             fov_deg: 60.,
@@ -62,7 +62,8 @@ impl PerspectiveCamera {
         center.z = center.z.floor();
         center = lookat_inv.transform_point(center);
 
-        let view = Matrix4::look_at_rh(center + light_dir, center, vec3(0., 1., 0.));
+        let view =
+            Matrix4::look_at_rh(center + light_dir, center, vec3(0., 1., 0.));
         //right-handed system, positive z facing towards the camera (ortho expects positize z facing away)
 
         let z_factor = 6f32; // expand in the z-direction to include objects that might cast a shadow into the map
@@ -156,10 +157,10 @@ impl OrthoCamera {
         pos: cgmath::Point3<f32>,
         target: Option<cgmath::Point3<f32>>,
         up: Option<cgmath::Vector3<f32>>,
-    ) -> OrthoCamera {
+    ) -> Self {
         let x = width / 2.0;
         let y = height / 2.0;
-        OrthoCamera {
+        Self {
             left: -x,
             right: x,
             top: y,
@@ -196,7 +197,7 @@ impl Viewer for OrthoCamera {
 
 impl std::default::Default for OrthoCamera {
     fn default() -> Self {
-        OrthoCamera {
+        Self {
             left: -10.,
             right: 10.,
             near: 0.1,
@@ -212,7 +213,9 @@ impl std::default::Default for OrthoCamera {
 
 /// Gets the world coordinates of a viewer's frustum, and the center point of that frustum
 /// Points are ordered top left, top right, bottom right, bottom left, near plane then far plane
-pub fn get_frustum_world(viewer: &dyn Viewer) -> (Vec<Point3<f32>>, Point3<f32>) {
+pub fn get_frustum_world(
+    viewer: &dyn Viewer,
+) -> (Vec<Point3<f32>>, Point3<f32>) {
     //v_ndc = M_proj * M_view * v_world
     let cube = [
         point3(-1f32, 1., -1.),
@@ -278,8 +281,8 @@ pub struct Camera2D {
 }
 
 impl Camera2D {
-    pub fn new(width: u32, height: u32) -> Camera2D {
-        Camera2D {
+    pub fn new(width: u32, height: u32) -> Self {
+        Self {
             proj: ortho(0f32, width as f32, height as f32, 0., 0., 1.),
         }
     }

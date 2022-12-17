@@ -133,6 +133,6 @@ impl AbstractEntity for ParticleSystem {
         RenderOrder::Last
     }
     fn get_id(&self) -> usize {
-        self as *const ParticleSystem as usize
+        self as *const Self as usize
     }
 }

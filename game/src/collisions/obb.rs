@@ -21,7 +21,7 @@ struct Obb {
 
 impl Obb {
     /// Creates an OBB by applying a world transformation matrix to an AABB
-    fn from_local_aligned(obb: &Aabb, model: Matrix4<f64>) -> Obb {
+    fn from_local_aligned(obb: &Aabb, model: Matrix4<f64>) -> Self {
         let mut pts = [
             obb.center + vec3(obb.extents.x, obb.extents.y, obb.extents.z),
             obb.center + vec3(obb.extents.x, obb.extents.y, -obb.extents.z),
@@ -51,7 +51,7 @@ impl Obb {
         let ez = z.magnitude() / 2.0;
         z = z.normalize();
 
-        Obb {
+        Self {
             center,
             extents: vec3(ex, ey, ez),
             x,
@@ -112,7 +112,11 @@ impl Obb {
     ///
     /// `axis` - either a tuple of an axis to test and `None`, or a tuple of an axis from this OBB, and an axis
     /// from `other`'s OBB whose cross product is the axis to test
-    fn sat_test(&self, other: &Obb, axis: (Vector3<f64>, Option<Vector3<f64>>)) -> bool {
+    fn sat_test(
+        &self,
+        other: &Self,
+        axis: (Vector3<f64>, Option<Vector3<f64>>),
+    ) -> bool {
         let (axis_a, axis_b) = axis;
         let axis = match axis_b {
             None => axis_a,
@@ -121,7 +125,8 @@ impl Obb {
                 if a.magnitude2() < 5. * f64::EPSILON {
                     // axes are parallel, and lie in some plane P
                     // choose a new axis perpendicular to that plane
-                    let n = axis_a.cross(self.center + axis_a - (other.center + axis_b));
+                    let n = axis_a
+                        .cross(self.center + axis_a - (other.center + axis_b));
                     if n.magnitude2() < 5. * f64::EPSILON {
                         return false;
                     }
@@ -137,7 +142,7 @@ impl Obb {
     }
 
     /// Returns true if there is a collision between this obb and `other`
-    fn collision(&self, other: &Obb) -> bool {
+    fn collision(&self, other: &Self) -> bool {
         let axes = [
             (self.x, None),
             (self.y, None),
@@ -168,7 +173,7 @@ impl Aabb {
     /// Computes an AABB from points
     /// `points` - local space point cloud
     /// `model` - world space transformation
-    pub fn from<T: BaseNum>(points: &[Point3<T>]) -> Aabb {
+    pub fn from<T: BaseNum>(points: &[Point3<T>]) -> Self {
         let mut mins = vec3(f64::MAX, f64::MAX, f64::MAX);
         let mut maxs = vec3(f64::MIN, f64::MIN, f64::MIN);
         for pt in points {
@@ -182,8 +187,9 @@ impl Aabb {
             maxs.z = maxs.z.max(pt.z);
         }
         let center = (mins + maxs) / 2.0;
-        let extents = vec3(maxs.x - center.x, maxs.y - center.y, maxs.z - center.z);
-        Aabb {
+        let extents =
+            vec3(maxs.x - center.x, maxs.y - center.y, maxs.z - center.z);
+        Self {
             center: point3(center.x, center.y, center.z),
             extents,
         }
@@ -191,7 +197,7 @@ impl Aabb {
 
     /// Createa a new AABB that encloses `a` and `b`
     #[allow(dead_code)]
-    pub fn combine(a: &Aabb, b: &Aabb) -> Aabb {
+    pub fn combine(a: &Self, b: &Self) -> Self {
         let center = (a.center.to_vec() + b.center.to_vec()) / 2.0;
         let dist = b.center + b.extents - (a.center + a.extents);
         let extents = {
@@ -201,7 +207,7 @@ impl Aabb {
             }
             extents
         };
-        Aabb {
+        Self {
             center: point3(center.x, center.y, center.z),
             extents,
         }
@@ -215,11 +221,13 @@ impl Aabb {
     pub fn collide(
         &self,
         self_transform: &Matrix4<f64>,
-        other: &Aabb,
+        other: &Self,
         other_transform: &Matrix4<f64>,
     ) -> bool {
-        let other =
-            Obb::from_local_aligned(other, self_transform.invert().unwrap() * other_transform);
+        let other = Obb::from_local_aligned(
+            other,
+            self_transform.invert().unwrap() * other_transform,
+        );
         /* Gist of SAT (separating axis theorem): if a line can be drawn between two obb's, they don't collide
          We check each axis of both obb's, then check the 9 combinations of cross products of these axes
          Checking an axis basically entails projecting the points of each obb onto the line, and checking for overlap on that
@@ -262,7 +270,8 @@ mod test {
         let a = Aabb::from(&[point3(1., 1., 1.), point3(-1., -1., -1.)]);
         let b = Aabb::from(&[point3(0.5, 0.5, 0.5), point3(0., 0., 0.)]);
         assert!(a.collide(&ident.mat(), &b, &ident.mat()));
-        let c = Aabb::from(&[point3(100., 100., 100.), point3(102., 102., 102.)]);
+        let c =
+            Aabb::from(&[point3(100., 100., 100.), point3(102., 102., 102.)]);
         assert!(!a.collide(&ident.mat(), &c, &ident.mat()));
         assert!(!b.collide(&ident.mat(), &c, &ident.mat()));
         let g = Aabb::from(&[point3(8., 0., 0.), point3(-2., 6., 6.)]);

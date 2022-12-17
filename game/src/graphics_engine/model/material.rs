@@ -47,7 +47,10 @@ fn get_pbr_data(dir: &str, mat_name: &str) -> Option<BTreeMap<String, String>> {
             let line_iter = std::io::BufReader::new(file).lines();
             for line in line_iter.flatten() {
                 let (key, val) = line.split_at(line.find(':').unwrap());
-                map.insert(key.trim().to_string(), val[1..val.len()].trim().to_string());
+                map.insert(
+                    key.trim().to_string(),
+                    val[1..val.len()].trim().to_string(),
+                );
             }
             Some(map)
         }
@@ -155,7 +158,10 @@ impl Material {
     ) -> Vec<T> {
         let mut path = assimp_sys::AiString::default();
         let tex_num = unsafe {
-            assimp_sys::aiGetMaterialTextureCount(mat as *const assimp_sys::AiMaterial, tex_type)
+            assimp_sys::aiGetMaterialTextureCount(
+                mat as *const assimp_sys::AiMaterial,
+                tex_type,
+            )
         };
         let mut textures = Vec::<T>::new();
         for i in 0..tex_num {
@@ -185,7 +191,10 @@ impl Material {
     }
     /// Gets a material property with the key `property` as an ascii string
     /// Non alphanumeric/punctuation ascii characters are stripped
-    fn get_property(mat: &assimp_sys::AiMaterial, property: &str) -> Option<String> {
+    fn get_property(
+        mat: &assimp_sys::AiMaterial,
+        property: &str,
+    ) -> Option<String> {
         for i in 0..mat.num_properties {
             let prop = unsafe { &**mat.properties.add(i as usize) };
             if prop.key.data[..prop.key.length] == *property.as_bytes() {
@@ -193,10 +202,16 @@ impl Material {
                 let mut res = Vec::<u8>::new();
                 res.resize(len + 1, 0);
                 unsafe {
-                    std::ptr::copy_nonoverlapping(prop.data as *const u8, res.as_mut_ptr(), len);
+                    std::ptr::copy_nonoverlapping(
+                        prop.data as *const u8,
+                        res.as_mut_ptr(),
+                        len,
+                    );
                 }
                 let mut name = String::from_utf8_lossy(&res).into_owned();
-                name.retain(|c| c.is_ascii_alphanumeric() || c.is_ascii_punctuation());
+                name.retain(|c| {
+                    c.is_ascii_alphanumeric() || c.is_ascii_punctuation()
+                });
                 return Some(name);
             }
         }
@@ -209,24 +224,41 @@ impl Material {
         mat: &assimp_sys::AiMaterial,
         dir: &str,
         ctx: &F,
-    ) -> Material {
+    ) -> Self {
         let load_srgb = |path: String| textures::load_texture_srgb(&path, ctx);
         let load_rgb = |path: String| textures::load_texture_2d(&path, ctx);
-        let mut diffuse =
-            Material::get_textures(mat, assimp_sys::AiTextureType::Diffuse, dir, &load_srgb);
-        let mut emissive =
-            Material::get_textures(mat, assimp_sys::AiTextureType::Emissive, dir, &load_srgb);
-        let mut normal =
-            Material::get_textures(mat, assimp_sys::AiTextureType::Normals, dir, &load_rgb);
-        normal.append(&mut Material::get_textures(
+        let mut diffuse = Self::get_textures(
+            mat,
+            assimp_sys::AiTextureType::Diffuse,
+            dir,
+            &load_srgb,
+        );
+        let mut emissive = Self::get_textures(
+            mat,
+            assimp_sys::AiTextureType::Emissive,
+            dir,
+            &load_srgb,
+        );
+        let mut normal = Self::get_textures(
+            mat,
+            assimp_sys::AiTextureType::Normals,
+            dir,
+            &load_rgb,
+        );
+        normal.append(&mut Self::get_textures(
             mat,
             assimp_sys::AiTextureType::Height,
             dir,
             &load_rgb,
         ));
-        let mut ao =
-            Material::get_textures(mat, assimp_sys::AiTextureType::Lightmap, dir, &load_rgb);
-        let name = Material::get_property(mat, "?mat.name").expect("No material name!");
+        let mut ao = Self::get_textures(
+            mat,
+            assimp_sys::AiTextureType::Lightmap,
+            dir,
+            &load_rgb,
+        );
+        let name = Self::get_property(mat, "?mat.name")
+            .expect("No material name!");
         let (pbr, extras) = get_pbr_textures(dir, &name, ctx);
         let pbr = pbr.map(|mut pbr| {
             if pbr.ao_tex.is_none() && !ao.is_empty() {
@@ -242,7 +274,7 @@ impl Material {
             diffuse.push(albedo_tex);
             normal.push(normal_tex);
         }
-        Material {
+        Self {
             diffuse_tex: Some(diffuse.swap_remove(0)),
             name,
             pbr_data: pbr,
@@ -267,8 +299,8 @@ impl Material {
         mat: &tobj::Material,
         dir: &str,
         ctx: &F,
-    ) -> Material {
-        Material {
+    ) -> Self {
+        Self {
             diffuse_tex: if mat.diffuse_texture.is_empty() {
                 None
             } else {
@@ -309,47 +341,52 @@ impl Material {
     ) -> shader::UniformInfo {
         match &self.name[..] {
             "Laser" => shader::UniformInfo::Laser,
-            _ if self.pbr_data.is_some() => shader::UniformInfo::Pbr(shader::PBRData {
-                diffuse_tex: self.diffuse_tex.as_ref().unwrap(),
-                model: model.unwrap_or_else(|| cgmath::Matrix4::from_scale(1f32).into()),
-                roughness_map: self
-                    .pbr_data
-                    .as_ref()
-                    .and_then(|data| match &data.roughness {
-                        TexOrConst::Fac(_) => None,
-                        TexOrConst::Tex(t) => Some(t),
+            _ if self.pbr_data.is_some() => {
+                shader::UniformInfo::Pbr(shader::PBRData {
+                    diffuse_tex: self.diffuse_tex.as_ref().unwrap(),
+                    model: model.unwrap_or_else(|| {
+                        cgmath::Matrix4::from_scale(1f32).into()
                     }),
-                metallic_map: self
-                    .pbr_data
-                    .as_ref()
-                    .and_then(|data| match &data.metalness {
-                        TexOrConst::Fac(_) => None,
-                        TexOrConst::Tex(t) => Some(t),
+                    roughness_map: self.pbr_data.as_ref().and_then(|data| {
+                        match &data.roughness {
+                            TexOrConst::Fac(_) => None,
+                            TexOrConst::Tex(t) => Some(t),
+                        }
                     }),
-                normal_map: self.normal_tex.as_ref(),
-                emission_map: self.emission_tex.as_ref(),
-                ao_map: self.pbr_data.as_ref().and_then(|data| data.ao_tex.as_ref()),
-                instancing,
-                bone_mats: bones,
-                trans_data,
-                emission_strength,
-                roughness_fac: self
-                    .pbr_data
-                    .as_ref()
-                    .map(|data| match &data.roughness {
-                        TexOrConst::Fac(f) => *f,
-                        TexOrConst::Tex(_) => -2.0,
-                    })
-                    .unwrap(),
-                metallic_fac: self
-                    .pbr_data
-                    .as_ref()
-                    .map(|data| match &data.metalness {
-                        TexOrConst::Fac(f) => *f,
-                        TexOrConst::Tex(_) => -2.,
-                    })
-                    .unwrap(),
-            }),
+                    metallic_map: self.pbr_data.as_ref().and_then(|data| {
+                        match &data.metalness {
+                            TexOrConst::Fac(_) => None,
+                            TexOrConst::Tex(t) => Some(t),
+                        }
+                    }),
+                    normal_map: self.normal_tex.as_ref(),
+                    emission_map: self.emission_tex.as_ref(),
+                    ao_map: self
+                        .pbr_data
+                        .as_ref()
+                        .and_then(|data| data.ao_tex.as_ref()),
+                    instancing,
+                    bone_mats: bones,
+                    trans_data,
+                    emission_strength,
+                    roughness_fac: self
+                        .pbr_data
+                        .as_ref()
+                        .map(|data| match &data.roughness {
+                            TexOrConst::Fac(f) => *f,
+                            TexOrConst::Tex(_) => -2.0,
+                        })
+                        .unwrap(),
+                    metallic_fac: self
+                        .pbr_data
+                        .as_ref()
+                        .map(|data| match &data.metalness {
+                            TexOrConst::Fac(f) => *f,
+                            TexOrConst::Tex(_) => -2.,
+                        })
+                        .unwrap(),
+                })
+            }
             x => panic!("Unimplemented texture with name: {}", x),
         }
     }

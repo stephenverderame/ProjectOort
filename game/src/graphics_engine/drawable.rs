@@ -109,7 +109,7 @@ pub struct VertexHolder<'a> {
 }
 
 impl<'a> VertexHolder<'a> {
-    pub fn new(data: VertexSourceData<'a>) -> Self {
+    pub const fn new(data: VertexSourceData<'a>) -> Self {
         VertexHolder {
             iter_count: 0,
             data,
@@ -232,12 +232,15 @@ pub fn render_drawable<S: glium::Surface>(
 ) {
     let v = vec![cgmath::Matrix4::from_scale(1f32).into()];
     for (args, vbo, ebo) in drawable.render_args(matrices.unwrap_or(&v)) {
-        let (shader, params, uniform) = shader.use_shader(&args, Some(scene_data), Some(cache));
+        let (shader, params, uniform) =
+            shader.use_shader(&args, Some(scene_data), Some(cache));
         match uniform {
             shader::UniformType::Laser(uniform) => {
                 surface.draw(vbo, ebo, shader, &uniform, &params)
             }
-            shader::UniformType::Pbr(uniform) => surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::Pbr(uniform) => {
+                surface.draw(vbo, ebo, shader, &uniform, &params)
+            }
             shader::UniformType::Depth(uniform) => {
                 surface.draw(vbo, ebo, shader, &uniform, &params)
             }
@@ -259,7 +262,8 @@ pub fn render_drawable<S: glium::Surface>(
             shader::UniformType::PrefilterHdrEnv(uniform) => {
                 surface.draw(vbo, ebo, shader, &uniform, &params)
             }
-            shader::UniformType::BrdfLut(uniform) => {
+            shader::UniformType::BrdfLut(uniform)
+            | shader::UniformType::Line(uniform) => {
                 surface.draw(vbo, ebo, shader, &uniform, &params)
             }
             shader::UniformType::Billboard(uniform) => {
@@ -268,15 +272,18 @@ pub fn render_drawable<S: glium::Surface>(
             shader::UniformType::Cloud(uniform) => {
                 surface.draw(vbo, ebo, shader, &uniform, &params)
             }
-            shader::UniformType::Line(uniform) => surface.draw(vbo, ebo, shader, &uniform, &params),
-            shader::UniformType::Text(uniform) => surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::Text(uniform) => {
+                surface.draw(vbo, ebo, shader, &uniform, &params)
+            }
             shader::UniformType::Color(uniform) => {
                 surface.draw(vbo, ebo, shader, &uniform, &params)
             }
             shader::UniformType::Minimap(uniform) => {
                 surface.draw(vbo, ebo, shader, &uniform, &params)
             }
-            shader::UniformType::Icon(uniform) => surface.draw(vbo, ebo, shader, &uniform, &params),
+            shader::UniformType::Icon(uniform) => {
+                surface.draw(vbo, ebo, shader, &uniform, &params)
+            }
         }
         .unwrap();
     }

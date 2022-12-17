@@ -193,7 +193,7 @@ impl<M: GameMediator> Game<M> {
     ///
     /// Returns `true` if the simulation should do physical collision
     /// resolution
-    pub fn should_resolve(
+    pub const fn should_resolve(
         a: &RigidBody<object::ObjectData>,
         b: &RigidBody<object::ObjectData>,
         _: &HitData,
@@ -317,7 +317,7 @@ impl<M: GameMediator> Game<M> {
 
 impl<M: GameMediatorLightingAvailable> Game<M> {
     pub fn new(mediator: M, player: player::Player) -> Self {
-        Game {
+        Self {
             mediator: RefCell::new(mediator),
             player: Rc::new(RefCell::new(player)),
             forces: RefCell::default(),

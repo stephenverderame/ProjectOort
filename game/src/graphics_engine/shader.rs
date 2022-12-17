@@ -56,7 +56,7 @@ pub enum RenderPassType {
 }
 
 impl PartialEq for RenderPassType {
-    fn eq(&self, other: &RenderPassType) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         use RenderPassType::*;
         matches!(
             (self, other),
@@ -74,19 +74,23 @@ impl RenderPassType {
     ///
     /// Used to indicate that an object should be drawn on
     /// a reflection of another object
-    pub fn transparent_tag() -> Self {
-        RenderPassType::Transparent(0)
+    pub const fn transparent_tag() -> Self {
+        Self::Transparent(0)
     }
 }
 
 impl ShaderType {
     /// Gets the draw parameters for the shader type and render pass
-    fn get_draw_params(self, _pass: RenderPassType) -> glium::DrawParameters<'static> {
+    fn get_draw_params(
+        self,
+        _pass: RenderPassType,
+    ) -> glium::DrawParameters<'static> {
         use glium::draw_parameters::*;
         use ShaderType::*;
         match self {
-            Pbr | PbrInstancedShader | DepthShader | DepthInstancedShader | Laser | PbrAnim
-            | DepthAnim | ParallelInstancePbr | ParallelLaser | ParallelPbr => {
+            Pbr | PbrInstancedShader | DepthShader | DepthInstancedShader
+            | Laser | PbrAnim | DepthAnim | ParallelInstancePbr
+            | ParallelLaser | ParallelPbr => {
                 glium::DrawParameters {
                     depth: glium::Depth {
                         test: DepthTest::IfLess,
@@ -115,7 +119,8 @@ impl ShaderType {
             },
             Cloud => glium::DrawParameters {
                 blend: glium::Blend::alpha_blending(),
-                backface_culling: glium::BackfaceCullingMode::CullCounterClockwise,
+                backface_culling:
+                    glium::BackfaceCullingMode::CullCounterClockwise,
                 ..Default::default()
             },
             Text => glium::DrawParameters {
@@ -175,7 +180,11 @@ impl LightData {
         }
     }
 
-    pub fn point_light(pos: Point3<f32>, luminance: f32, color: Vector3<f32>) -> Self {
+    pub fn point_light(
+        pos: Point3<f32>,
+        luminance: f32,
+        color: Vector3<f32>,
+    ) -> Self {
         Self {
             _light_start: pos.into(),
             _light_end: pos.into(),
@@ -230,7 +239,7 @@ pub struct TransparencyData {
 
 impl Default for TransparencyData {
     fn default() -> Self {
-        TransparencyData {
+        Self {
             trans_fac: Rc::new(RefCell::new(0.)),
             refraction_idx: 1.,
             object_id: 0,
@@ -306,9 +315,15 @@ pub struct UniformsArray<'s, T: AsUniformValue, R: Uniforms> {
 }
 
 impl<'s, T: AsUniformValue, R: Uniforms> Uniforms for UniformsArray<'s, T, R> {
-    fn visit_values<'a, F: FnMut(&str, UniformValue<'a>)>(&'a self, mut set_uniform: F) {
+    fn visit_values<'a, F: FnMut(&str, UniformValue<'a>)>(
+        &'a self,
+        mut set_uniform: F,
+    ) {
         for (val, idx) in self.vals.iter().zip(0..self.vals.len()) {
-            set_uniform(&format!("{}[{}]", self.name, idx), val.as_uniform_value());
+            set_uniform(
+                &format!("{}[{}]", self.name, idx),
+                val.as_uniform_value(),
+            );
         }
         self.rest.visit_values(set_uniform);
     }
@@ -336,9 +351,13 @@ pub struct UniformsStruct<'s, T: Uniforms, R: Uniforms> {
 }
 
 impl<'s, T: Uniforms, R: Uniforms> Uniforms for UniformsStruct<'s, T, R> {
-    fn visit_values<'a, F: FnMut(&str, UniformValue<'a>)>(&'a self, mut set_uniform: F) {
-        self.data
-            .visit_values(|name, val| set_uniform(&format!("{}.{}", self.name, name), val));
+    fn visit_values<'a, F: FnMut(&str, UniformValue<'a>)>(
+        &'a self,
+        mut set_uniform: F,
+    ) {
+        self.data.visit_values(|name, val| {
+            set_uniform(&format!("{}.{}", self.name, name), val);
+        });
         self.rest.visit_values(set_uniform);
     }
 }
@@ -432,14 +451,24 @@ impl<'a> UniformInfo<'a> {
                 }),
                 Visual,
             ) => ShaderType::PbrInstancedShader,
-            (Pbr(PBRData { instancing: true, .. }), Transparent(_) | LayeredVisual) => ShaderType::ParallelInstancePbr,
+            (
+                Pbr(PBRData {
+                    instancing: true, ..
+                }),
+                Transparent(_) | LayeredVisual,
+            ) => ShaderType::ParallelInstancePbr,
             (
                 Pbr(PBRData {
                     bone_mats: Some(_), ..
                 }),
                 Visual,
             ) => ShaderType::PbrAnim,
-            (Pbr(PBRData { bone_mats: Some(_), .. }), LayeredVisual | Transparent(_)) => ShaderType::ParallelAnimPbr,
+            (
+                Pbr(PBRData {
+                    bone_mats: Some(_), ..
+                }),
+                LayeredVisual | Transparent(_),
+            ) => ShaderType::ParallelAnimPbr,
             (Pbr(_), Visual) => ShaderType::Pbr,
             (Pbr(_), LayeredVisual | Transparent(_)) => ShaderType::ParallelPbr,
             (
@@ -455,8 +484,12 @@ impl<'a> UniformInfo<'a> {
                 Depth,
             ) => ShaderType::DepthAnim,
             (Laser, Visual) => ShaderType::Laser,
-            (Laser, LayeredVisual | Transparent(_)) => ShaderType::ParallelLaser,
-            (Laser, Depth) | (Pbr(_), Depth | TransparentDepth) => ShaderType::DepthShader,
+            (Laser, LayeredVisual | Transparent(_)) => {
+                ShaderType::ParallelLaser
+            }
+            (Laser, Depth) | (Pbr(_), Depth | TransparentDepth) => {
+                ShaderType::DepthShader
+            }
             (CollisionDebug(_), Visual) => ShaderType::CollisionDebug,
             (Cloud(_), Visual) => ShaderType::Cloud,
             (Line, Visual | Transparent(_)) => ShaderType::Line,
@@ -468,7 +501,9 @@ impl<'a> UniformInfo<'a> {
             (EquiRect(_), LayeredVisual | Transparent(_)) => {
                 ShaderType::ParallelEqRect
             }
-            (Skybox(_), LayeredVisual | Transparent(_)) => ShaderType::ParallelSky,
+            (Skybox(_), LayeredVisual | Transparent(_)) => {
+                ShaderType::ParallelSky
+            }
             (Billboard(_, _), Visual) => ShaderType::Billboard,
             (Text(_, _), Visual) => ShaderType::Text,
             (Minimap(_), Visual) => ShaderType::Minimap,
@@ -479,13 +514,18 @@ impl<'a> UniformInfo<'a> {
             (SepConv(_), Visual) => ShaderType::BlurShader,
             (ExtractBright(_), Visual) => ShaderType::BloomShader,
             (PrefilterHdrEnv(_), Visual) => ShaderType::PrefilterHdrShader,
-            (PrefilterHdrEnv(_), LayeredVisual) => ShaderType::ParallelPrefilter,
+            (PrefilterHdrEnv(_), LayeredVisual) => {
+                ShaderType::ParallelPrefilter
+            }
             (GenLut, Visual) => ShaderType::GenLutShader,
 
             // compute shaders
             (LightCull(_), Visual) => ShaderType::CullLightsCompute,
             (TriangleCollisions, Visual) => ShaderType::TriIntersectionCompute,
-            (typ, pass) => panic!("Unknown shader-pass combination ({:?}, {:?})", typ, pass),
+            (typ, pass) => panic!(
+                "Unknown shader-pass combination ({:?}, {:?})",
+                typ, pass
+            ),
         }
     }
 }
@@ -535,8 +575,7 @@ pub enum UniformType<'a> {
     Text(UniformsStorage<'a, Sampler<'a, glium::texture::Texture2d>, UniformsStorage<'a, [f32; 2], UniformsStorage<'a, [[f32; 4]; 4],
         EmptyUniforms>>>),
     Minimap(UniformsArray<'static, Sampler<'a, glium::texture::Texture2d>, EmptyUniforms>),
-    Icon(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>),
-    
+    Icon(UniformsStorage<'a, Sampler<'a, glium::texture::SrgbTexture2d>, UniformsStorage<'a, [[f32; 4]; 4], EmptyUniforms>>), 
 }
 /// Samples a texture with `LinearMipmapLinear` minification, repeat wrapping, and linear magnification
 macro_rules! sample_mip_repeat {
@@ -544,7 +583,9 @@ macro_rules! sample_mip_repeat {
         $tex_name
             .sampled()
             .magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
-            .minify_filter(glium::uniforms::MinifySamplerFilter::LinearMipmapLinear)
+            .minify_filter(
+                glium::uniforms::MinifySamplerFilter::LinearMipmapLinear,
+            )
             .wrap_function(glium::uniforms::SamplerWrapFunction::Repeat)
     };
 }
@@ -582,7 +623,9 @@ macro_rules! sample_mip_clamp {
     ($tex:expr) => {
         $tex.sampled()
             .magnify_filter(glium::uniforms::MagnifySamplerFilter::Linear)
-            .minify_filter(glium::uniforms::MinifySamplerFilter::LinearMipmapLinear)
+            .minify_filter(
+                glium::uniforms::MinifySamplerFilter::LinearMipmapLinear,
+            )
             .wrap_function(glium::uniforms::SamplerWrapFunction::Clamp)
     };
 }
@@ -656,35 +699,73 @@ macro_rules! load_shader_srgb {
 impl ShaderManager {
     /// Initializes the shader manager and loads all shaders
     #[allow(clippy::too_many_lines)]
-    pub fn init<F: glium::backend::Facade>(facade: &F) -> ShaderManager {
+    pub fn init<F: glium::backend::Facade>(facade: &F) -> Self {
         let laser_shader =
-            load_shader_source!(facade, "shaders/laser.vs", "shaders/laser.fs").unwrap();
+            load_shader_source!(facade, "shaders/laser.vs", "shaders/laser.fs")
+                .unwrap();
         let skybox_shader =
-            load_shader_source!(facade, "shaders/sky.vs", "shaders/sky.fs").unwrap();
-        let pbr_shader = load_shader_source!(facade, "shaders/pbr.vs", "shaders/pbr.fs").unwrap();
+            load_shader_source!(facade, "shaders/sky.vs", "shaders/sky.fs")
+                .unwrap();
+        let pbr_shader =
+            load_shader_source!(facade, "shaders/pbr.vs", "shaders/pbr.fs")
+                .unwrap();
         let equirect_shader =
-            load_shader_srgb!(facade, "shaders/sky.vs", "shaders/eqRect.fs").unwrap();
-        let ui_shader = load_shader_source!(facade, "shaders/hdr.vs", "shaders/hdr.fs").unwrap();
+            load_shader_srgb!(facade, "shaders/sky.vs", "shaders/eqRect.fs")
+                .unwrap();
+        let ui_shader =
+            load_shader_source!(facade, "shaders/hdr.vs", "shaders/hdr.fs")
+                .unwrap();
         let bloom_shader =
-            load_shader_source!(facade, "shaders/hdr.vs", "shaders/bloom.fs").unwrap();
-        let blur_shader = load_shader_source!(facade, "shaders/hdr.vs", "shaders/blur.fs").unwrap();
-        let prefilter_shader =
-            load_shader_source!(facade, "shaders/sky.vs", "shaders/prefilterEnv.fs").unwrap();
+            load_shader_source!(facade, "shaders/hdr.vs", "shaders/bloom.fs")
+                .unwrap();
+        let blur_shader =
+            load_shader_source!(facade, "shaders/hdr.vs", "shaders/blur.fs")
+                .unwrap();
+        let prefilter_shader = load_shader_source!(
+            facade,
+            "shaders/sky.vs",
+            "shaders/prefilterEnv.fs"
+        )
+        .unwrap();
         let brdf_lut_shader =
-            load_shader_source!(facade, "shaders/hdr.vs", "shaders/specLut.fs").unwrap();
+            load_shader_source!(facade, "shaders/hdr.vs", "shaders/specLut.fs")
+                .unwrap();
         let depth_shader =
-            load_shader_source!(facade, "shaders/depth.vs", "shaders/depth.fs").unwrap();
-        let depth_instanced =
-            load_shader_source!(facade, "shaders/instanceDepth.vs", "shaders/depth.fs").unwrap();
-        let pbr_instanced =
-            load_shader_source!(facade, "shaders/instancePbr.vs", "shaders/pbr.fs").unwrap();
-        let pbr_anim = load_shader_source!(facade, "shaders/pbrAnim.vs", "shaders/pbr.fs").unwrap();
-        let depth_anim =
-            load_shader_source!(facade, "shaders/depthAnim.vs", "shaders/depth.fs").unwrap();
-        let debug =
-            load_shader_source!(facade, "shaders/depth.vs", "shaders/constantColor.fs").unwrap();
-        let billboard =
-            load_shader_source!(facade, "shaders/billboard.vs", "shaders/billboard.fs").unwrap();
+            load_shader_source!(facade, "shaders/depth.vs", "shaders/depth.fs")
+                .unwrap();
+        let depth_instanced = load_shader_source!(
+            facade,
+            "shaders/instanceDepth.vs",
+            "shaders/depth.fs"
+        )
+        .unwrap();
+        let pbr_instanced = load_shader_source!(
+            facade,
+            "shaders/instancePbr.vs",
+            "shaders/pbr.fs"
+        )
+        .unwrap();
+        let pbr_anim =
+            load_shader_source!(facade, "shaders/pbrAnim.vs", "shaders/pbr.fs")
+                .unwrap();
+        let depth_anim = load_shader_source!(
+            facade,
+            "shaders/depthAnim.vs",
+            "shaders/depth.fs"
+        )
+        .unwrap();
+        let debug = load_shader_source!(
+            facade,
+            "shaders/depth.vs",
+            "shaders/constantColor.fs"
+        )
+        .unwrap();
+        let billboard = load_shader_source!(
+            facade,
+            "shaders/billboard.vs",
+            "shaders/billboard.fs"
+        )
+        .unwrap();
         let parallel_pbr = load_shader_source!(
             facade,
             "shaders/pbr.vs",
@@ -735,15 +816,23 @@ impl ShaderManager {
         )
         .unwrap();
         let cloud_shader =
-            load_shader_source!(facade, "shaders/cloud.vs", "shaders/cloud.fs").unwrap();
+            load_shader_source!(facade, "shaders/cloud.vs", "shaders/cloud.fs")
+                .unwrap();
         let line_shader =
-            load_shader_source!(facade, "shaders/line.vs", "shaders/line.fs").unwrap();
+            load_shader_source!(facade, "shaders/line.vs", "shaders/line.fs")
+                .unwrap();
         let text_shader =
-            load_shader_source!(facade, "shaders/text.vs", "shaders/text.fs").unwrap();
-        let minimap_shader =
-            load_shader_source!(facade, "shaders/minimap.vs", "shaders/minimap.fs").unwrap();
+            load_shader_source!(facade, "shaders/text.vs", "shaders/text.fs")
+                .unwrap();
+        let minimap_shader = load_shader_source!(
+            facade,
+            "shaders/minimap.vs",
+            "shaders/minimap.fs"
+        )
+        .unwrap();
         let icon_shader =
-            load_shader_source!(facade, "shaders/icon.vs", "shaders/icon.fs").unwrap();
+            load_shader_source!(facade, "shaders/icon.vs", "shaders/icon.fs")
+                .unwrap();
         let light_cull = glium::program::ComputeShader::from_source(
             facade,
             include_str!("shaders/lightCull.comp"),
@@ -783,16 +872,20 @@ impl ShaderManager {
         shaders.insert(ShaderType::Text, text_shader);
         shaders.insert(ShaderType::Minimap, minimap_shader);
         shaders.insert(ShaderType::Icon, icon_shader);
-        let mut compute_shaders = HashMap::<ShaderType, glium::program::ComputeShader>::new();
+        let mut compute_shaders =
+            HashMap::<ShaderType, glium::program::ComputeShader>::new();
         compute_shaders.insert(ShaderType::CullLightsCompute, light_cull);
-        compute_shaders.insert(ShaderType::TriIntersectionCompute, triangle_test);
-        ShaderManager {
+        compute_shaders
+            .insert(ShaderType::TriIntersectionCompute, triangle_test);
+        Self {
             shaders,
             compute_shaders,
-            empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0).unwrap(),
+            empty_srgb: glium::texture::SrgbTexture2d::empty(facade, 0, 0)
+                .unwrap(),
             empty_2d: glium::texture::Texture2d::empty(facade, 0, 0).unwrap(),
             empty_cube: glium::texture::Cubemap::empty(facade, 0).unwrap(),
-            empty_depth: glium::texture::DepthTexture2d::empty(facade, 0, 0).unwrap(),
+            empty_depth: glium::texture::DepthTexture2d::empty(facade, 0, 0)
+                .unwrap(),
         }
     }
 
@@ -849,7 +942,7 @@ impl ShaderManager {
                 trans_data,
                 emission_strength,
                 roughness_fac,
-                metallic_fac }), Visual | Transparent(_) | LayeredVisual) 
+                metallic_fac }), Visual | Transparent(_) | LayeredVisual)
             => {
                 let sd = scene_data.unwrap();
                 sd.lights.unwrap().bind(0);
@@ -863,17 +956,17 @@ impl ShaderManager {
                 let trans_data = if pass_tp == Visual { trans_data.unwrap_or(&default) }
                 else { &default };
                 UniformType::Pbr(UniformsArray { name: "cascadeDepthMaps",
-                vals: maps.iter().map(|x| 
-                    sample_nearest_border!(*x)).collect::<Vec<Sampler<'b, glium::texture::DepthTexture2d>>>(), 
+                vals: maps.iter().map(|x|
+                    sample_nearest_border!(*x)).collect::<Vec<Sampler<'b, glium::texture::DepthTexture2d>>>(),
                 rest: UniformsArray { name: "cascadeTransMaps",
                 vals: cache.trans_cascade_maps.as_ref().map_or_else(
-                    || vec![sample_nearest_border!(self.empty_depth)], 
+                    || vec![sample_nearest_border!(self.empty_depth)],
                     |v| {
                         v.iter().map(|(d, _)| sample_nearest_border!(*d))
                         .collect::<Vec<Sampler<'b, glium::texture::DepthTexture2d>>>()}),
                 rest: UniformsArray { name: "cascadeTransFacs",
                 vals: cache.trans_cascade_maps.as_ref().map_or_else(
-                    || vec![sample_nearest_border!(self.empty_2d)], 
+                    || vec![sample_nearest_border!(self.empty_2d)],
                     |v| {
                     v.iter().map(|(_, c)| sample_nearest_border!(*c))
                     .collect::<Vec<Sampler<'b, glium::texture::Texture2d>>>()}),
@@ -881,7 +974,7 @@ impl ShaderManager {
                 data: glium::uniform! {
                     trans_fac: *trans_data.trans_fac.borrow(),
                     refraction_idx: trans_data.refraction_idx,
-                    tex: 
+                    tex:
                         sample_linear_clamp!(cache.obj_cubemaps.get(&trans_data.object_id).unwrap_or(&&self.empty_cube)),
                 },
                 rest: glium::uniform! {
@@ -902,10 +995,9 @@ impl ShaderManager {
                     ao_map: sample_mip_repeat!(ao_map.unwrap_or(&self.empty_2d)),
                     use_ao: ao_map.is_some(),
                     tile_num_x: cache.tiles_x.unwrap() as i32,
-                    CascadeUniform: cache.cascade_ubo.as_ref().unwrap(),                
+                    CascadeUniform: cache.cascade_ubo.as_ref().unwrap(),     
                     view: sd.viewer.view,
                     dir_light_dir: sd.light_pos.unwrap(),
-                
             }}
                     }
                 }})
@@ -939,7 +1031,7 @@ impl ShaderManager {
                 diffuse: sample_linear_clamp!(tex),
             }),
             (PrefilterHdrEnv(PrefilterHdrEnvData {
-                env_map, roughness }), _) 
+                env_map, roughness }), _)
             => UniformType::PrefilterHdrEnv(glium::uniform! {
                 view: scene_data.unwrap().viewer.view,
                 proj: scene_data.unwrap().viewer.proj,
@@ -997,7 +1089,7 @@ impl ShaderManager {
                 model: *model,
                 tex: sample_linear_clamp!(texture),
             }),
-            (data, pass) => 
+            (data, pass) =>
                 panic!("Invalid shader/shader data combination with shader (Args: `{:?}` '{:?}') during pass '{:?}'", data, typ, pass),
         };
         (shader, params, uniform)

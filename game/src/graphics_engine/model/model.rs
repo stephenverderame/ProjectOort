@@ -53,13 +53,17 @@ impl Model {
             meshes.push(Mesh::new(&mesh, bone_map, ctx));
         }
         for n in node.child_iter() {
-            meshes.append(&mut Model::process_node(&n, scene, bone_map, ctx));
+            meshes.append(&mut Self::process_node(&n, scene, bone_map, ctx));
         }
         meshes
     }
 
     /// Use assimp to load all scene materials
-    fn process_mats<F: glium::backend::Facade>(scene: &Scene, dir: &str, ctx: &F) -> Vec<Material> {
+    fn process_mats<F: glium::backend::Facade>(
+        scene: &Scene,
+        dir: &str,
+        ctx: &F,
+    ) -> Vec<Material> {
         scene
             .material_iter()
             .map(|x| Material::new(&*x, dir, ctx))
@@ -68,7 +72,10 @@ impl Model {
 
     /// Assimp is being weird with mtl files. If we load an obj file, use tobj to load
     /// its corresponding material file
-    fn process_obj_mats<F: glium::backend::Facade>(path: &str, ctx: &F) -> Vec<Material> {
+    fn process_obj_mats<F: glium::backend::Facade>(
+        path: &str,
+        ctx: &F,
+    ) -> Vec<Material> {
         let dir = textures::dir_stem(path);
         let (mats, _) = tobj::load_mtl(path.replace(".obj", ".mtl")).unwrap();
         mats.iter()
@@ -126,15 +133,15 @@ impl Model {
                 .unwrap()
         );
         if path.contains(".obj") {
-            Model::process_obj_mats(path, ctx)
+            Self::process_obj_mats(path, ctx)
         } else if std::path::Path::new(&backup_mtl).exists() {
-            Model::process_obj_mats(&backup_mtl, ctx)
+            Self::process_obj_mats(&backup_mtl, ctx)
         } else {
-            Model::process_mats(scene, &textures::dir_stem(path), ctx)
+            Self::process_mats(scene, &textures::dir_stem(path), ctx)
         }
     }
 
-    pub fn new<F: glium::backend::Facade>(path: &str, ctx: &F) -> Model {
+    pub fn new<F: glium::backend::Facade>(path: &str, ctx: &F) -> Self {
         let mut importer = Importer::new();
         importer.join_identical_vertices(true);
         importer.triangulate(true);
@@ -148,9 +155,10 @@ impl Model {
         println!("Loaded model");
         let mut bone_map = HashMap::<String, Bone>::new();
         let root_node = AssimpNode::new(&scene.root_node());
-        let meshes = Model::process_node(&scene.root_node(), &scene, &mut bone_map, ctx);
-        let materials = Model::process_materials(path, &scene, ctx);
-        bone_map = Model::load_missing_bones(&scene, bone_map);
+        let meshes =
+            Self::process_node(&scene.root_node(), &scene, &mut bone_map, ctx);
+        let materials = Self::process_materials(path, &scene, ctx);
+        bone_map = Self::load_missing_bones(&scene, bone_map);
         let bone_buffer = if bone_map.is_empty() {
             None
         } else {
@@ -164,7 +172,7 @@ impl Model {
             &Rc::new(bone_map),
             &Rc::new(root_node),
         );
-        Model {
+        Self {
             meshes,
             materials,
             animator,
@@ -177,7 +185,7 @@ impl Model {
     }
 
     /// Enables model instancing
-    pub fn with_instancing(mut self) -> Self {
+    pub const fn with_instancing(mut self) -> Self {
         self.instancing = true;
         self
     }
@@ -187,7 +195,11 @@ impl Model {
     /// `refraction_idx`
     ///
     /// `object_id` - the unique id for each transparent object
-    pub fn with_transparency(mut self, refraction_idx: f32, object_id: u32) -> Self {
+    pub fn with_transparency(
+        mut self,
+        refraction_idx: f32,
+        object_id: u32,
+    ) -> Self {
         self.transparency = Some(shader::TransparencyData {
             refraction_idx,
             trans_fac: Rc::new(RefCell::new(0.)),
@@ -250,8 +262,10 @@ impl Model {
             {
                 let ctx = super::super::get_active_ctx();
                 let ctx = ctx.ctx.borrow();
-                self.instances
-                    .update_buffer(&instancing::model_mats_to_vertex(positions), &*ctx);
+                self.instances.update_buffer(
+                    &instancing::model_mats_to_vertex(positions),
+                    &*ctx,
+                );
             }
             let data: glium::vertex::VerticesSource<'a> = From::from(
                 self.instances

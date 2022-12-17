@@ -44,7 +44,8 @@ impl Rect3D {
         facade: &F,
     ) -> Self {
         Self {
-            vertices: vertex::VertexBuffer::immutable(facade, &RECT_VERTS).unwrap(),
+            vertices: vertex::VertexBuffer::immutable(facade, &RECT_VERTS)
+                .unwrap(),
             indices: index::IndexBuffer::immutable(
                 facade,
                 index::PrimitiveType::TrianglesList,
@@ -66,10 +67,13 @@ impl Drawable for Rect3D {
         VertexHolder<'a>,
         glium::index::IndicesSource<'a>,
     )> {
-        let info = shader::UniformInfo::Billboard(&self.tex, self.spherical_density);
+        let info =
+            shader::UniformInfo::Billboard(&self.tex, self.spherical_density);
         vec![(
             info,
-            VertexHolder::new(VertexSourceData::Single(From::from(&self.vertices))),
+            VertexHolder::new(VertexSourceData::Single(From::from(
+                &self.vertices,
+            ))),
             From::from(&self.indices),
         )]
     }

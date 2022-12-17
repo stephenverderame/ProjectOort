@@ -21,7 +21,7 @@ pub struct CollisionResolution {
 }
 
 impl CollisionResolution {
-    fn identity() -> Self {
+    const fn identity() -> Self {
         Self {
             vel: vec3(0., 0., 0.),
             rot: vec3(0., 0., 0.),
@@ -150,7 +150,7 @@ impl<T> ForceManipulator<T> {
     /// Creates a new manipulator from multiple forces
     #[allow(unused)]
     pub fn new(forces: Vec<Box<dyn Forcer>>) -> Self {
-        ForceManipulator {
+        Self {
             forces,
             _m: std::marker::PhantomData {},
         }
@@ -159,7 +159,7 @@ impl<T> ForceManipulator<T> {
     /// Creates a new manipulator from a single force
     #[allow(unused)]
     pub fn new_single(force: Box<dyn Forcer>) -> Self {
-        ForceManipulator {
+        Self {
             forces: vec![force],
             _m: std::marker::PhantomData {},
         }
@@ -225,7 +225,7 @@ pub struct Tether<T> {
 }
 
 impl<T> Tether<T> {
-    pub fn new(data: TetherData) -> Self {
+    pub const fn new(data: TetherData) -> Self {
         Self {
             data,
             _m: std::marker::PhantomData {},

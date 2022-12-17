@@ -25,8 +25,8 @@ fn to_v2(v: Vector3D) -> [f32; 2] {
 #[inline]
 fn to_m4(m: assimp_sys::AiMatrix4x4) -> cgmath::Matrix4<f64> {
     cgmath::Matrix4::new(
-        m.a1, m.b1, m.c1, m.d1, m.a2, m.b2, m.c2, m.d2, m.a3, m.b3, m.c3, m.d3, m.a4, m.b4, m.c4,
-        m.d4,
+        m.a1, m.b1, m.c1, m.d1, m.a2, m.b2, m.c2, m.d2, m.a3, m.b3, m.c3, m.d3,
+        m.a4, m.b4, m.c4, m.d4,
     )
     .cast()
     .unwrap()

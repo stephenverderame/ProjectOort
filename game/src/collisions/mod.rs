@@ -13,7 +13,8 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 type MeshIdType = (String, TreeStopCriteria);
-type LoadedMeshMap = HashMap<MeshIdType, Rc<RefCell<collision_mesh::CollisionMesh>>>;
+type LoadedMeshMap =
+    HashMap<MeshIdType, Rc<RefCell<collision_mesh::CollisionMesh>>>;
 
 static mut LOADED_MESHES: Option<LoadedMeshMap> = None;
 
@@ -58,7 +59,7 @@ impl CollisionObject {
         transform: Rc<RefCell<node::Node>>,
         mesh_path: &str,
         bvh_stop: bvh::TreeStopCriteria,
-    ) -> CollisionObject {
+    ) -> Self {
         let mut mmap = get_loaded_meshes();
         if let Some(mesh) = mmap
             .loaded_meshes
@@ -70,14 +71,14 @@ impl CollisionObject {
             let obj = Rc::new(RefCell::new(object::Object::with_mesh(
                 transform, center, radius, mesh,
             )));
-            CollisionObject {
+            Self {
                 obj,
                 mesh: mesh.clone(),
             }
         } else {
-            let mesh = Rc::new(RefCell::new(collision_mesh::CollisionMesh::new(
-                mesh_path, bvh_stop,
-            )));
+            let mesh = Rc::new(RefCell::new(
+                collision_mesh::CollisionMesh::new(mesh_path, bvh_stop),
+            ));
             mmap.loaded_meshes
                 .as_mut()
                 .unwrap()
@@ -86,7 +87,7 @@ impl CollisionObject {
             let obj = Rc::new(RefCell::new(object::Object::with_mesh(
                 transform, center, radius, &mesh,
             )));
-            CollisionObject { obj, mesh }
+            Self { obj, mesh }
         }
     }
 
@@ -102,17 +103,14 @@ impl CollisionObject {
 
     /// Creates a new collision object by copying an existing one
     #[allow(dead_code)]
-    pub fn from(
-        transform: Rc<RefCell<node::Node>>,
-        prototype: &CollisionObject,
-    ) -> CollisionObject {
+    pub fn from(transform: Rc<RefCell<node::Node>>, prototype: &Self) -> Self {
         let obj = Rc::new(RefCell::new(object::Object {
             model: transform,
             local_radius: prototype.obj.borrow().local_radius,
             octree_cell: std::rc::Weak::new(),
             mesh: prototype.obj.borrow().mesh.clone(),
         }));
-        CollisionObject {
+        Self {
             obj,
             mesh: prototype.mesh.clone(),
         }
@@ -123,7 +121,7 @@ impl CollisionObject {
     /// any data is returned
     pub fn collision(
         &self,
-        other: &CollisionObject,
+        other: &Self,
         highp_strategy: &dyn HighPCollision,
     ) -> Option<Hit> {
         self.mesh.borrow().collision(
@@ -146,13 +144,21 @@ impl CollisionObject {
             main.into_iter()
                 .map(|x| {
                     Matrix4::from_translation(x.center.to_vec())
-                        * Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
+                        * Matrix4::from_nonuniform_scale(
+                            x.extents.x,
+                            x.extents.y,
+                            x.extents.z,
+                        )
                 })
                 .collect(),
             leaf.into_iter()
                 .map(|x| {
                     Matrix4::from_translation(x.center.to_vec())
-                        * Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
+                        * Matrix4::from_nonuniform_scale(
+                            x.extents.x,
+                            x.extents.y,
+                            x.extents.z,
+                        )
                 })
                 .collect(),
         )
@@ -163,25 +169,34 @@ impl CollisionObject {
     #[allow(dead_code)]
     pub fn get_colliding_volume_transformations(
         &self,
-        other: &CollisionObject,
+        other: &Self,
     ) -> Vec<cgmath::Matrix4<f64>> {
         use cgmath::*;
         let our_mat = self.obj.borrow().model.borrow().mat();
         let other_mat = other.obj.borrow().model.borrow().mat();
-        let (our, other) =
-            self.mesh
-                .borrow()
-                .get_colliding_volumes(&our_mat, &other.mesh.borrow(), &other_mat);
+        let (our, other) = self.mesh.borrow().get_colliding_volumes(
+            &our_mat,
+            &other.mesh.borrow(),
+            &other_mat,
+        );
         our.into_iter()
             .map(|x| {
                 our_mat
                     * Matrix4::from_translation(x.center.to_vec())
-                    * Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
+                    * Matrix4::from_nonuniform_scale(
+                        x.extents.x,
+                        x.extents.y,
+                        x.extents.z,
+                    )
             })
             .chain(other.into_iter().map(|x| {
                 other_mat
                     * Matrix4::from_translation(x.center.to_vec())
-                    * Matrix4::from_nonuniform_scale(x.extents.x, x.extents.y, x.extents.z)
+                    * Matrix4::from_nonuniform_scale(
+                        x.extents.x,
+                        x.extents.y,
+                        x.extents.z,
+                    )
             }))
             .collect()
     }
@@ -222,7 +237,10 @@ impl CollisionObject {
 
     /// Calls `func` on all vertices of this mesh
     #[inline]
-    pub fn forall_verts<F: FnMut(&bvh::CollisionVertex<f32>)>(&self, mut func: F) {
+    pub fn forall_verts<F: FnMut(&bvh::CollisionVertex<f32>)>(
+        &self,
+        mut func: F,
+    ) {
         self.mesh.borrow().forall_verts(&mut func);
     }
 
@@ -259,8 +277,8 @@ pub struct CollisionTree {
 
 impl CollisionTree {
     #[inline]
-    pub fn new(center: cgmath::Point3<f64>, half_width: f64) -> CollisionTree {
-        CollisionTree {
+    pub fn new(center: cgmath::Point3<f64>, half_width: f64) -> Self {
+        Self {
             tree: Octree::new(center, half_width),
         }
     }

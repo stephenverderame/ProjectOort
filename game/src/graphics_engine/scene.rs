@@ -36,8 +36,8 @@ impl Scene {
     pub fn new(
         pass: pipeline::RenderPass,
         viewer: Rc<RefCell<dyn Viewer>>,
-    ) -> Scene {
-        Scene {
+    ) -> Self {
+        Self {
             ibl_maps: None,
             lights: Some(ssbo::Ssbo::dynamic(None)),
             main_light_dir: None,
@@ -51,8 +51,8 @@ impl Scene {
     pub fn new_no_lights(
         pass: pipeline::RenderPass,
         viewer: Rc<RefCell<dyn Viewer>>,
-    ) -> Scene {
-        Scene {
+    ) -> Self {
+        Self {
             ibl_maps: None,
             lights: None,
             main_light_dir: None,
@@ -64,7 +64,7 @@ impl Scene {
     }
 
     /// Sets the clear color for this scene
-    pub fn bg(mut self, bg_color: (f32, f32, f32, f32)) -> Self {
+    pub const fn bg(mut self, bg_color: (f32, f32, f32, f32)) -> Self {
         self.bg_color = bg_color;
         self
     }
@@ -125,7 +125,7 @@ impl Scene {
                             )
                             .z;
                         let mut fixpoint_depth =
-                            -((cam_z * 10f64.powi(8) + 0.5) as i64);
+                            -(cam_z.mul_add(10f64.powi(8), 0.5) as i64);
                         while map.get(&fixpoint_depth).is_some() {
                             fixpoint_depth -= 1;
                         }

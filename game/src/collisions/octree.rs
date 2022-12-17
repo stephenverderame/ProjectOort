@@ -24,8 +24,8 @@ impl ONode {
     const MAX_OBJS_PER_LEAF: usize = 12;
 
     /// After creation, a self reference must be assigned
-    pub fn new(c: Point3<f64>, h_width: f64) -> ONode {
-        ONode {
+    pub fn new(c: Point3<f64>, h_width: f64) -> Self {
+        Self {
             center: c,
             h_width,
             objects: Vec::new(),
@@ -37,8 +37,8 @@ impl ONode {
     }
 
     /// After creation, a self reference, center, and width must be assigned
-    fn empty() -> ONode {
-        ONode {
+    fn empty() -> Self {
+        Self {
             center: point3(0., 0., 0.),
             h_width: 0.,
             objects: Vec::new(),
@@ -50,10 +50,10 @@ impl ONode {
     }
 
     fn create_children(
-        parent: &Weak<RefCell<ONode>>,
+        parent: &Weak<RefCell<Self>>,
         parent_c: &Point3<f64>,
         parent_h: f64,
-    ) -> [Rc<RefCell<ONode>>; 8] {
+    ) -> [Rc<RefCell<Self>>; 8] {
         let mut res = arr_macro::arr![Rc::new(RefCell::new(ONode::empty())); 8];
         let step = parent_h / 2.0;
         for (child, idx) in res.iter_mut().zip(0u32..8) {
@@ -73,7 +73,7 @@ impl ONode {
     ///
     /// Returns the new object list for the current node
     fn split_into_children(
-        children: &mut [Rc<RefCell<ONode>>; 8],
+        children: &mut [Rc<RefCell<Self>>; 8],
         objects: &mut [Weak<RefCell<Object>>],
         center: &Point3<f64>,
         h_width: f64,
@@ -84,7 +84,7 @@ impl ONode {
             .filter(|x| x.strong_count() > 0)
             .map(|x| x.upgrade().unwrap())
         {
-            match ONode::get_octant_index(center, h_width, &obj) {
+            match Self::get_octant_index(center, h_width, &obj) {
                 Some(idx) => {
                     //println!("{:?} has octant index: {}", obj, idx);
                     children[idx as usize].borrow_mut().insert(&obj);
@@ -104,7 +104,9 @@ impl ONode {
         let o = obj.borrow().center() - center;
         let mut index = 0u8;
         for i in 0..3 {
-            if o[i].abs() < obj.borrow().radius() || o[i].abs() + obj.borrow().radius() > h_width {
+            if o[i].abs() < obj.borrow().radius()
+                || o[i].abs() + obj.borrow().radius() > h_width
+            {
                 return None;
             } else if o[i] > 0. {
                 index |= 1 << i;
@@ -114,24 +116,26 @@ impl ONode {
     }
 
     pub fn insert(&mut self, obj: &Rc<RefCell<Object>>) {
-        if self.children.is_none() && self.objects.len() + 1 < ONode::MAX_OBJS_PER_LEAF {
+        if self.children.is_none()
+            && self.objects.len() + 1 < Self::MAX_OBJS_PER_LEAF
+        {
             obj.borrow_mut().octree_cell = self.self_ref.clone();
             self.objects.push(Rc::downgrade(obj));
             return;
         } else if self.children.is_none() {
-            self.children = Some(ONode::create_children(
+            self.children = Some(Self::create_children(
                 &self.self_ref,
                 &self.center,
                 self.h_width,
             ));
-            self.objects = ONode::split_into_children(
+            self.objects = Self::split_into_children(
                 self.children.as_mut().unwrap(),
                 &mut self.objects,
                 &self.center,
                 self.h_width,
             );
         }
-        match ONode::get_octant_index(&self.center, self.h_width, obj) {
+        match Self::get_octant_index(&self.center, self.h_width, obj) {
             Some(idx) => self.children.as_mut().unwrap()[idx as usize]
                 .borrow_mut()
                 .insert(obj),
@@ -146,7 +150,7 @@ impl ONode {
     ///
     /// `node` - the containing octree cell of `test_obj`
     fn get_subtree_colliders(
-        node: &Rc<RefCell<ONode>>,
+        node: &Rc<RefCell<Self>>,
         test_obj: &Rc<RefCell<Object>>,
     ) -> Vec<Rc<RefCell<Object>>> {
         let mut v = Vec::new();
@@ -164,7 +168,7 @@ impl ONode {
         }
         if let Some(children) = node.borrow().children.as_ref() {
             for c in children {
-                v.append(&mut ONode::get_subtree_colliders(c, test_obj));
+                v.append(&mut Self::get_subtree_colliders(c, test_obj));
             }
         }
         v
@@ -174,14 +178,16 @@ impl ONode {
     ///
     /// `node` - the containing octree cell of `test_obj`
     fn get_parent_colliders(
-        node: &Rc<RefCell<ONode>>,
+        node: &Rc<RefCell<Self>>,
         test_obj: &Rc<RefCell<Object>>,
     ) -> Vec<Rc<RefCell<Object>>> {
         let mut n = node.borrow().parent.clone();
         let mut v = Vec::new();
         while let Some(parent) = n.upgrade() {
             parent.borrow_mut().objects.retain(|x| x.strong_count() > 0);
-            for obj in parent.borrow().objects.iter().map(|x| x.upgrade().unwrap()) {
+            for obj in
+                parent.borrow().objects.iter().map(|x| x.upgrade().unwrap())
+            {
                 if obj.borrow().bounding_sphere_collide(&*test_obj.borrow()) {
                     v.push(obj);
                 }
@@ -194,14 +200,17 @@ impl ONode {
     /// Gets objects that might collide with `obj`
     ///
     /// As the tree is traversed, references to freed objects are removed from object lists
-    pub fn get_possible_colliders(obj: &Rc<RefCell<Object>>) -> Vec<Rc<RefCell<Object>>> {
-        if let Some(cell) = obj.borrow().octree_cell.upgrade() {
-            let mut v = ONode::get_subtree_colliders(&cell, obj);
-            v.append(&mut ONode::get_parent_colliders(&cell, obj));
-            v
-        } else {
-            Vec::new()
-        }
+    pub fn get_possible_colliders(
+        obj: &Rc<RefCell<Object>>,
+    ) -> Vec<Rc<RefCell<Object>>> {
+        obj.borrow()
+            .octree_cell
+            .upgrade()
+            .map_or_else(Vec::new, |cell| {
+                let mut v = Self::get_subtree_colliders(&cell, obj);
+                v.append(&mut Self::get_parent_colliders(&cell, obj));
+                v
+            })
     }
 
     /// Indicates that `obj` has changed and should be re-evaluated for placement in the octree
@@ -209,18 +218,27 @@ impl ONode {
     /// If `obj` no longer fits in the octree, it remains in the root node
     pub fn update(&mut self, obj: &Rc<RefCell<Object>>) {
         if let Some(parent) = self.parent.upgrade() {
-            if ONode::get_octant_index(&parent.borrow().center, parent.borrow().h_width, obj)
-                != Some(self.self_index)
+            if Self::get_octant_index(
+                &parent.borrow().center,
+                parent.borrow().h_width,
+                obj,
+            ) != Some(self.self_index)
             {
-                self.objects
-                    .retain(|o| o.strong_count() > 0 && !Rc::ptr_eq(&o.upgrade().unwrap(), obj));
+                self.objects.retain(|o| {
+                    o.strong_count() > 0
+                        && !Rc::ptr_eq(&o.upgrade().unwrap(), obj)
+                });
                 return parent.borrow_mut().insert(obj);
             }
         }
-        if let Some(child_idx) = ONode::get_octant_index(&self.center, self.h_width, obj) {
+        if let Some(child_idx) =
+            Self::get_octant_index(&self.center, self.h_width, obj)
+        {
             if let Some(children) = self.children.as_mut() {
-                self.objects
-                    .retain(|o| o.strong_count() > 0 && !Rc::ptr_eq(&o.upgrade().unwrap(), obj));
+                self.objects.retain(|o| {
+                    o.strong_count() > 0
+                        && !Rc::ptr_eq(&o.upgrade().unwrap(), obj)
+                });
                 children[child_idx as usize].borrow_mut().insert(obj);
             }
         }
@@ -244,25 +262,27 @@ impl Octree {
 
     /// Creates a new octree centered at `center` with a half width (width of child) as
     /// `half_side_len`
-    pub fn new(center: Point3<f64>, half_side_len: f64) -> Octree {
+    pub fn new(center: Point3<f64>, half_side_len: f64) -> Self {
         let root = Rc::new(RefCell::new(ONode::new(center, half_side_len)));
         root.borrow_mut().self_ref = Rc::downgrade(&root);
-        Octree { root }
+        Self { root }
     }
 
     /// Get's all objects that have overlapping bounding spheres with `obj`
-    pub fn get_colliders(obj: &Rc<RefCell<Object>>) -> Vec<Rc<RefCell<Object>>> {
+    pub fn get_colliders(
+        obj: &Rc<RefCell<Object>>,
+    ) -> Vec<Rc<RefCell<Object>>> {
         ONode::get_possible_colliders(obj)
     }
 
     pub fn remove(obj: &Rc<RefCell<Object>>) {
         if let Some(node) = obj.borrow().octree_cell.upgrade() {
-            node.borrow_mut()
-                .objects
-                .retain(|e| e.strong_count() > 0 && !Rc::ptr_eq(&e.upgrade().unwrap(), obj));
+            node.borrow_mut().objects.retain(|e| {
+                e.strong_count() > 0 && !Rc::ptr_eq(&e.upgrade().unwrap(), obj)
+            });
             if node.borrow().objects.is_empty() {
                 if let Some(parent) = node.borrow().parent.upgrade() {
-                    Octree::maybe_make_leaf(&parent, &node);
+                    Self::maybe_make_leaf(&parent, &node);
                 }
             }
         }
@@ -273,10 +293,14 @@ impl Octree {
     ///
     /// `initiator` - the child of `node` who just became empty and initiated the
     /// leaf check for `node`
-    fn maybe_make_leaf(node: &Rc<RefCell<ONode>>, initiator: &Rc<RefCell<ONode>>) {
+    fn maybe_make_leaf(
+        node: &Rc<RefCell<ONode>>,
+        initiator: &Rc<RefCell<ONode>>,
+    ) {
         for c in node.borrow().children.as_ref().unwrap() {
             if !(Rc::ptr_eq(c, initiator)
-                || c.borrow().objects.is_empty() && c.borrow().children.is_none())
+                || c.borrow().objects.is_empty()
+                    && c.borrow().children.is_none())
             {
                 return;
             }
@@ -312,7 +336,10 @@ mod test {
         )))
     }
 
-    fn random_obj(tree_center: Point3<f64>, tree_width: f64) -> Rc<RefCell<Object>> {
+    fn random_obj(
+        tree_center: Point3<f64>,
+        tree_width: f64,
+    ) -> Rc<RefCell<Object>> {
         use rand::Rng;
         let mut rnd = rand::thread_rng();
         let c = point3(
@@ -407,7 +434,8 @@ mod test {
         for o in &obj {
             let oct = ONode::get_octant_index(&point3(0., 0., 0.), 25., o);
             assert!(o.borrow().octree_cell.ptr_eq(&Rc::downgrade(
-                oct.map_or(&ot.root, |id| &root.children.as_ref().unwrap()[id as usize])
+                oct.map_or(&ot.root, |id| &root.children.as_ref().unwrap()
+                    [id as usize])
             )));
         }
     }
@@ -525,9 +553,11 @@ mod test {
             ONode::get_octant_index(&point3(-5., -5., -5.), 5., &obj),
             Some(7)
         );
-        trans
-            .borrow_mut()
-            .set_rot(From::from(Euler::new(Deg(10f64), Deg(0.), Deg(30f64))));
+        trans.borrow_mut().set_rot(From::from(Euler::new(
+            Deg(10f64),
+            Deg(0.),
+            Deg(30f64),
+        )));
         trans.borrow_mut().set_scale(vec3(10., 3., 1.));
         trans.borrow_mut().set_pos(point3(-20., -20., -20.));
         assert_eq!(
@@ -584,7 +614,10 @@ mod test {
         for o in &objs {
             let colliders: Vec<*const Object> = objs
                 .iter()
-                .filter(|e| !Rc::ptr_eq(o, e) && e.borrow().bounding_sphere_collide(&*o.borrow()))
+                .filter(|e| {
+                    !Rc::ptr_eq(o, e)
+                        && e.borrow().bounding_sphere_collide(&*o.borrow())
+                })
                 .map(|x| x.as_ptr() as *const Object)
                 .collect();
             let tree_colliders: Vec<*const Object> = Octree::get_colliders(o)
@@ -605,7 +638,10 @@ mod test {
         for o in &objs {
             let colliders: Vec<*const Object> = objs
                 .iter()
-                .filter(|e| !Rc::ptr_eq(o, e) && e.borrow().bounding_sphere_collide(&*o.borrow()))
+                .filter(|e| {
+                    !Rc::ptr_eq(o, e)
+                        && e.borrow().bounding_sphere_collide(&*o.borrow())
+                })
                 .map(|x| x.as_ptr() as *const Object)
                 .collect();
             let tree_colliders: Vec<*const Object> = Octree::get_colliders(o)

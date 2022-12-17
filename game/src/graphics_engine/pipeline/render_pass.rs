@@ -24,8 +24,8 @@ impl RenderPass {
         targets: Vec<Box<dyn RenderTarget>>,
         processes: Vec<Box<dyn TextureProcessor>>,
         pipeline: Pipeline,
-    ) -> RenderPass {
-        RenderPass {
+    ) -> Self {
+        Self {
             targets,
             processes,
             topo_order: pipeline.topo_order(),
@@ -48,7 +48,11 @@ impl RenderPass {
     ///
     /// `k` the `(node, parameter index)` pair that will store `v`. So `v` will be the `k.1`th input argument
     /// to `k.0`
-    fn add_to_reg(registers: &mut HashMap<u16, Vec<usize>>, k: (u16, usize), v: usize) {
+    fn add_to_reg(
+        registers: &mut HashMap<u16, Vec<usize>>,
+        k: (u16, usize),
+        v: usize,
+    ) {
         match registers.get_mut(&k.0) {
             Some(vals) => {
                 if vals.len() > k.1 {
@@ -88,7 +92,7 @@ impl RenderPass {
             Some(neighbors) => {
                 neighbors
                     .iter()
-                    .for_each(|v| RenderPass::add_to_reg(registers, *v, val));
+                    .for_each(|v| Self::add_to_reg(registers, *v, val));
                 None
             }
             None => Some(val),
@@ -144,31 +148,43 @@ impl RenderPass {
             let mut stage_out_tex: Option<TextureType> = None;
             if unode < targets_len {
                 let index = unode;
-                let inputs = RenderPass::get_inputs(&registers, &saved_textures, *node);
+                let inputs =
+                    Self::get_inputs(&registers, &saved_textures, *node);
                 let idx_ptr = self.targets.as_mut_ptr();
                 unsafe {
                     let elem = idx_ptr.add(index);
-                    stage_out_tex = (*elem).draw(viewer, inputs, &mut cache, render_func);
+                    stage_out_tex =
+                        (*elem).draw(viewer, inputs, &mut cache, render_func);
                 }
             } else {
                 let index = unode - targets_len;
                 // - targets_len because the first 0 .. targets_len indexes are render targets
-                let process_input = RenderPass::get_inputs(&registers, &saved_textures, *node);
+                let process_input =
+                    Self::get_inputs(&registers, &saved_textures, *node);
                 let idx_ptr = self.processes.as_mut_ptr();
                 let sd = sdata.borrow();
                 unsafe {
                     // need to use pointers because compiler can't know that we're borrowing
                     // different elements of the vector
                     let elem = idx_ptr.add(index);
-                    stage_out_tex = (*elem).process(process_input, shader, &mut cache, Some(&*sd));
+                    stage_out_tex = (*elem).process(
+                        process_input,
+                        shader,
+                        &mut cache,
+                        Some(&*sd),
+                    );
                 }
             }
             if let Some(stage_out_tex) = stage_out_tex {
                 unsafe {
                     (*tex_buf_ptr).push(stage_out_tex);
                 }
-                final_out =
-                    RenderPass::save_stage_out(&mut registers, tex_count, *node, &self.pipeline);
+                final_out = Self::save_stage_out(
+                    &mut registers,
+                    tex_count,
+                    *node,
+                    &self.pipeline,
+                );
                 tex_count += 1;
             }
         }

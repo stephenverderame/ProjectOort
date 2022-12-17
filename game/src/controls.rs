@@ -28,8 +28,8 @@ pub struct PlayerControls {
 }
 
 impl PlayerControls {
-    pub fn new() -> PlayerControls {
-        PlayerControls {
+    pub fn new() -> Self {
+        Self {
             movement: Movement::Stopped,
             mouse_capture: false,
             pitch: 0.,
@@ -62,8 +62,7 @@ impl PlayerControls {
                 .as_secs_f32()
                 / 3.)
                 .min(1.);
-            self.inv_fac = dt * (goal_fac - self.inv_trans_fac_start)
-                + self.inv_trans_fac_start;
+            self.inv_fac = dt.mul_add(goal_fac - self.inv_trans_fac_start, self.inv_trans_fac_start);
         }
         self.inv_fac
     }
@@ -96,7 +95,7 @@ impl PlayerControls {
                     self.visible = !self.visible;
                 }
                 (VirtualKeyCode::Escape, ElementState::Pressed) => {
-                    self.mouse_capture = PlayerControls::change_mouse_mode(
+                    self.mouse_capture = Self::change_mouse_mode(
                         self.mouse_capture,
                         &*ctx.ctx.borrow().gl_window().window(),
                     );

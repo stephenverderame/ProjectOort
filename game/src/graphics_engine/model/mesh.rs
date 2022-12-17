@@ -15,8 +15,12 @@ fn get_vbo_ebo<F: glium::backend::Facade>(
 ) -> (glium::VertexBuffer<Vertex>, glium::IndexBuffer<u32>) {
     (
         glium::VertexBuffer::immutable(ctx, verts).unwrap(),
-        glium::IndexBuffer::immutable(ctx, glium::index::PrimitiveType::TrianglesList, indices)
-            .unwrap(),
+        glium::IndexBuffer::immutable(
+            ctx,
+            glium::index::PrimitiveType::TrianglesList,
+            indices,
+        )
+        .unwrap(),
     )
 }
 
@@ -65,7 +69,8 @@ impl Mesh {
             // Assimp weight_iter is broken
             for i in 0..bone.num_weights as usize {
                 let weight = unsafe { *bone.weights.add(i) };
-                vertex_bone_data[weight.vertex_id as usize].push((bone_id, weight.weight));
+                vertex_bone_data[weight.vertex_id as usize]
+                    .push((bone_id, weight.weight));
             }
         }
         vertex_bone_data
@@ -114,10 +119,11 @@ impl Mesh {
         mesh: &assimp::Mesh,
         bone_map: &mut HashMap<String, Bone>,
         ctx: &F,
-    ) -> Mesh {
+    ) -> Self {
         let mut vertices = Vec::<Vertex>::new();
         let mut indices = Vec::<u32>::new();
-        let bones = Mesh::get_bones(mesh, bone_map, mesh.num_vertices() as usize);
+        let bones =
+            Self::get_bones(mesh, bone_map, mesh.num_vertices() as usize);
         for (vert, norm, tex_coord, tan, bone_weights) in mesh
             .vertex_iter()
             .zip(mesh.normal_iter())
@@ -126,7 +132,8 @@ impl Mesh {
             .zip(bones.iter())
             .map(|((((v, n), t), ta), b)| (v, n, t, ta, b))
         {
-            let (bone_ids, bone_weights) = Mesh::to_bone_weight_arrays(&mut bone_weights.iter());
+            let (bone_ids, bone_weights) =
+                Self::to_bone_weight_arrays(&mut bone_weights.iter());
             vertices.push(Vertex {
                 pos: to_v3(vert).into(),
                 normal: to_v3(norm).into(),
@@ -144,7 +151,7 @@ impl Mesh {
             }
         }
         let (vbo, ebo) = get_vbo_ebo(&vertices, &indices, ctx);
-        Mesh {
+        Self {
             vbo,
             ebo,
             mat_idx: (*mesh).material_index as usize,

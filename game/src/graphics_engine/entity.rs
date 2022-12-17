@@ -139,7 +139,7 @@ impl EntityBuilder {
     }
 
     /// Sets the render order for the entity
-    pub fn render_order(mut self, order: RenderOrder) -> Self {
+    pub const fn render_order(mut self, order: RenderOrder) -> Self {
         self.order = order;
         self
     }

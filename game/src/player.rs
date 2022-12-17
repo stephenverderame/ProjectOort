@@ -48,7 +48,7 @@ impl Player {
         view_aspect: f32,
         c_str: &str,
         id: object::ObjectId,
-    ) -> Player {
+    ) -> Self {
         let root_node = Rc::new(RefCell::new(
             Node::default().pos(point3(100., 100., 100.)),
         ));
@@ -56,7 +56,7 @@ impl Player {
         cam.set_parent(root_node.clone());
         let mut model = model.with_transparency(0.99, 0);
         let inv_fac = model.trans_fac();
-        Player {
+        Self {
             cam,
             aspect: view_aspect,
             em_fac: model.emissive_strength.clone(),
@@ -127,7 +127,7 @@ impl Player {
 
     #[inline]
     #[allow(unused)]
-    pub fn node(&self) -> &Rc<RefCell<Node>> {
+    pub const fn node(&self) -> &Rc<RefCell<Node>> {
         &self.body.base.transform
     }
 
@@ -171,7 +171,7 @@ impl Player {
 
     /// Gets the ship transform/player root node
     #[inline]
-    pub fn root(&self) -> &Rc<RefCell<Node>> {
+    pub const fn root(&self) -> &Rc<RefCell<Node>> {
         &self.body.base.transform
     }
 
@@ -181,12 +181,12 @@ impl Player {
     }
 
     #[inline]
-    pub fn energy(&self) -> f64 {
+    pub const fn energy(&self) -> f64 {
         self.energy
     }
 
     #[inline]
-    pub fn shield(&self) -> f64 {
+    pub const fn shield(&self) -> f64 {
         self.shield
     }
 

@@ -19,7 +19,10 @@ pub struct Particle {
 }
 
 impl Particle {
-    pub fn new(emitter_location: Point3<f64>, particle_transform: Node) -> Self {
+    pub fn new(
+        emitter_location: Point3<f64>,
+        particle_transform: Node,
+    ) -> Self {
         Self {
             birth: std::time::Instant::now(),
             transform: particle_transform,
@@ -32,26 +35,26 @@ impl Particle {
     }
 
     #[inline]
-    pub fn vel(mut self, vel: Vector3<f64>) -> Self {
+    pub const fn vel(mut self, vel: Vector3<f64>) -> Self {
         self.vel = vel;
         self
     }
 
     #[allow(dead_code)]
     #[inline]
-    pub fn rot_vel(mut self, rot_vel: Quaternion<f64>) -> Self {
+    pub const fn rot_vel(mut self, rot_vel: Quaternion<f64>) -> Self {
         self.rot_vel = rot_vel;
         self
     }
 
     #[inline]
-    pub fn lifetime(mut self, life: std::time::Duration) -> Self {
+    pub const fn lifetime(mut self, life: std::time::Duration) -> Self {
         self.lifetime = life;
         self
     }
 
     #[inline]
-    pub fn color(mut self, color: Vector4<f32>) -> Self {
+    pub const fn color(mut self, color: Vector4<f32>) -> Self {
         self.color = color;
         self
     }
@@ -146,7 +149,9 @@ where
 
     /// If `particles.len() < num_partices`, generates new particles
     fn replenish_particles(&mut self) {
-        if self.emitter_end.is_none() || Instant::now() < self.emitter_end.unwrap() {
+        if self.emitter_end.is_none()
+            || Instant::now() < self.emitter_end.unwrap()
+        {
             for _ in 0..self.num_particles as usize - self.particles.len() {
                 self.particles.push_back((self.gen_particle)(&self.pos));
             }

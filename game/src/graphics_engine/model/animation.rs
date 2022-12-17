@@ -25,7 +25,7 @@ struct BoneAnim {
 
 impl BoneAnim {
     /// `id` - the id of the given Bone this represents
-    fn new(anim: &scene::NodeAnim) -> BoneAnim {
+    fn new(anim: &scene::NodeAnim) -> Self {
         let mut positions = Vec::<(Vector3<f64>, f64)>::new();
         let mut scales = Vec::<(Vector3<f64>, f64)>::new();
         let mut rotations = Vec::<(Quaternion<f64>, f64)>::new();
@@ -39,9 +39,14 @@ impl BoneAnim {
         for rot_idx in 0..(*anim).num_rotation_keys {
             let key = anim.get_rotation_key(rot_idx as usize).unwrap();
             rotations.push((
-                Quaternion::new(key.value.w, key.value.x, key.value.y, key.value.z)
-                    .cast()
-                    .unwrap(),
+                Quaternion::new(
+                    key.value.w,
+                    key.value.x,
+                    key.value.y,
+                    key.value.z,
+                )
+                .cast()
+                .unwrap(),
                 key.time,
             ));
         }
@@ -52,7 +57,7 @@ impl BoneAnim {
                 key.time,
             ));
         }
-        BoneAnim {
+        Self {
             positions,
             rotations,
             scales, //id,
@@ -74,8 +79,14 @@ impl BoneAnim {
     ) -> (T, T, f64, usize) {
         for idx in last_idx..vec.len() - 1 {
             if anim_time < vec[idx + 1].1 {
-                let lerp_fac = (anim_time - vec[idx].1) / (vec[idx + 1].1 - vec[idx].1);
-                return (vec[idx].0.clone(), vec[idx + 1].0.clone(), lerp_fac, idx);
+                let lerp_fac =
+                    (anim_time - vec[idx].1) / (vec[idx + 1].1 - vec[idx].1);
+                return (
+                    vec[idx].0.clone(),
+                    vec[idx + 1].0.clone(),
+                    lerp_fac,
+                    idx,
+                );
             }
         }
         panic!("Animation out of bounds!")
@@ -93,11 +104,13 @@ impl BoneAnim {
         if keyframes.len() == 1 {
             return keyframes[0].0.clone();
         }
-        if anim_ticks < keyframes[*last_idx].1 || *last_idx == keyframes.len() - 1 {
+        if anim_ticks < keyframes[*last_idx].1
+            || *last_idx == keyframes.len() - 1
+        {
             *last_idx = 0;
         }
         let (last, next, lerp_fac, new_last) =
-            BoneAnim::get_last_next_lerp(keyframes, anim_ticks, *last_idx);
+            Self::get_last_next_lerp(keyframes, anim_ticks, *last_idx);
         *last_idx = new_last;
         Lerp::lerp(last, next, lerp_fac)
     }
@@ -106,7 +119,7 @@ impl BoneAnim {
     /// `self.last_pos`, looping if necessary
     #[inline]
     fn get_cur_pos(&self, anim_ticks: f64) -> Vector3<f64> {
-        BoneAnim::get_cur(
+        Self::get_cur(
             anim_ticks,
             &self.positions,
             &mut *self.last_pos.borrow_mut(),
@@ -117,14 +130,18 @@ impl BoneAnim {
     /// `self.last_scale`, looping if necessary
     #[inline]
     fn get_cur_scale(&self, anim_ticks: f64) -> Vector3<f64> {
-        BoneAnim::get_cur(anim_ticks, &self.scales, &mut *self.last_scale.borrow_mut())
+        Self::get_cur(
+            anim_ticks,
+            &self.scales,
+            &mut *self.last_scale.borrow_mut(),
+        )
     }
 
     /// Interpolates to get current rotation for `anim_ticks`. Updates
     /// `self.last_rot`, looping if necessary
     #[inline]
     fn get_cur_rot(&self, anim_ticks: f64) -> Quaternion<f64> {
-        BoneAnim::get_cur(
+        Self::get_cur(
             anim_ticks,
             &self.rotations,
             &mut *self.last_rot.borrow_mut(),
@@ -151,11 +168,11 @@ pub struct AssimpNode {
 
 impl AssimpNode {
     /// Creates a new scene heirarchy tree from a scene graph node and all its descendants
-    pub fn new(node: &assimp::Node) -> AssimpNode {
-        AssimpNode {
+    pub fn new(node: &assimp::Node) -> Self {
+        Self {
             name: node.name().to_owned(),
             transformation: to_m4(*node.transformation()),
-            children: node.child_iter().map(|c| AssimpNode::new(&c)).collect(),
+            children: node.child_iter().map(|c| Self::new(&c)).collect(),
         }
     }
 }
@@ -177,15 +194,18 @@ impl Animation {
         anim: &assimp::Animation,
         root_node: Rc<AssimpNode>,
         bone_map: Rc<HashMap<String, Bone>>,
-    ) -> Animation {
+    ) -> Self {
         let mut used_bones = HashMap::<String, BoneAnim>::new();
         println!("New animation named: `{}`", anim.name.as_ref());
         for i in 0..anim.num_channels as usize {
             let node = anim.get_node_anim(i).unwrap();
             //let bone_info = bone_map.get((*node).node_name.as_ref()).unwrap();
-            used_bones.insert((*node).node_name.as_ref().to_owned(), BoneAnim::new(&node));
+            used_bones.insert(
+                (*node).node_name.as_ref().to_owned(),
+                BoneAnim::new(&node),
+            );
         }
-        Animation {
+        Self {
             root_inverse: root_node.transformation.invert().unwrap(),
             ticks_per_sec: if anim.ticks_per_second == 0. {
                 25.
@@ -212,7 +232,12 @@ impl Animation {
         let mut final_mats = Vec::<Matrix4<f32>>::new();
         final_mats.resize(self.bone_map.len(), Matrix4::from_scale(1.));
         let identity = Matrix4::from_scale(1f64);
-        self.get_bone_transforms(ticks, &self.root_node, &identity, &mut final_mats);
+        self.get_bone_transforms(
+            ticks,
+            &self.root_node,
+            &identity,
+            &mut final_mats,
+        );
         final_mats
     }
 
@@ -239,16 +264,22 @@ impl Animation {
 
         match self.bone_map.get(&ai_node.name) {
             Some(bone_info) => {
-                out_bone_matrices[bone_info.id as usize] =
-                    (self.root_inverse * to_world_space * bone_info.offset_matrix)
-                        .cast()
-                        .unwrap();
+                out_bone_matrices[bone_info.id as usize] = (self.root_inverse
+                    * to_world_space
+                    * bone_info.offset_matrix)
+                    .cast()
+                    .unwrap();
             }
             None => (),
         }
 
         for child in ai_node.children.iter().map(|c| &*c) {
-            self.get_bone_transforms(anim_time, child, &to_world_space, out_bone_matrices);
+            self.get_bone_transforms(
+                anim_time,
+                child,
+                &to_world_space,
+                out_bone_matrices,
+            );
         }
     }
 
@@ -273,11 +304,11 @@ impl Animator {
         anims: assimp::scene::AnimationIter,
         bone_map: &Rc<HashMap<String, Bone>>,
         root_node: &Rc<AssimpNode>,
-    ) -> Animator {
+    ) -> Self {
         let total_anims: Vec<Animation> = anims
             .map(|x| Animation::new(&x, root_node.clone(), bone_map.clone()))
             .collect();
-        Animator {
+        Self {
             cur_anim: None,
             animations: total_anims,
             anim_start: std::time::Instant::now(),
@@ -287,11 +318,17 @@ impl Animator {
 
     /// Plays the current animation, if any, and gets the bone matrices
     /// If no animations is playing, returns `None`
-    pub fn animate(&self, frame_time: std::time::Instant) -> Option<Vec<[[f32; 4]; 4]>> {
+    pub fn animate(
+        &self,
+        frame_time: std::time::Instant,
+    ) -> Option<Vec<[[f32; 4]; 4]>> {
         match self.cur_anim {
             Some(cur_anim) => {
-                let anim_sec = frame_time.duration_since(self.anim_start).as_secs_f64();
-                if self.play_loop || !self.animations[cur_anim].is_finished(anim_sec) {
+                let anim_sec =
+                    frame_time.duration_since(self.anim_start).as_secs_f64();
+                if self.play_loop
+                    || !self.animations[cur_anim].is_finished(anim_sec)
+                {
                     Some(
                         self.animations[cur_anim]
                             .play(anim_sec)
@@ -311,7 +348,8 @@ impl Animator {
     /// Will interrupt itself if it is already playing and any other animation currently being played
     #[allow(dead_code)]
     pub fn start(&mut self, anim_name: &str, do_loop: bool) {
-        for (anim, idx) in self.animations.iter().zip(0..self.animations.len()) {
+        for (anim, idx) in self.animations.iter().zip(0..self.animations.len())
+        {
             if anim.name == anim_name {
                 self.play_loop = do_loop;
                 self.cur_anim = Some(idx);
