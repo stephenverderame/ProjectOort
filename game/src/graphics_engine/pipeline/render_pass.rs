@@ -5,7 +5,7 @@ use glium::*;
 use shader::PipelineCache;
 use std::collections::HashMap;
 
-/// A RenderPass is a render target followed by a series of texture transformations.
+/// A `RenderPass` is a render target followed by a series of texture transformations.
 /// A renderpass is rendered to and produces a texture result
 pub struct RenderPass {
     targets: Vec<Box<dyn RenderTarget>>,
@@ -16,7 +16,7 @@ pub struct RenderPass {
 }
 
 impl RenderPass {
-    /// Creates a new RenderPass
+    /// Creates a new `RenderPass`
     ///
     /// The first `[0, targets.len())` ids refer to render targets. Then the next `[targets.len(), processes.len())` ids refer
     /// to processes. Therefore, the pipeline must contain nodes from `0` to `targets.len() + processes.len()` with the upper bound being exclusive
@@ -58,7 +58,7 @@ impl RenderPass {
                     while vals.len() < k.1 {
                         vals.push(!1_usize);
                     }
-                    vals.push(v)
+                    vals.push(v);
                 }
             }
             None => {
@@ -116,7 +116,7 @@ impl RenderPass {
         &mut self,
         viewer: &dyn Viewer,
         shader: &shader::ShaderManager,
-        sdata: std::rc::Rc<std::cell::RefCell<shader::SceneData>>,
+        sdata: &std::rc::Rc<std::cell::RefCell<shader::SceneData>>,
         render_func: &mut dyn FnMut(
             &mut framebuffer::SimpleFrameBuffer,
             &dyn Viewer,
@@ -132,7 +132,7 @@ impl RenderPass {
         let targets_len = self.targets.len();
         let mut cache = PipelineCache::default();
         let mut tex_count: usize = 0;
-        let tex_buf_ptr = &mut saved_textures as *mut Vec<TextureType>;
+        let tex_buf_ptr = std::ptr::addr_of_mut!(saved_textures);
         for node in &self.topo_order {
             if let Some(pred) = &self.active_func {
                 if !pred(*node) {

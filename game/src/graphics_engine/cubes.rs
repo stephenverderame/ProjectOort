@@ -197,12 +197,12 @@ pub fn gen_cubemap_from_sphere<F: glium::backend::Facade>(
     let cbo = gen_sky_pass.run_pass(
         &cam,
         shader_manager,
-        sd.clone(),
+        &sd,
         &mut |fbo, viewer, _, cache, _, _| {
             {
                 sd.borrow_mut().viewer = viewer_data_from(viewer);
             }
-            drawable::render_drawable(&mut sky, None, fbo, &*sd.borrow(), cache, shader_manager)
+            drawable::render_drawable(&mut sky, None, fbo, &*sd.borrow(), cache, shader_manager);
         },
     );
     if let TextureType::TexCube(pipeline::Ownership::Own(x)) = cbo.unwrap() {
@@ -249,7 +249,7 @@ impl Drawable for DebugCube {
                 args,
                 VertexHolder::new(VertexSourceData::Single(From::from(&self.vbo))),
                 From::from(&self.ebo),
-            ))
+            ));
         }
         v
     }

@@ -24,21 +24,24 @@ std::thread_local! {
 }
 
 /// Sets the thread local active window context and shader
-fn set_active_ctx(ctx: Rc<RefCell<glium::Display>>, shader: Rc<shader::ShaderManager>) {
+fn set_active_ctx(
+    ctx: Rc<RefCell<glium::Display>>,
+    shader: Rc<shader::ShaderManager>,
+) {
     ACTIVE_CTX.with(|v| v.set(Some(ctx)));
-    ACTIVE_MANAGER.with(|v| v.set(Some(shader)))
+    ACTIVE_MANAGER.with(|v| v.set(Some(shader)));
 }
 
 /// If `ctx` is the active context, removes it and the active shader manager
 /// to allow them to be destroyed
 /// Requires the active context is not in use
-fn remove_ctx_if_active(ctx: Rc<RefCell<glium::Display>>) {
+fn remove_ctx_if_active(ctx: &Rc<RefCell<glium::Display>>) {
     ACTIVE_CTX.with(|v| {
         let active_ctx = v.take().expect("Active ctx in use");
-        if Rc::ptr_eq(&active_ctx, &ctx) {
+        if Rc::ptr_eq(&active_ctx, ctx) {
             ACTIVE_MANAGER.with(|m| m.set(None));
         } else {
-            v.set(Some(active_ctx))
+            v.set(Some(active_ctx));
         }
     });
 }
@@ -71,13 +74,16 @@ impl Drop for ActiveCtx {
         ACTIVE_MANAGER.with(|v| v.set(Some(self.shader.clone())));
     }
 }
-/// Gets the thread_local active context
+/// Gets the `thread_local` active context
 /// Panics if the active context has already been borrowed
 pub fn get_active_ctx() -> ActiveCtx {
     ActiveCtx {
-        ctx: ACTIVE_CTX.with(|v| v.take().expect("Active context not set or already in use")),
-        shader: ACTIVE_MANAGER
-            .with(|v| v.take().expect("Active manager not set or already in use")),
+        ctx: ACTIVE_CTX.with(|v| {
+            v.take().expect("Active context not set or already in use")
+        }),
+        shader: ACTIVE_MANAGER.with(|v| {
+            v.take().expect("Active manager not set or already in use")
+        }),
     }
 }
 /// RAII for the draw frame of the shared active context
@@ -90,7 +96,7 @@ pub struct MutCtx {
 
 impl MutCtx {
     pub fn finish(self) {
-        self.frame.finish().unwrap()
+        self.frame.finish().unwrap();
     }
 }
 

@@ -141,12 +141,12 @@ struct BVHNode<T: BaseFloat> {
 }
 
 impl<T: BaseFloat> BVHNode<T> {
-    /// Creates a new internal BVHNode with bounding volume `volume`
+    /// Creates a new internal `BVHNode` with bounding volume `volume`
     ///
     /// It's children will be given triangles divided based on being less than or greater than `volume`'s center
     /// along the `split` axis. `split` of `0` indicates the `x` coordinates are being divided, whereas `split` of `2`
     /// are the `z` coordinates.
-    #[inline(always)]
+    #[inline]
     fn with_split(
         triangles: Vec<Triangle<T>>,
         split: usize,
@@ -158,9 +158,9 @@ impl<T: BaseFloat> BVHNode<T> {
         let mut right = Vec::<Triangle<T>>::new();
         for tri in triangles {
             if tri.centroid()[split] < volume.center[split] {
-                left.push(tri)
+                left.push(tri);
             } else {
-                right.push(tri)
+                right.push(tri);
             }
         }
         if left.is_empty() || right.is_empty() {
@@ -188,27 +188,27 @@ impl<T: BaseFloat> BVHNode<T> {
         stop: TreeStopCriteria,
     ) -> BVHNode<T> {
         let volume = aobb_from_triangles(&triangles);
-        if !stop.should_stop(triangles.len(), recursion_depth) {
-            let split = largest_extent_index(&volume);
-            BVHNode::with_split(triangles, split, volume, recursion_depth, stop)
-        } else {
+        if stop.should_stop(triangles.len(), recursion_depth) {
             BVHNode {
                 left: None,
                 right: None,
                 volume,
                 triangles: Some(triangles),
             }
+        } else {
+            let split = largest_extent_index(&volume);
+            BVHNode::with_split(triangles, split, volume, recursion_depth, stop)
         }
     }
 
-    #[inline(always)]
+    #[inline]
     fn is_leaf(&self) -> bool {
         self.triangles.is_some()
     }
 
     /// Returns `true` if we should descend this BVH heirarchy, otherwise `false` to indicate
     /// we should descend `other` during a collision query
-    #[inline(always)]
+    #[inline]
     fn should_descend<F: BaseFloat>(&self, other: &BVHNode<F>) -> bool {
         !self.is_leaf() && (self.volume.vol() > other.volume.vol() || other.is_leaf())
     }
@@ -287,8 +287,8 @@ impl<T: BaseFloat> BVHNode<T> {
     #[allow(dead_code)]
     fn get_leaf_boxes(&self, boxes: &mut Vec<Aabb>) {
         if self.is_leaf() {
-            boxes.push(self.volume.clone())
-        };
+            boxes.push(self.volume.clone());
+        }
         if let Some(l) = &self.left {
             l.get_leaf_boxes(boxes);
         }
@@ -330,7 +330,7 @@ struct SelfRef<T: BaseFloat> {
 }
 
 pub struct OBBTree<T: BaseFloat> {
-    _vertices: Pin<Box<SelfRef<T>>>,
+    vertices: Pin<Box<SelfRef<T>>>,
     root: BVHNode<T>,
 }
 
@@ -344,10 +344,10 @@ impl<T: BaseFloat> OBBTree<T> {
             vertices,
             _m: PhantomPinned,
         });
-        let ptr = &vertices.as_ref().vertices as *const Vec<CollisionVertex<T>>;
+        let ptr = std::ptr::addr_of!(vertices.as_ref().vertices);
         let triangles = unsafe { Triangle::array_from(indices, &*ptr) };
         OBBTree {
-            _vertices: vertices,
+            vertices,
             root: BVHNode::new(triangles, 0, stop),
         }
     }
@@ -392,8 +392,8 @@ impl<T: BaseFloat> OBBTree<T> {
 
     /// Iterates over all the vertices of this bvh
     pub fn forall_verts<F: FnMut(&CollisionVertex<T>)>(&self, func: &mut F) {
-        for v in &self._vertices.as_ref().vertices {
-            func(v)
+        for v in &self.vertices.as_ref().vertices {
+            func(v);
         }
     }
 }

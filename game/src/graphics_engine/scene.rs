@@ -33,7 +33,10 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn new(pass: pipeline::RenderPass, viewer: Rc<RefCell<dyn Viewer>>) -> Scene {
+    pub fn new(
+        pass: pipeline::RenderPass,
+        viewer: Rc<RefCell<dyn Viewer>>,
+    ) -> Scene {
         Scene {
             ibl_maps: None,
             lights: Some(ssbo::Ssbo::dynamic(None)),
@@ -45,7 +48,10 @@ impl Scene {
         }
     }
 
-    pub fn new_no_lights(pass: pipeline::RenderPass, viewer: Rc<RefCell<dyn Viewer>>) -> Scene {
+    pub fn new_no_lights(
+        pass: pipeline::RenderPass,
+        viewer: Rc<RefCell<dyn Viewer>>,
+    ) -> Scene {
         Scene {
             ibl_maps: None,
             lights: None,
@@ -75,13 +81,13 @@ impl Scene {
             ibl_maps: ibl_maps.as_ref(),
             lights: lights.as_ref(),
             pass_type: pass,
-            light_pos: light_dir.map(|x| x.into()),
+            light_pos: light_dir.map(std::convert::Into::into),
         }
     }
 
     fn render_transparency(
         entities: &[Rc<RefCell<dyn AbstractEntity>>],
-        obj: *const entity::Entity,
+        obj: usize,
         viewer: &dyn Viewer,
         scene_data: &shader::SceneData,
         cache: &shader::PipelineCache,
@@ -96,7 +102,7 @@ impl Scene {
         let mut lasts = Vec::new();
         let view_mat = viewer.view_mat().into_transform();
         for entity in entities {
-            if entity.as_ptr() as *const entity::Entity != obj
+            if entity.borrow().get_id() != obj
                 && entity
                     .borrow()
                     .should_render(shader::RenderPassType::Transparent(obj))
@@ -107,19 +113,19 @@ impl Scene {
                     RenderOrder::Unordered => {
                         let cam_z = view_mat
                             .transform_point(
-                                entity
-                                    .borrow()
-                                    .transformations()
-                                    .map(|trans| {
+                                entity.borrow().transformations().map_or(
+                                    point3(0., 0., 0.),
+                                    |trans| {
                                         trans[0]
                                             .borrow()
                                             .as_transform()
                                             .transform_point(point3(0., 0., 0.))
-                                    })
-                                    .unwrap_or(point3(0., 0., 0.)),
+                                    },
+                                ),
                             )
                             .z;
-                        let mut fixpoint_depth = -((cam_z * 10f64.powi(8) + 0.5) as i64);
+                        let mut fixpoint_depth =
+                            -((cam_z * 10f64.powi(8) + 0.5) as i64);
                         while map.get(&fixpoint_depth).is_some() {
                             fixpoint_depth -= 1;
                         }
@@ -137,7 +143,7 @@ impl Scene {
             .chain(lasts.into_iter())
         {
             let mut entity = entity.borrow_mut();
-            entity::render_entity(&mut *entity, fbo, scene_data, cache, shader)
+            entity::render_entity(&mut *entity, fbo, scene_data, cache, shader);
         }
     }
 
@@ -152,13 +158,21 @@ impl Scene {
     ) {
         match pass {
             shader::RenderPassType::Transparent(ptr) => {
-                Self::render_transparency(entities, ptr, viewer, scene_data, cache, fbo, shader)
+                Self::render_transparency(
+                    entities, ptr, viewer, scene_data, cache, fbo, shader,
+                );
             }
             typ => {
                 for entity in entities {
                     if entity.borrow().should_render(typ) {
                         let mut entity = entity.borrow_mut();
-                        entity::render_entity(&mut *entity, fbo, scene_data, cache, shader);
+                        entity::render_entity(
+                            &mut *entity,
+                            fbo,
+                            scene_data,
+                            cache,
+                            shader,
+                        );
                     }
                 }
             }
@@ -173,15 +187,18 @@ impl Scene {
         self.main_light_dir = Some(dir_light);
     }
 
-    pub fn set_entities(&mut self, entities: Vec<Rc<RefCell<dyn AbstractEntity>>>) {
-        self.entities = entities;
+    pub fn set_entities(
+        &mut self,
+        entities: Vec<Rc<RefCell<dyn AbstractEntity>>>,
+    ) {
         use entity::RenderOrder as RO;
         use std::cmp::Ordering;
+        self.entities = entities;
         self.entities.sort_by(|a, b| {
             match (a.borrow().render_order(), b.borrow().render_order()) {
-                (RO::First, RO::First) | (RO::Last, RO::Last) | (RO::Unordered, RO::Unordered) => {
-                    Ordering::Equal
-                }
+                (RO::First, RO::First)
+                | (RO::Last, RO::Last)
+                | (RO::Unordered, RO::Unordered) => Ordering::Equal,
                 (RO::First, _) | (_, RO::Last) => Ordering::Less,
                 (RO::Last, _) | (_, RO::First) => Ordering::Greater,
             }
@@ -206,12 +223,17 @@ pub fn gen_ibl_from_hdr<F: glium::backend::Facade>(
 ) -> shader::PbrMaps {
     use super::{camera, drawable};
     use pipeline::*;
-    let cbo = cubes::gen_cubemap_from_sphere(hdr_path, 1024, shader_manager, facade);
+    let cbo =
+        cubes::gen_cubemap_from_sphere(hdr_path, 1024, shader_manager, facade);
     let cam = camera::PerspectiveCamera::default(1.);
     let mip_levels = 5;
     let pos_func = || cgmath::point3(0., 0., 0.);
-    let mut rt =
-        render_target::MipCubemapRenderTarget::new(128, mip_levels, 10., Box::new(pos_func));
+    let mut rt = render_target::MipCubemapRenderTarget::new(
+        128,
+        mip_levels,
+        10.,
+        Box::new(pos_func),
+    );
     let iterations = Cell::new(0);
     let mut cache = shader::PipelineCache::default();
     let res = rt.draw(
@@ -221,10 +243,19 @@ pub fn gen_ibl_from_hdr<F: glium::backend::Facade>(
         &mut |fbo, viewer, _, cache, _, _| {
             let its = iterations.get();
             let mip_level = its;
-            bg_skybox.set_mip_progress(Some(mip_level as f32 / (mip_levels - 1) as f32));
+            bg_skybox.set_mip_progress(Some(
+                mip_level as f32 / (mip_levels - 1) as f32,
+            ));
             let mut sd = drawable::default_scene_data(viewer);
             sd.pass_type = shader::RenderPassType::LayeredVisual;
-            drawable::render_drawable(bg_skybox, None, fbo, &sd, cache, shader_manager);
+            drawable::render_drawable(
+                bg_skybox,
+                None,
+                fbo,
+                &sd,
+                cache,
+                shader_manager,
+            );
             iterations.set(its + 1);
         },
     );
@@ -264,7 +295,7 @@ impl AbstractScene for Scene {
         let res = self.pass.as_mut().unwrap().run_pass(
             &*viewer,
             shader,
-            sd.clone(),
+            &sd,
             &mut |fbo, viewer, typ, cache, _, _| {
                 fbo.clear_color_and_depth(clear_color, 1.);
                 {
@@ -273,7 +304,15 @@ impl AbstractScene for Scene {
                     sdm.pass_type = typ;
                 }
                 let scene_data = sd.borrow();
-                Self::render_entities(entities, viewer, &*scene_data, typ, cache, fbo, shader);
+                Self::render_entities(
+                    entities,
+                    viewer,
+                    &*scene_data,
+                    typ,
+                    cache,
+                    fbo,
+                    shader,
+                );
             },
         );
         res
@@ -281,9 +320,9 @@ impl AbstractScene for Scene {
 
     fn set_lights(&mut self, lights: &[shader::LightData]) {
         if let Some(this_lights) = self.lights.as_mut() {
-            this_lights.update(lights)
+            this_lights.update(lights);
         } else {
-            self.lights = Some(ssbo::Ssbo::dynamic(Some(lights)))
+            self.lights = Some(ssbo::Ssbo::dynamic(Some(lights)));
         }
     }
 }
@@ -334,7 +373,12 @@ pub fn compositor_scene_new<F: backend::Facade>(
     let cur_height = *height.borrow();
     CompositorScene {
         scenes,
-        compositor: CompositorProcessor::new(cur_width, cur_height, BlendFn::Overlay, fac),
+        compositor: CompositorProcessor::new(
+            cur_width,
+            cur_height,
+            BlendFn::Overlay,
+            fac,
+        ),
         blitter: BlitTextureProcessor::new(
             move || {
                 let mut surface = super::get_active_ctx().into_surface();
@@ -352,7 +396,7 @@ pub fn compositor_scene_new<F: backend::Facade>(
             },
             |disp| {
                 assert_eq!(unsafe { gl::GetError() }, gl::NO_ERROR);
-                disp.finish()
+                disp.finish();
             },
         ),
         viewer,
@@ -377,10 +421,12 @@ impl<
         for (scene, transform) in &mut self.scenes {
             match (scene.render(inputs, shader), transform) {
                 (Some(comp), None) => new_inputs.push(comp),
-                (Some(comp), Some(mat)) => new_inputs.push(TextureType::WithArg(
-                    Box::new(comp),
-                    StageArgs::Compositor((*mat).into()),
-                )),
+                (Some(comp), Some(mat)) => {
+                    new_inputs.push(TextureType::WithArg(
+                        Box::new(comp),
+                        StageArgs::Compositor((*mat).into()),
+                    ));
+                }
                 _ => (),
             }
         }
@@ -397,12 +443,14 @@ impl<
             .iter()
             .chain(new_inputs.iter())
             .collect();
-        if let Some(tex @ pipeline::TextureType::Tex2d(_)) = self.compositor.process(
-            Some(final_inputs),
-            shader,
-            &mut PipelineCache::default(),
-            Some(&sd),
-        ) {
+        if let Some(tex @ pipeline::TextureType::Tex2d(_)) =
+            self.compositor.process(
+                Some(final_inputs),
+                shader,
+                &mut PipelineCache::default(),
+                Some(&sd),
+            )
+        {
             self.blitter.process(
                 Some(vec![&tex]),
                 shader,
@@ -410,7 +458,7 @@ impl<
                 Some(&sd),
             );
         } else {
-            panic!("Invalid return from compositor in compositor scene")
+            panic!("Invalid return from compositor in compositor scene");
         }
 
         None

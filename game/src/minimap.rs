@@ -59,12 +59,22 @@ impl Minimap {
             center,
             view_dist,
             textures: [
-                textures::load_texture_2d("assets/particles/circle_05.png", facade),
-                textures::load_texture_2d("assets/particles/trace_02.png", facade),
-                textures::load_texture_2d("assets/particles/star_07.png", facade),
+                textures::load_texture_2d(
+                    "assets/particles/circle_05.png",
+                    facade,
+                ),
+                textures::load_texture_2d(
+                    "assets/particles/trace_02.png",
+                    facade,
+                ),
+                textures::load_texture_2d(
+                    "assets/particles/star_07.png",
+                    facade,
+                ),
             ],
             blips: Vec::new(),
-            vertices: glium::VertexBuffer::immutable(facade, &RECT_VERTS).unwrap(),
+            vertices: glium::VertexBuffer::immutable(facade, &RECT_VERTS)
+                .unwrap(),
             indicies: glium::IndexBuffer::immutable(
                 facade,
                 glium::index::PrimitiveType::TrianglesList,
@@ -91,13 +101,14 @@ impl Minimap {
             _ => return,
         };
         let center_inv = self.center.borrow().mat().invert().unwrap();
-        let minimap_pos = center_inv.transform_point(body.base.center()) / self.view_dist;
+        let minimap_pos =
+            center_inv.transform_point(body.base.center()) / self.view_dist;
         let pos: [f64; 3] = minimap_pos.into();
         self.blips.push(MinimapBlip {
             color,
             tex_index,
             pos: node::Node::default().pos(pos.into()).u_scale(scale),
-        })
+        });
     }
 
     /// Removes all items on the minimap
@@ -121,11 +132,10 @@ impl Drawable for Minimap {
         VertexHolder<'a>,
         glium::index::IndicesSource<'a>,
     )> {
+        use glium::*;
         if self.blips.is_empty() {
             return Vec::new();
         };
-
-        use glium::*;
         let attribs: Vec<_> = self
             .blips
             .iter()
@@ -167,9 +177,11 @@ impl Drawable for Minimap {
                 .per_instance()
                 .unwrap(),
         );
-        let v = VertexHolder::new(VertexSourceData::Single(From::from(&self.vertices)))
-            .append(inst_attribs)
-            .append(inst_pos);
+        let v = VertexHolder::new(VertexSourceData::Single(From::from(
+            &self.vertices,
+        )))
+        .append(inst_attribs)
+        .append(inst_pos);
         vec![(uniform, v, From::from(&self.indicies))]
     }
 
@@ -193,5 +205,9 @@ impl entity::AbstractEntity for Minimap {
 
     fn render_order(&self) -> entity::RenderOrder {
         entity::RenderOrder::Unordered
+    }
+
+    fn get_id(&self) -> usize {
+        self as *const _ as usize
     }
 }

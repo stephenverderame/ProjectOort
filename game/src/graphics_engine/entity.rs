@@ -31,6 +31,9 @@ pub trait AbstractEntity {
     fn should_render(&self, pass: shader::RenderPassType) -> bool;
 
     fn render_order(&self) -> RenderOrder;
+
+    /// Gets the id of the entity
+    fn get_id(&self) -> usize;
 }
 
 /// An entity with any drawable
@@ -57,10 +60,10 @@ impl std::ops::DerefMut for Entity {
 
 impl AbstractEntity for Entity {
     fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]> {
-        if !self.locations.is_empty() {
-            Some(&self.locations)
-        } else {
+        if self.locations.is_empty() {
             None
+        } else {
+            Some(&self.locations)
         }
     }
     fn drawable(&mut self) -> &mut dyn Drawable {
@@ -73,13 +76,11 @@ impl AbstractEntity for Entity {
                 shader::RenderPassType::Depth => self
                     .geometry
                     .transparency()
-                    .map(|x| x <= f32::EPSILON)
-                    .unwrap_or(true),
+                    .map_or(true, |x| x <= f32::EPSILON),
                 shader::RenderPassType::TransparentDepth => self
                     .geometry
                     .transparency()
-                    .map(|x| x > f32::EPSILON)
-                    .unwrap_or(false),
+                    .map_or(false, |x| x > f32::EPSILON),
                 _ => base_bool,
             }
         } else {
@@ -88,6 +89,10 @@ impl AbstractEntity for Entity {
     }
     fn render_order(&self) -> RenderOrder {
         self.order
+    }
+
+    fn get_id(&self) -> usize {
+        self as *const _ as usize
     }
 }
 
@@ -117,7 +122,10 @@ impl EntityBuilder {
     }
 
     /// Adds all locations to the entity
-    pub fn at_all<T: Transformation + Clone + 'static>(mut self, locs: &[T]) -> Self {
+    pub fn at_all<T: Transformation + Clone + 'static>(
+        mut self,
+        locs: &[T],
+    ) -> Self {
         for pos in locs {
             self.locations.push(Rc::new(RefCell::new(pos.clone())));
         }
@@ -157,10 +165,10 @@ pub struct ModelEntity {
 
 impl AbstractEntity for ModelEntity {
     fn transformations(&self) -> Option<&[Rc<RefCell<dyn Transformation>>]> {
-        if !self.locations.is_empty() {
-            Some(&self.locations)
-        } else {
+        if self.locations.is_empty() {
             None
+        } else {
+            Some(&self.locations)
         }
     }
     fn drawable(&mut self) -> &mut dyn Drawable {
@@ -173,21 +181,24 @@ impl AbstractEntity for ModelEntity {
                 shader::RenderPassType::Depth => self
                     .geometry
                     .transparency()
-                    .map(|x| x <= f32::EPSILON)
-                    .unwrap_or(true),
+                    .map_or(true, |x| x <= f32::EPSILON),
                 shader::RenderPassType::TransparentDepth => self
                     .geometry
                     .transparency()
-                    .map(|x| x > f32::EPSILON)
-                    .unwrap_or(false),
+                    .map_or(false, |x| x > f32::EPSILON),
                 _ => base_bool,
             }
         } else {
             base_bool
         }
     }
+
     fn render_order(&self) -> RenderOrder {
         self.order
+    }
+
+    fn get_id(&self) -> usize {
+        self as *const _ as usize
     }
 }
 
@@ -199,15 +210,13 @@ pub fn render_entity<S: glium::Surface>(
     cache: &shader::PipelineCache,
     shader: &shader::ShaderManager,
 ) {
-    let matrices: Vec<[[f32; 4]; 4]> = entity
-        .transformations()
-        .map(|entities| {
+    let matrices: Vec<[[f32; 4]; 4]> =
+        entity.transformations().map_or_else(Vec::new, |entities| {
             entities
                 .iter()
                 .map(|x| x.borrow().as_transform().cast().unwrap().into())
                 .collect()
-        })
-        .unwrap_or_else(Vec::new);
+        });
     super::drawable::render_drawable(
         entity.drawable(),
         Some(&matrices),
@@ -215,5 +224,5 @@ pub fn render_entity<S: glium::Surface>(
         scene_data,
         cache,
         shader,
-    )
+    );
 }

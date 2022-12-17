@@ -71,8 +71,8 @@ fn hit_from_colliders(
         avg_point /= colliders_a.len() as f64;
         avg_norm /= colliders_a.len() as f64;
         let norm_trans = Matrix3::new(
-            model.x.x, model.x.y, model.x.z, model.y.x, model.y.y, model.y.z, model.z.x, model.z.y,
-            model.z.z,
+            model.x.x, model.x.y, model.x.z, model.y.x, model.y.y, model.y.z,
+            model.z.x, model.z.y, model.z.z,
         );
         (
             model.transform_point(avg_point),
@@ -104,7 +104,9 @@ impl<'a> TriangleTriangleGPU<'a> {
     const WORK_GROUP_SIZE: u32 = 8;
 
     #[allow(dead_code)]
-    pub fn new(shader_manager: &'a shader::ShaderManager) -> TriangleTriangleGPU<'a> {
+    pub fn new(
+        shader_manager: &'a shader::ShaderManager,
+    ) -> TriangleTriangleGPU<'a> {
         TriangleTriangleGPU {
             shader_manager: Some(shader_manager),
         }
@@ -166,14 +168,17 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
         let input_a = ssbo::Ssbo::create_static(&a_in_triangles);
         let input_b = ssbo::Ssbo::create_static(&b_in_triangles);
 
-        let work_groups_x = ((a_len + a_len % TriangleTriangleGPU::WORK_GROUP_SIZE)
+        let work_groups_x = ((a_len
+            + a_len % TriangleTriangleGPU::WORK_GROUP_SIZE)
             / TriangleTriangleGPU::WORK_GROUP_SIZE)
             .max(1);
-        let work_groups_y = ((b_len + b_len % TriangleTriangleGPU::WORK_GROUP_SIZE)
+        let work_groups_y = ((b_len
+            + b_len % TriangleTriangleGPU::WORK_GROUP_SIZE)
             / TriangleTriangleGPU::WORK_GROUP_SIZE)
             .max(1);
 
-        let output: ssbo::Ssbo<[u32; 4]> = ssbo::Ssbo::static_empty(a_len + b_len);
+        let output: ssbo::Ssbo<[u32; 4]> =
+            ssbo::Ssbo::static_empty(a_len + b_len);
         output.zero_bytes();
 
         input_a.bind(5);
@@ -185,7 +190,7 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
                 work_groups_x,
                 work_groups_y,
                 1,
-                shader::UniformInfo::TriangleCollisions,
+                &shader::UniformInfo::TriangleCollisions,
                 None,
             );
         } else {
@@ -193,7 +198,7 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
                 work_groups_x,
                 work_groups_y,
                 1,
-                shader::UniformInfo::TriangleCollisions,
+                &shader::UniformInfo::TriangleCollisions,
                 None,
             );
         }
@@ -216,7 +221,9 @@ impl<'a> HighPCollision for TriangleTriangleGPU<'a> {
 
         let mut a_colliders = Vec::new();
         let mut b_colliders = Vec::new();
-        for (e, idx) in output.map_read().as_slice().iter().zip(0..a_len + b_len) {
+        for (e, idx) in
+            output.map_read().as_slice().iter().zip(0..a_len + b_len)
+        {
             //println!("Output got {:?}", e);
             if e[0] > 0 {
                 if idx < a_len {
@@ -252,7 +259,8 @@ impl TriangleTriangleCPU {
         vert_idx: usize,
     ) -> f64 {
         verts_on_l[vert_idx]
-            + (verts_on_l[opposite_idx] - verts_on_l[vert_idx]) * dist_to_plane[vert_idx]
+            + (verts_on_l[opposite_idx] - verts_on_l[vert_idx])
+                * dist_to_plane[vert_idx]
                 / (dist_to_plane[vert_idx] - dist_to_plane[opposite_idx])
     }
 
@@ -262,8 +270,18 @@ impl TriangleTriangleCPU {
         vert_indices: (usize, usize, usize),
     ) -> (f64, f64) {
         (
-            TriangleTriangleCPU::get_t(project_on_l, signed_dists, vert_indices.0, vert_indices.1),
-            TriangleTriangleCPU::get_t(project_on_l, signed_dists, vert_indices.0, vert_indices.2),
+            TriangleTriangleCPU::get_t(
+                project_on_l,
+                signed_dists,
+                vert_indices.0,
+                vert_indices.1,
+            ),
+            TriangleTriangleCPU::get_t(
+                project_on_l,
+                signed_dists,
+                vert_indices.0,
+                vert_indices.2,
+            ),
         )
     }
 
@@ -319,8 +337,11 @@ impl TriangleTriangleCPU {
                 norm_a.dot(b_verts[1].to_vec()),
                 norm_a.dot(b_verts[2].to_vec()),
             );
-        let all_same_side = signed_dists.x < 0. && signed_dists.y < 0. && signed_dists.z < 0.
-            || signed_dists.x > 0. && signed_dists.y > 0. && signed_dists.z > 0.;
+        let all_same_side =
+            signed_dists.x < 0. && signed_dists.y < 0. && signed_dists.z < 0.
+                || signed_dists.x > 0.
+                    && signed_dists.y > 0.
+                    && signed_dists.z > 0.;
         (all_same_side, signed_dists)
     }
 
@@ -338,7 +359,8 @@ impl TriangleTriangleCPU {
     ) -> bool {
         let a = end_a - start_a;
         let b = end_b - start_b;
-        let cross_2d = |a: &Vector2<f64>, b: &Vector2<f64>| a.x * b.y - a.y * b.x;
+        let cross_2d =
+            |a: &Vector2<f64>, b: &Vector2<f64>| a.x * b.y - a.y * b.x;
 
         let rs = cross_2d(&a, &b);
         let qpr = cross_2d(&(start_b - start_a), &a);
@@ -367,8 +389,10 @@ impl TriangleTriangleCPU {
         let axis = TriangleTriangleCPU::abs_max_dim(&plane_norm);
         let x = (axis + 1) % 3;
         let y = (axis + 2) % 3;
-        let a_verts: Vec<Point2<f64>> = a_verts.iter().map(|p| point2(p[x], p[y])).collect();
-        let b_verts: Vec<Point2<f64>> = b_verts.iter().map(|p| point2(p[x], p[y])).collect();
+        let a_verts: Vec<Point2<f64>> =
+            a_verts.iter().map(|p| point2(p[x], p[y])).collect();
+        let b_verts: Vec<Point2<f64>> =
+            b_verts.iter().map(|p| point2(p[x], p[y])).collect();
 
         TriangleTriangleCPU::line_intersection_2d(
             &a_verts[0],
@@ -432,12 +456,16 @@ impl TriangleTriangleCPU {
             TriangleTriangleCPU::plane_test(&b_verts[0], a_verts, &b_norm);
         if !b_same_side && !a_same_side {
             if TriangleTriangleCPU::is_coplanar(&b_dist_to_a) {
-                return TriangleTriangleCPU::coplanar_test(a_norm, a_verts, b_verts);
+                return TriangleTriangleCPU::coplanar_test(
+                    a_norm, a_verts, b_verts,
+                );
             }
             let line = a_norm.cross(b_norm).normalize();
             let idx = TriangleTriangleCPU::abs_max_dim(&line);
-            let a_onto_line = vec3(a_verts[0][idx], a_verts[1][idx], a_verts[2][idx]);
-            let b_onto_line = vec3(b_verts[0][idx], b_verts[1][idx], b_verts[2][idx]);
+            let a_onto_line =
+                vec3(a_verts[0][idx], a_verts[1][idx], a_verts[2][idx]);
+            let b_onto_line =
+                vec3(b_verts[0][idx], b_verts[1][idx], b_verts[2][idx]);
             let a_int = TriangleTriangleCPU::get_interval(
                 &a_onto_line,
                 &a_dist_to_b,

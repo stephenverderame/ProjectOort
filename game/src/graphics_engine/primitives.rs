@@ -8,7 +8,8 @@ use glium::*;
 use std::collections::HashMap;
 use VertexPos as Vertex;
 
-const LINE_VERTS: [Vertex; 2] = [Vertex { pos: [0., 0., 0.] }, Vertex { pos: [1., 0., 0.] }];
+const LINE_VERTS: [Vertex; 2] =
+    [Vertex { pos: [0., 0., 0.] }, Vertex { pos: [1., 0., 0.] }];
 
 const LINE_INDICES: [u8; 2] = [0, 1];
 
@@ -40,7 +41,12 @@ impl Lines {
     pub fn new<F: backend::Facade>(ctx: &F) -> Self {
         Self {
             vertices: VertexBuffer::new(ctx, &LINE_VERTS).unwrap(),
-            indices: IndexBuffer::new(ctx, index::PrimitiveType::LinesList, &LINE_INDICES).unwrap(),
+            indices: IndexBuffer::new(
+                ctx,
+                index::PrimitiveType::LinesList,
+                &LINE_INDICES,
+            )
+            .unwrap(),
             instances: InstanceBuffer::new(),
             lines: HashMap::new(),
         }
@@ -73,7 +79,9 @@ impl Drawable for Lines {
         VertexHolder<'a>,
         glium::index::IndicesSource<'a>,
     )> {
-        if !self.lines.is_empty() {
+        if self.lines.is_empty() {
+            Vec::new()
+        } else {
             {
                 let ctx = super::super::get_active_ctx();
                 let ctx = ctx.ctx.borrow();
@@ -95,15 +103,15 @@ impl Drawable for Lines {
                     .per_instance()
                     .unwrap(),
             );
-            let vertices = VertexHolder::new(VertexSourceData::Single(From::from(&self.vertices)))
-                .append(data);
+            let vertices = VertexHolder::new(VertexSourceData::Single(
+                From::from(&self.vertices),
+            ))
+            .append(data);
             vec![(
                 shader::UniformInfo::Line,
                 vertices,
                 From::from(&self.indices),
             )]
-        } else {
-            Vec::new()
         }
     }
 
@@ -136,5 +144,9 @@ impl AbstractEntity for Lines {
 
     fn render_order(&self) -> RenderOrder {
         RenderOrder::Unordered
+    }
+
+    fn get_id(&self) -> usize {
+        self as *const _ as usize
     }
 }

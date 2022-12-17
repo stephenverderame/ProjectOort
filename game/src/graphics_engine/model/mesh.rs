@@ -9,13 +9,13 @@ use std::collections::HashMap;
 /// Creates a OpenGL vbo and ebo for the vertices and indices
 #[inline]
 fn get_vbo_ebo<F: glium::backend::Facade>(
-    verts: Vec<Vertex>,
-    indices: Vec<u32>,
+    verts: &[Vertex],
+    indices: &[u32],
     ctx: &F,
 ) -> (glium::VertexBuffer<Vertex>, glium::IndexBuffer<u32>) {
     (
-        glium::VertexBuffer::immutable(ctx, &verts).unwrap(),
-        glium::IndexBuffer::immutable(ctx, glium::index::PrimitiveType::TrianglesList, &indices)
+        glium::VertexBuffer::immutable(ctx, verts).unwrap(),
+        glium::IndexBuffer::immutable(ctx, glium::index::PrimitiveType::TrianglesList, indices)
             .unwrap(),
     )
 }
@@ -143,7 +143,7 @@ impl Mesh {
                 }
             }
         }
-        let (vbo, ebo) = get_vbo_ebo(vertices, indices, ctx);
+        let (vbo, ebo) = get_vbo_ebo(&vertices, &indices, ctx);
         Mesh {
             vbo,
             ebo,

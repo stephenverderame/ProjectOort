@@ -1,4 +1,4 @@
-use cgmath::*;
+use cgmath::{Matrix4, Point3, Transform, Vector3};
 /// A transformation is something that can be converted into a matrix
 pub trait Transformation {
     fn as_transform(&self) -> Matrix4<f64>;

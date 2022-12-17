@@ -42,7 +42,7 @@ pub struct Model {
 
 impl Model {
     fn process_node<F: glium::backend::Facade>(
-        node: assimp::Node,
+        node: &assimp::Node,
         scene: &Scene,
         bone_map: &mut HashMap<String, Bone>,
         ctx: &F,
@@ -53,7 +53,7 @@ impl Model {
             meshes.push(Mesh::new(&mesh, bone_map, ctx));
         }
         for n in node.child_iter() {
-            meshes.append(&mut Model::process_node(n, scene, bone_map, ctx));
+            meshes.append(&mut Model::process_node(&n, scene, bone_map, ctx));
         }
         meshes
     }
@@ -148,21 +148,21 @@ impl Model {
         println!("Loaded model");
         let mut bone_map = HashMap::<String, Bone>::new();
         let root_node = AssimpNode::new(&scene.root_node());
-        let meshes = Model::process_node(scene.root_node(), &scene, &mut bone_map, ctx);
+        let meshes = Model::process_node(&scene.root_node(), &scene, &mut bone_map, ctx);
         let materials = Model::process_materials(path, &scene, ctx);
         bone_map = Model::load_missing_bones(&scene, bone_map);
-        let bone_buffer = if !bone_map.is_empty() {
+        let bone_buffer = if bone_map.is_empty() {
+            None
+        } else {
             Some(ssbo::Ssbo::<[[f32; 4]; 4]>::static_alloc_dyn(
                 bone_map.len(),
                 None,
             ))
-        } else {
-            None
         };
         let animator = Animator::new(
             scene.animation_iter(),
-            Rc::new(bone_map),
-            Rc::new(root_node),
+            &Rc::new(bone_map),
+            &Rc::new(root_node),
         );
         Model {
             meshes,
@@ -216,7 +216,7 @@ impl Model {
     )> {
         let bones = self.animator.animate(std::time::Instant::now());
         if let (Some(mats), Some(buf)) = (&bones, self.bone_buffer.as_mut()) {
-            buf.update(mats)
+            buf.update(mats);
         }
         let mut v = Vec::new();
         let bones = self.bone_buffer.as_ref();
@@ -234,7 +234,7 @@ impl Model {
 
     /// Render multiple instances of this model
     ///
-    /// `instance_buffer` - VertexBuffer where each element in it is
+    /// `instance_buffer` - `VertexBuffer` where each element in it is
     /// passed to each rendered copy of this model. So this will render
     /// an amount of copies equal to elements in this buffer
     fn render_instanced<'a>(
@@ -289,10 +289,10 @@ impl Drawable for Model {
         VertexHolder<'a>,
         glium::index::IndicesSource<'a>,
     )> {
-        if !self.instancing {
-            self.render(positions[0])
-        } else {
+        if self.instancing {
             self.render_instanced(positions)
+        } else {
+            self.render(positions[0])
         }
     }
 

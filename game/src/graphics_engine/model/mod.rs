@@ -11,18 +11,18 @@ mod model;
 pub use animation::Animator;
 pub use model::Model;
 
-/// Assimp Vector3D to f32 array
-#[inline(always)]
+/// Assimp `Vector3D` to `f32` array
+#[inline]
 fn to_v3(v: Vector3D) -> Vector3<f32> {
     vec3((*v).x, (*v).y, (*v).z)
 }
 /// Takes the `x` and `y` coordinates of an assimp `Vector3D`
-#[inline(always)]
+#[inline]
 fn to_v2(v: Vector3D) -> [f32; 2] {
     [(*v).x, (*v).y]
 }
 /// Assimp to cgmath Mat4
-#[inline(always)]
+#[inline]
 fn to_m4(m: assimp_sys::AiMatrix4x4) -> cgmath::Matrix4<f64> {
     cgmath::Matrix4::new(
         m.a1, m.b1, m.c1, m.d1, m.a2, m.b2, m.c2, m.d2, m.a3, m.b3, m.c3, m.d3, m.a4, m.b4, m.c4,

@@ -3,7 +3,9 @@ use super::object::*;
 use crate::cg_support::node::*;
 use crate::collisions;
 use crate::graphics_engine::entity::*;
-use crate::graphics_engine::{cubes, entity, model, particles, primitives, scene, shader};
+use crate::graphics_engine::{
+    cubes, entity, model, particles, primitives, scene, shader,
+};
 use crate::physics::{self, RigidBody};
 use cgmath::*;
 use shared_types::{game_controller::*, id_list::IdList};
@@ -37,9 +39,18 @@ pub trait GameMediator {
     fn get_particles(&self) -> Ref<particles::ParticleSystem>;
 
     /// See `ParticleSystem::new_emitter`
-    fn add_particle_emitter(&mut self, emitter: Box<dyn particles::Emitter>, emitter_id: usize);
+    fn add_particle_emitter(
+        &mut self,
+        emitter: Box<dyn particles::Emitter>,
+        emitter_id: usize,
+    );
 
-    fn add_laser(&mut self, transform: Node, vel: Vector3<f64>, typ: ObjectType);
+    fn add_laser(
+        &mut self,
+        transform: Node,
+        vel: Vector3<f64>,
+        typ: ObjectType,
+    );
 
     fn remove_lasers(&mut self, ids: &[ObjectId]);
 
@@ -47,13 +58,17 @@ pub trait GameMediator {
 
     fn emit_particles(&self, dt: std::time::Duration);
 
-    fn game_objects<'a>(&'a self) -> Box<dyn Iterator<Item = Rc<RefCell<GameObject>>> + 'a>;
+    fn game_objects<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = Rc<RefCell<GameObject>>> + 'a>;
 }
 
 pub trait GameMediatorLightingAvailable: GameMediator {
     type ReturnType;
 
-    fn lighting_info(self) -> (shader::PbrMaps, cgmath::Vector3<f32>, Self::ReturnType);
+    fn lighting_info(
+        self,
+    ) -> (shader::PbrMaps, cgmath::Vector3<f32>, Self::ReturnType);
 }
 
 pub struct HasLightingAvailable {}
@@ -75,12 +90,14 @@ fn init_objs<F: glium::backend::Facade, C: GameController>(
     controller: &C,
     ctx: &F,
 ) -> HashMap<ObjectType, Rc<RefCell<GameObject>>> {
+    use collisions::TreeStopCriteria;
     let mut objs = HashMap::new();
     objs.insert(
         ObjectType::Asteroid,
         Rc::new(RefCell::new(
             object::GameObject::new(
-                model::Model::new("assets/asteroid1/Asteroid.obj", ctx).with_instancing(),
+                model::Model::new("assets/asteroid1/Asteroid.obj", ctx)
+                    .with_instancing(),
                 object::ObjectType::Asteroid,
             )
             .with_depth()
@@ -99,7 +116,10 @@ fn init_objs<F: glium::backend::Facade, C: GameController>(
                 object::ObjectType::Planet,
             )
             .with_depth()
-            .with_collisions("assets/planet/planet1.obj", Default::default())
+            .with_collisions(
+                "assets/planet/planet1.obj",
+                TreeStopCriteria::default(),
+            )
             .immobile()
             .density(10.),
         )),
@@ -111,7 +131,10 @@ fn init_objs<F: glium::backend::Facade, C: GameController>(
                 model::Model::new("assets/laser2.obj", ctx).with_instancing(),
                 object::ObjectType::Laser,
             )
-            .with_collisions("assets/laser2.obj", collisions::TreeStopCriteria::default()),
+            .with_collisions(
+                "assets/laser2.obj",
+                collisions::TreeStopCriteria::default(),
+            ),
         )),
     );
     for (transform, vel, rot_vel, typ, id) in controller
@@ -141,7 +164,8 @@ fn init_entities<F: glium::backend::Facade, C: GameController>(
         .filter(|(_, _, _, typ, _)| *typ == ObjectType::Cloud)
         .map(|(transform, _, _, _, _)| transform)
         .collect();
-    let mut entities: HashMap<_, Rc<RefCell<dyn AbstractEntity>>> = HashMap::new();
+    let mut entities: HashMap<_, Rc<RefCell<dyn AbstractEntity>>> =
+        HashMap::new();
     entities.insert(
         ObjectType::Cloud,
         Rc::new(RefCell::new(
@@ -161,18 +185,22 @@ fn init_lighting<F: glium::backend::Facade>(
     ctx: &F,
     lighting: &GlobalLightingInfo,
 ) -> (Entity, shader::PbrMaps) {
-    let mut skybox = cubes::Skybox::cvt_from_sphere(&lighting.skybox, 2048, sm, ctx);
+    let mut skybox =
+        cubes::Skybox::cvt_from_sphere(&lighting.skybox, 2048, sm, ctx);
     let ibl = scene::gen_ibl_from_hdr(&lighting.hdr, &mut skybox, sm, ctx);
     (skybox.into_entity(), ibl)
 }
 
 /// Converts a remote object into a rigid body
 #[allow(unused)]
-fn remote_obj_to_body(obj: &shared_types::RemoteObject) -> Option<RigidBody<ObjectData>> {
+fn remote_obj_to_body(
+    obj: &shared_types::RemoteObject,
+) -> Option<RigidBody<ObjectData>> {
     use crate::collisions::CollisionObject;
-    let (node, vel, rot_vel, typ, id) = shared_types::node::from_remote_object(obj);
+    let (node, vel, rot_vel, typ, id) =
+        shared_types::node::from_remote_object(obj);
     let node = Rc::new(RefCell::new(node));
-    if let Some((path, bvh_options, density)) = col_data_of_obj_type(&typ) {
+    if let Some((path, bvh_options, density)) = col_data_of_obj_type(typ) {
         let col_obj = CollisionObject::new(node.clone(), path, bvh_options);
         let mut body = RigidBody::new(
             node,
@@ -191,7 +219,9 @@ fn remote_obj_to_body(obj: &shared_types::RemoteObject) -> Option<RigidBody<Obje
 
 /// Converts a rigid body to a remote object
 #[allow(unused)]
-fn body_to_remote_obj(body: &RigidBody<ObjectData>) -> shared_types::RemoteObject {
+fn body_to_remote_obj(
+    body: &RigidBody<ObjectData>,
+) -> shared_types::RemoteObject {
     shared_types::node::to_remote_object(
         &body.base.transform.borrow(),
         &body.base.velocity,
@@ -214,7 +244,8 @@ impl<State> GameMediatorBase<State> {
                 .with_billboard("assets/particles/circle_05.png", 0.4),
         ));
         let mut entity = init_entities(sm, controller, ctx);
-        let (skybox, ibl_maps) = init_lighting(sm, ctx, controller.get_lighting_info());
+        let (skybox, ibl_maps) =
+            init_lighting(sm, ctx, controller.get_lighting_info());
         entity.insert(ObjectType::Skybox, Rc::new(RefCell::new(skybox)));
         GameMediatorBase {
             objs: init_objs(sm, controller, ctx),
@@ -246,7 +277,8 @@ impl<State> GameMediatorBase<State> {
                     vec3(0.5451, 0., 0.5451),
                 ));
             });
-        lights.append(&mut self.particles.borrow().lights().unwrap_or_default());
+        lights
+            .append(&mut self.particles.borrow().lights().unwrap_or_default());
         lights
     }
 
@@ -254,11 +286,13 @@ impl<State> GameMediatorBase<State> {
     fn get_entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>> {
         self.objs
             .iter()
-            .map(|(_, obj)| (obj.borrow().as_entity() as Rc<RefCell<dyn AbstractEntity>>))
+            .map(|(_, obj)| {
+                obj.borrow().as_entity() as Rc<RefCell<dyn AbstractEntity>>
+            })
             .chain(
-                self.entity
-                    .iter()
-                    .map(|(_, obj)| (obj.clone() as Rc<RefCell<dyn AbstractEntity>>)),
+                self.entity.iter().map(|(_, obj)| {
+                    obj.clone() as Rc<RefCell<dyn AbstractEntity>>
+                }),
             )
             .chain(std::iter::once(
                 self.lines.clone() as Rc<RefCell<dyn AbstractEntity>>
@@ -274,7 +308,8 @@ impl<State> GameMediatorBase<State> {
     where
         F: FnMut(&mut dyn Iterator<Item = &mut RigidBody<ObjectData>>),
     {
-        let mut objs: Vec<_> = self.objs.iter().map(|(_, obj)| obj.borrow_mut()).collect();
+        let mut objs: Vec<_> =
+            self.objs.iter().map(|(_, obj)| obj.borrow_mut()).collect();
         func(&mut objs.iter_mut().flat_map(|obj| obj.bodies_ref().into_iter()));
     }
 
@@ -283,13 +318,19 @@ impl<State> GameMediatorBase<State> {
     where
         F: FnMut(&mut dyn Iterator<Item = &RigidBody<ObjectData>>),
     {
-        let objs: Vec<_> = self.objs.iter().map(|(_, obj)| obj.borrow()).collect();
+        let objs: Vec<_> =
+            self.objs.iter().map(|(_, obj)| obj.borrow()).collect();
         func(&mut objs.iter().flat_map(|obj| obj.bodies_slice().iter()));
     }
 
     /// Adds a new laser to lasers
     #[inline]
-    fn add_laser(&mut self, transform: Node, vel: Vector3<f64>, typ: ObjectType) {
+    fn add_laser(
+        &mut self,
+        transform: Node,
+        vel: Vector3<f64>,
+        typ: ObjectType,
+    ) {
         if let Some(id) = self.ids.next() {
             self.objs[&ObjectType::Laser]
                 .borrow_mut()
@@ -334,7 +375,9 @@ impl<State> GameMediatorBase<State> {
         self.particles.borrow_mut().emit(dt);
     }
 
-    fn game_objects<'a>(&'a self) -> Box<dyn Iterator<Item = Rc<RefCell<GameObject>>> + 'a> {
+    fn game_objects<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = Rc<RefCell<GameObject>>> + 'a> {
         Box::new(self.objs.iter().map(|(_, obj)| obj.clone()))
     }
 }
@@ -383,7 +426,11 @@ impl<State> LocalGameMediator<State> {
         F: glium::backend::Facade,
     {
         LocalGameMediator {
-            base: GameMediatorBase::<HasLightingAvailable>::new(sm, &controller, ctx),
+            base: GameMediatorBase::<HasLightingAvailable>::new(
+                sm,
+                &controller,
+                ctx,
+            ),
             controller: Box::new(controller),
         }
     }
@@ -426,7 +473,12 @@ impl<State> GameMediator for LocalGameMediator<State> {
         self.base.particles.borrow()
     }
 
-    fn add_laser(&mut self, transform: Node, vel: Vector3<f64>, typ: ObjectType) {
+    fn add_laser(
+        &mut self,
+        transform: Node,
+        vel: Vector3<f64>,
+        typ: ObjectType,
+    ) {
         assert!(typ == ObjectType::Laser || typ == ObjectType::Hook);
         self.base.add_laser(transform, vel, typ);
     }
@@ -438,7 +490,11 @@ impl<State> GameMediator for LocalGameMediator<State> {
         self.base.update_bodies(func);
     }
 
-    fn add_particle_emitter(&mut self, emitter: Box<dyn particles::Emitter>, emitter_id: usize) {
+    fn add_particle_emitter(
+        &mut self,
+        emitter: Box<dyn particles::Emitter>,
+        emitter_id: usize,
+    ) {
         self.base
             .particles
             .borrow_mut()
@@ -450,18 +506,20 @@ impl<State> GameMediator for LocalGameMediator<State> {
     }
 
     fn add_line(&mut self, line_id: u32, line: primitives::LineData) {
-        self.base.add_line(line_id, line)
+        self.base.add_line(line_id, line);
     }
 
     fn remove_line(&mut self, line_id: u32) {
-        self.base.remove_line(line_id)
+        self.base.remove_line(line_id);
     }
 
     fn emit_particles(&self, dt: std::time::Duration) {
         self.base.emit_particles(dt);
     }
 
-    fn game_objects<'a>(&'a self) -> Box<dyn Iterator<Item = Rc<RefCell<GameObject>>> + 'a> {
+    fn game_objects<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = Rc<RefCell<GameObject>>> + 'a> {
         self.base.game_objects()
     }
 }
@@ -469,7 +527,9 @@ impl<State> GameMediator for LocalGameMediator<State> {
 impl GameMediatorLightingAvailable for LocalGameMediator<HasLightingAvailable> {
     type ReturnType = LocalGameMediator<NoLightingAvailable>;
 
-    fn lighting_info(self) -> (shader::PbrMaps, cgmath::Vector3<f32>, Self::ReturnType) {
+    fn lighting_info(
+        self,
+    ) -> (shader::PbrMaps, cgmath::Vector3<f32>, Self::ReturnType) {
         let (ibl_maps, base) = self.base.get_ibl_maps();
         (
             ibl_maps,

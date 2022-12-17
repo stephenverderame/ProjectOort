@@ -11,7 +11,7 @@ enum SSBOMode {
 }
 
 /// # Modes
-/// ## Dynamic
+/// ## `Dynamic`
 /// A shader storage buffer which holds a uint size parameter and then a variable sized
 /// `T` array.
 /// The GPU buffer is resized in multiples of 2 from the initial size
@@ -24,11 +24,11 @@ enum SSBOMode {
 ///     T data[];
 /// }
 /// ```
-/// ## Static
+/// ## `Static`
 /// A shader storage buffer holding an array of `T`. Memory is allocated once at initializiation
 /// and data updates are not supported.
 ///
-/// ## StaticAllocDynamic
+/// ## `StaticAllocDynamic`
 /// A shader storage buffer holding an array of `T`. Memory is allocated once at initialization
 /// and data updates must not use more memory than what was allocated.
 pub struct Ssbo<T: Copy> {
@@ -75,11 +75,11 @@ impl<T: Copy> Ssbo<T> {
     /// Resizing is handled by this wrapper
     pub fn dynamic(data: Option<&[T]>) -> Ssbo<T> {
         let mut buffer = 0 as gl::types::GLuint;
-        let length = data.map(|x| x.len()).unwrap_or(0);
+        let length = data.map_or(0, <[T]>::len);
         let size_w_padding = [length as u32, 0u32, 0u32, 0u32];
         // glsl pads to 16 bytes
         unsafe {
-            gl::GenBuffers(1, &mut buffer as *mut gl::types::GLuint);
+            gl::GenBuffers(1, std::ptr::addr_of_mut!(buffer));
             assert_no_error!();
             gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, buffer);
             gl::BufferData(
@@ -93,7 +93,7 @@ impl<T: Copy> Ssbo<T> {
                 gl::SHADER_STORAGE_BUFFER,
                 0,
                 16,
-                size_w_padding.as_ptr() as *const std::ffi::c_void,
+                size_w_padding.as_ptr().cast::<std::ffi::c_void>(),
             );
             assert_no_error!();
             if let Some(data) = data {
@@ -101,7 +101,7 @@ impl<T: Copy> Ssbo<T> {
                     gl::SHADER_STORAGE_BUFFER,
                     16,
                     (std::mem::size_of::<T>() * data.len()) as isize,
-                    data.as_ptr() as *const std::ffi::c_void,
+                    data.as_ptr().cast::<std::ffi::c_void>(),
                 );
                 assert_no_error!();
             }
@@ -121,7 +121,7 @@ impl<T: Copy> Ssbo<T> {
     fn new_static(buffer_size: usize, data: Option<&[T]>, mode: SSBOMode) -> Ssbo<T> {
         let mut buffer = 0 as gl::types::GLuint;
         unsafe {
-            gl::GenBuffers(1, &mut buffer as *mut gl::types::GLuint);
+            gl::GenBuffers(1, std::ptr::addr_of_mut!(buffer));
             assert_no_error!();
             gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, buffer);
             let cpy_mode = if mode == SSBOMode::Static {
@@ -132,8 +132,8 @@ impl<T: Copy> Ssbo<T> {
             gl::BufferData(
                 gl::SHADER_STORAGE_BUFFER,
                 (buffer_size * std::mem::size_of::<T>()) as isize,
-                data.map(|x| x.as_ptr()).unwrap_or(std::ptr::null::<T>())
-                    as *const std::ffi::c_void,
+                data.map_or(std::ptr::null::<T>(), <[T]>::as_ptr)
+                    .cast::<std::ffi::c_void>(),
                 cpy_mode,
             );
             assert_no_error!();
@@ -146,19 +146,19 @@ impl<T: Copy> Ssbo<T> {
         }
     }
     /// Creates a SSBO that cannot be easily resized
-    #[inline(always)]
+    #[inline]
     pub fn static_empty(count: u32) -> Ssbo<T> {
         Ssbo::new_static(count as usize, None, SSBOMode::Static)
     }
 
     /// Creates a SSBO that cannot be easily resized
-    #[inline(always)]
+    #[inline]
     pub fn create_static(data: &[T]) -> Ssbo<T> {
         Ssbo::new_static(data.len(), Some(data), SSBOMode::Static)
     }
 
     /// Creates a new SSBO that cannot be resized but whose data can change
-    #[inline(always)]
+    #[inline]
     pub fn static_alloc_dyn(buffer_size: usize, data: Option<&[T]>) -> Ssbo<T> {
         Ssbo::new_static(buffer_size, data, SSBOMode::StaticAllocDynamic)
     }
@@ -193,13 +193,13 @@ impl<T: Copy> Ssbo<T> {
                 gl::SHADER_STORAGE_BUFFER,
                 0,
                 16,
-                size_w_padding.as_ptr() as *const std::ffi::c_void,
+                size_w_padding.as_ptr().cast::<std::ffi::c_void>(),
             );
             gl::BufferSubData(
                 gl::SHADER_STORAGE_BUFFER,
                 16,
                 (std::mem::size_of::<T>() * data.len()) as isize,
-                data.as_ptr() as *const std::ffi::c_void,
+                data.as_ptr().cast::<std::ffi::c_void>(),
             );
             assert_no_error!();
         }
@@ -215,7 +215,7 @@ impl<T: Copy> Ssbo<T> {
                 gl::SHADER_STORAGE_BUFFER,
                 0,
                 (std::mem::size_of::<T>() * data.len()) as isize,
-                data.as_ptr() as *const std::ffi::c_void,
+                data.as_ptr().cast::<std::ffi::c_void>(),
             );
             assert_no_error!();
         }
@@ -230,7 +230,7 @@ impl<T: Copy> Ssbo<T> {
                 gl::R8,
                 gl::RED,
                 gl::UNSIGNED_BYTE,
-                &val as *const u8 as *const std::ffi::c_void,
+                std::ptr::addr_of!(val).cast::<std::ffi::c_void>(),
             );
             assert_no_error!();
         }
@@ -267,7 +267,7 @@ impl<T: Copy> Ssbo<T> {
                 gl::SHADER_STORAGE_BUFFER,
                 0,
                 (std::mem::size_of::<T>() * self.buffer_count.get() as usize) as isize,
-                v.as_mut_ptr() as *mut std::ffi::c_void,
+                v.as_mut_ptr().cast::<std::ffi::c_void>(),
             );
             assert_no_error!();
         }
@@ -296,7 +296,7 @@ impl<T: Copy> Ssbo<T> {
     pub fn map_write(&self) -> MutMappedBuffer<T> {
         unsafe {
             gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.buffer);
-            let buf = gl::MapBuffer(gl::SHADER_STORAGE_BUFFER, gl::WRITE_ONLY) as *mut T;
+            let buf = gl::MapBuffer(gl::SHADER_STORAGE_BUFFER, gl::WRITE_ONLY).cast::<T>();
             assert_no_error!();
             if buf.is_null() {
                 assert_no_error!();
@@ -314,12 +314,12 @@ impl<T: Copy> Ssbo<T> {
 impl<T: Copy> Drop for Ssbo<T> {
     fn drop(&mut self) {
         unsafe {
-            gl::DeleteBuffers(1, &self.buffer as *const gl::types::GLuint);
+            gl::DeleteBuffers(1, std::ptr::addr_of!(self.buffer));
         }
     }
 }
 
-/// RAII for the pointer returned from a call to glMapBuffer
+/// RAII for the pointer returned from a call to `glMapBuffer`
 pub struct MappedBuffer<T: Copy> {
     gpu_buf: gl::types::GLuint,
     buf: *const T,
@@ -336,7 +336,7 @@ impl<T: Copy> MappedBuffer<T> {
     pub fn as_slice<'a, 'b>(&'b self) -> MappedBufferSlice<'a, 'b, T> {
         unsafe {
             MappedBufferSlice {
-                slice: std::slice::from_raw_parts(self.buf as *const T, self.size as usize),
+                slice: std::slice::from_raw_parts(self.buf.cast::<T>(), self.size as usize),
                 _owner: self,
             }
         }
@@ -363,7 +363,7 @@ impl<'a, 'b, T: Copy> std::ops::Deref for MappedBufferSlice<'a, 'b, T> {
     }
 }
 
-/// RAII for the pointer returned from a call to glMapBuffer
+/// RAII for the pointer returned from a call to `glMapBuffer`
 pub struct MutMappedBuffer<T: Copy> {
     gpu_buf: gl::types::GLuint,
     buf: *mut T,
@@ -380,7 +380,7 @@ impl<T: Copy> MutMappedBuffer<T> {
     pub fn as_slice<'a, 'b>(&'b self) -> MutMappedBufferSlice<'a, 'b, T> {
         unsafe {
             MutMappedBufferSlice {
-                slice: std::slice::from_raw_parts_mut(self.buf as *mut T, self.size as usize),
+                slice: std::slice::from_raw_parts_mut(self.buf.cast::<T>(), self.size as usize),
                 _owner: self,
             }
         }
@@ -417,7 +417,7 @@ impl<'a, 'b, T: Copy> std::ops::DerefMut for MutMappedBufferSlice<'a, 'b, T> {
 mod test {
     use super::*;
     use crate::shader;
-    use serial_test::*;
+    use serial_test::serial;
 
     #[cfg(unix)]
     fn get_event_loop() -> glutin::event_loop::EventLoop<()> {
@@ -432,7 +432,7 @@ mod test {
     }
 
     fn init() -> (shader::ShaderManager, glium::Display) {
-        use glium::*;
+        use glium::Display;
         use glutin::window::WindowBuilder;
         use glutin::ContextBuilder;
         let e_loop = get_event_loop();
@@ -451,7 +451,7 @@ mod test {
     #[test]
     #[serial]
     fn map_test() {
-        use cgmath::*;
+        use cgmath::{assert_relative_eq, Matrix4};
         let (_a, _b) = init();
         unsafe { assert_no_error!() };
         let ssbo = Ssbo::<[[f32; 4]; 4]>::static_alloc_dyn(10, None);

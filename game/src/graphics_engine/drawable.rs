@@ -231,7 +231,7 @@ pub fn render_drawable<S: glium::Surface>(
     shader: &shader::ShaderManager,
 ) {
     let v = vec![cgmath::Matrix4::from_scale(1f32).into()];
-    for (args, vbo, ebo) in drawable.render_args(matrices.unwrap_or(&v)).into_iter() {
+    for (args, vbo, ebo) in drawable.render_args(matrices.unwrap_or(&v)) {
         let (shader, params, uniform) = shader.use_shader(&args, Some(scene_data), Some(cache));
         match uniform {
             shader::UniformType::Laser(uniform) => {
@@ -278,6 +278,6 @@ pub fn render_drawable<S: glium::Surface>(
             }
             shader::UniformType::Icon(uniform) => surface.draw(vbo, ebo, shader, &uniform, &params),
         }
-        .unwrap()
+        .unwrap();
     }
 }

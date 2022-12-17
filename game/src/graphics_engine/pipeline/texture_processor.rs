@@ -1,3 +1,4 @@
+#![allow(clippy::module_name_repetitions)]
 use super::*;
 use crate::cg_support::ssbo;
 use glium::framebuffer::ToColorAttachment;
@@ -30,7 +31,12 @@ fn get_rect_vbo_ebo<F: glium::backend::Facade>(
 
     (
         VertexBuffer::new(facade, &verts).unwrap(),
-        IndexBuffer::new(facade, glium::index::PrimitiveType::TrianglesList, &indices).unwrap(),
+        IndexBuffer::new(
+            facade,
+            glium::index::PrimitiveType::TrianglesList,
+            &indices,
+        )
+        .unwrap(),
     )
 }
 
@@ -48,7 +54,11 @@ pub struct ExtractBrightProcessor {
 }
 
 impl ExtractBrightProcessor {
-    pub fn new<F: backend::Facade>(facade: &F, width: u32, height: u32) -> ExtractBrightProcessor {
+    pub fn new<F: backend::Facade>(
+        facade: &F,
+        width: u32,
+        height: u32,
+    ) -> ExtractBrightProcessor {
         let bright_color_tex = Box::pin(
             glium::texture::Texture2d::empty_with_format(
                 facade,
@@ -61,11 +71,13 @@ impl ExtractBrightProcessor {
         );
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
         unsafe {
-            let tex_ptr = &*bright_color_tex as *const texture::Texture2d;
+            let tex_ptr = std::ptr::addr_of!(*bright_color_tex);
             ExtractBrightProcessor {
                 bright_color_tex,
-                bright_color_fbo: glium::framebuffer::SimpleFrameBuffer::new(facade, &*tex_ptr)
-                    .unwrap(),
+                bright_color_fbo: glium::framebuffer::SimpleFrameBuffer::new(
+                    facade, &*tex_ptr,
+                )
+                .unwrap(),
                 ebo,
                 vbo,
             }
@@ -84,14 +96,17 @@ impl TextureProcessor for ExtractBrightProcessor {
         if let TextureType::Tex2d(source) = source.unwrap()[0] {
             let source = source.to_ref();
             let data =
-                shader::UniformInfo::ExtractBright(shader::ExtractBrightData { tex: source });
-            let (program, params, uniform) = shader.use_shader(&data, sd, Some(pc));
+                shader::UniformInfo::ExtractBright(shader::ExtractBrightData {
+                    tex: source,
+                });
+            let (program, params, uniform) =
+                shader.use_shader(&data, sd, Some(pc));
             match uniform {
                 shader::UniformType::ExtractBright(uniform) => {
                     let fbo = &mut self.bright_color_fbo;
                     fbo.clear_color(0., 0., 0., 1.);
                     fbo.draw(&self.vbo, &self.ebo, program, &uniform, &params)
-                        .unwrap()
+                        .unwrap();
                 }
                 _ => panic!("Invalid uniform type returned for RenderTarget"),
             };
@@ -126,7 +141,8 @@ impl SepConvProcessor {
         facade: &F,
     ) -> SepConvProcessor {
         use std::mem::MaybeUninit;
-        const UNINIT_TEX: MaybeUninit<Pin<Box<texture::Texture2d>>> = MaybeUninit::uninit();
+        const UNINIT_TEX: MaybeUninit<Pin<Box<texture::Texture2d>>> =
+            MaybeUninit::uninit();
         const UNINIT_FBO: MaybeUninit<framebuffer::SimpleFrameBuffer<'static>> =
             MaybeUninit::uninit();
         let mut ping_pong_tex = [UNINIT_TEX; 2];
@@ -143,22 +159,28 @@ impl SepConvProcessor {
                 )
                 .unwrap(),
             );
-            let tex_ptr = &*tex_box as *const texture::Texture2d;
+            let tex_ptr = std::ptr::addr_of!(*tex_box);
             ping_pong_tex[i].write(tex_box);
             unsafe {
-                ping_pong_fbo[i]
-                    .write(glium::framebuffer::SimpleFrameBuffer::new(facade, &*tex_ptr).unwrap());
+                ping_pong_fbo[i].write(
+                    glium::framebuffer::SimpleFrameBuffer::new(
+                        facade, &*tex_ptr,
+                    )
+                    .unwrap(),
+                );
             }
         }
         unsafe {
             SepConvProcessor {
                 iterations,
-                ping_pong_fbo: std::mem::transmute::<_, [framebuffer::SimpleFrameBuffer<'static>; 2]>(
-                    ping_pong_fbo,
-                ),
-                ping_pong_tex: std::mem::transmute::<_, [Pin<Box<texture::Texture2d>>; 2]>(
-                    ping_pong_tex,
-                ),
+                ping_pong_fbo: std::mem::transmute::<
+                    _,
+                    [framebuffer::SimpleFrameBuffer<'static>; 2],
+                >(ping_pong_fbo),
+                ping_pong_tex: std::mem::transmute::<
+                    _,
+                    [Pin<Box<texture::Texture2d>>; 2],
+                >(ping_pong_tex),
                 vbo,
                 ebo,
             }
@@ -208,7 +230,9 @@ impl TextureProcessor for SepConvProcessor {
             for i in 1..self.iterations {
                 let tex = &*self.ping_pong_tex[(i - 1) % 2];
                 let dst = &mut self.ping_pong_fbo[i % 2];
-                SepConvProcessor::pass(dst, tex, &self.vbo, &self.ebo, i, shader);
+                SepConvProcessor::pass(
+                    dst, tex, &self.vbo, &self.ebo, i, shader,
+                );
             }
             Some(TextureType::Tex2d(Ref(
                 &*self.ping_pong_tex[(self.iterations - 1) % 2]
@@ -257,11 +281,14 @@ impl CompositorProcessor {
         );
 
         unsafe {
-            let tex_ptr = &*tex as *const texture::Texture2d;
+            let tex_ptr = std::ptr::addr_of!(*tex);
             CompositorProcessor {
                 vbo,
                 ebo,
-                fbo: glium::framebuffer::SimpleFrameBuffer::new(facade, &*tex_ptr).unwrap(),
+                fbo: glium::framebuffer::SimpleFrameBuffer::new(
+                    facade, &*tex_ptr,
+                )
+                .unwrap(),
                 tex,
                 mode,
             }
@@ -274,14 +301,15 @@ impl CompositorProcessor {
         transforms: Vec<[[f32; 3]; 3]>,
         cache: &PipelineCache,
         shader: &shader::ShaderManager,
-    ) -> Option<TextureType> {
+    ) -> TextureType {
         let args = shader::UniformInfo::Composite(shader::CompositeData {
             textures,
             transforms,
             model: cgmath::Matrix4::from_scale(1f32).into(),
             blend_function: (self.mode, glium::program::ShaderStage::Fragment),
         });
-        let (program, params, uniform) = shader.use_shader(&args, None, Some(cache));
+        let (program, params, uniform) =
+            shader.use_shader(&args, None, Some(cache));
         match uniform {
             shader::UniformType::Composite(uniform) => {
                 self.fbo.clear_color_and_depth((0., 0., 0., 1.0), 1.0);
@@ -291,7 +319,7 @@ impl CompositorProcessor {
             }
             _ => panic!("Invalid uniform type returned for RenderTarget"),
         };
-        Some(TextureType::Tex2d(Ref(&self.tex)))
+        TextureType::Tex2d(Ref(&self.tex))
     }
 }
 
@@ -324,7 +352,7 @@ impl TextureProcessor for CompositorProcessor {
         if textures.is_empty() {
             panic!("Not enough 2d textures input to compositor")
         } else {
-            self.render(textures, transforms, cache, shader)
+            Some(self.render(textures, transforms, cache, shader))
         }
     }
 }
@@ -403,7 +431,8 @@ impl<
         SHolder: std::ops::DerefMut<Target = S>,
         GetSHolder: Fn() -> (SHolder, BlitTarget),
         CleanSHolder: Fn(SHolder),
-    > TextureProcessor for BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>
+    > TextureProcessor
+    for BlitTextureProcessor<S, SHolder, GetSHolder, CleanSHolder>
 {
     fn process(
         &mut self,
@@ -420,11 +449,11 @@ impl<
                 _ => None,
             })
             .collect();
-        if v.len() != 1 {
-            panic!("Invalid number of 2d textures to input to compositor")
-        } else {
+        if v.len() == 1 {
             self.render(v[0], cache, shader);
             None
+        } else {
+            panic!("Invalid number of 2d textures to input to compositor")
         }
     }
 }
@@ -455,7 +484,8 @@ impl CopyTextureProcessor {
         CopyTextureProcessor {
             width,
             height,
-            tex_format: fmt.unwrap_or(texture::UncompressedFloatFormat::F16F16F16F16),
+            tex_format: fmt
+                .unwrap_or(texture::UncompressedFloatFormat::F16F16F16F16),
             mipmap: mipmap.unwrap_or(texture::MipmapsOption::NoMipmap),
         }
     }
@@ -472,14 +502,19 @@ impl CopyTextureProcessor {
         facade: &F,
     ) {
         let out_fbo = framebuffer::SimpleFrameBuffer::new(facade, dst).unwrap();
-        let in_fbo = framebuffer::SimpleFrameBuffer::new(facade, source).unwrap();
+        let in_fbo =
+            framebuffer::SimpleFrameBuffer::new(facade, source).unwrap();
         let target = BlitTarget {
             left: 0,
             bottom: 0,
             width: self.height as i32,
             height: self.width as i32,
         };
-        in_fbo.blit_whole_color_to(&out_fbo, &target, uniforms::MagnifySamplerFilter::Linear);
+        in_fbo.blit_whole_color_to(
+            &out_fbo,
+            &target,
+            uniforms::MagnifySamplerFilter::Linear,
+        );
     }
 }
 
@@ -493,8 +528,8 @@ impl TextureProcessor for CopyTextureProcessor {
     ) -> Option<TextureType> {
         source.as_ref()?;
         let ctx = super::super::get_active_ctx();
-        match source.unwrap()[0] {
-            TextureType::Tex2d(Ref(x)) => {
+        match source.unwrap().get(0) {
+            Some(TextureType::Tex2d(Ref(x))) => {
                 let out = texture::Texture2d::empty_with_format(
                     &*ctx.ctx.borrow(),
                     self.tex_format,
@@ -506,7 +541,7 @@ impl TextureProcessor for CopyTextureProcessor {
                 self.blit_src_to_dst(*x, &out, &*ctx.ctx.borrow());
                 Some(TextureType::Tex2d(Own(out)))
             }
-            TextureType::TexCube(Ref(x)) => {
+            Some(TextureType::TexCube(Ref(x))) => {
                 use texture::CubeLayer::*;
                 let out = texture::Cubemap::empty_with_format(
                     &*ctx.ctx.borrow(),
@@ -516,7 +551,8 @@ impl TextureProcessor for CopyTextureProcessor {
                 )
                 .unwrap();
                 let layers = [
-                    PositiveX, NegativeX, PositiveY, NegativeY, PositiveZ, NegativeZ,
+                    PositiveX, NegativeX, PositiveY, NegativeY, PositiveZ,
+                    NegativeZ,
                 ];
                 for layer in layers {
                     self.blit_src_to_dst(
@@ -538,7 +574,7 @@ impl TextureProcessor for CopyTextureProcessor {
 /// ### Inputs
 /// None
 /// ### Outputs
-/// RGB_F16 Look up texture
+/// `RGB_F16` Look up texture
 pub struct GenLutProcessor {
     vbo: VertexBuffer<Vertex>,
     ebo: IndexBuffer<u16>,
@@ -547,11 +583,15 @@ pub struct GenLutProcessor {
 }
 
 impl GenLutProcessor {
-    pub fn new<F: glium::backend::Facade>(width: u32, height: u32, facade: &F) -> GenLutProcessor {
+    pub fn new<F: glium::backend::Facade>(
+        width: u32,
+        height: u32,
+        facade: &F,
+    ) -> GenLutProcessor {
         let (vbo, ebo) = get_rect_vbo_ebo(facade);
         GenLutProcessor {
-            ebo,
             vbo,
+            ebo,
             width,
             height,
         }
@@ -582,9 +622,12 @@ impl TextureProcessor for GenLutProcessor {
             self.height,
         )
         .unwrap();
-        let mut fbo =
-            framebuffer::SimpleFrameBuffer::with_depth_buffer(&*ctx.ctx.borrow(), &tex, &rbo)
-                .unwrap();
+        let mut fbo = framebuffer::SimpleFrameBuffer::with_depth_buffer(
+            &*ctx.ctx.borrow(),
+            &tex,
+            &rbo,
+        )
+        .unwrap();
         fbo.clear_color_and_depth((0., 0., 0., 0.), 1.);
         let (program, params, uniform) =
             shader.use_shader(&shader::UniformInfo::GenLut, sd, Some(pc));
@@ -606,7 +649,7 @@ impl TextureProcessor for GenLutProcessor {
 /// ### Outputs
 /// None (results stored in SSBO owned by this processor)
 /// ### Mutators
-/// Saves the horizontal work group number to SceneData's tiles_x param
+/// Saves the horizontal work group number to `SceneData`'s `tiles_x` param
 pub struct CullLightProcessor {
     work_groups_x: u32,
     work_groups_y: u32,
@@ -647,21 +690,28 @@ impl TextureProcessor for CullLightProcessor {
     ) -> Option<TextureType> {
         if let TextureType::Depth2d(depth) = input.unwrap()[0] {
             let depth_tex = depth.to_ref();
-            let params = shader::UniformInfo::LightCull(shader::LightCullData {
-                depth_tex,
-                scr_width: self.width,
-                scr_height: self.height,
-            });
+            let params =
+                shader::UniformInfo::LightCull(shader::LightCullData {
+                    depth_tex,
+                    scr_width: self.width,
+                    scr_height: self.height,
+                });
             self.visible_light_buffer.bind(1);
             cache.tiles_x = Some(self.work_groups_x);
-            shader.execute_compute(self.work_groups_x, self.work_groups_y, 1, params, data);
+            shader.execute_compute(
+                self.work_groups_x,
+                self.work_groups_y,
+                1,
+                &params,
+                data,
+            );
             None
         } else {
             panic!("Unexpected texture input!");
         }
     }
 }
-/// Texture processor that stores its inputs in PipelineCache to be used as
+/// Texture processor that stores its inputs in `PipelineCache` to be used as
 /// shader uniform inputs for subsequent stages
 pub struct ToCacheProcessor {}
 
@@ -670,13 +720,17 @@ impl ToCacheProcessor {
         ToCacheProcessor {}
     }
 
-    fn cascade_maps_to_cache<'b>(input: Vec<&'b TextureType>, cache: &mut PipelineCache<'b>) {
+    fn cascade_maps_to_cache<'b>(
+        input: Vec<&'b TextureType>,
+        cache: &mut PipelineCache<'b>,
+    ) {
         use std::mem::MaybeUninit;
         let mut depth_texs = Vec::<&'b glium::texture::DepthTexture2d>::new();
         let mut trans_depths = Vec::new();
         let mut mats: [MaybeUninit<[[f32; 4]; 4]>; 5] =
             unsafe { MaybeUninit::uninit().assume_init() };
-        let mut fars: [MaybeUninit<f32>; 4] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut fars: [MaybeUninit<f32>; 4] =
+            unsafe { MaybeUninit::uninit().assume_init() };
         for (tex, i) in input.into_iter().zip(0..3) {
             match tex {
                 TextureType::WithArg(b, StageArgs::Cascade(mat, far)) => {
@@ -695,7 +749,10 @@ impl ToCacheProcessor {
                                     TextureType::Tex2d(trans_fac),
                                 ) => {
                                     depth_texs.push(opaque_depth.to_ref());
-                                    trans_depths.push((trans_depth.to_ref(), trans_fac.to_ref()));
+                                    trans_depths.push((
+                                        trans_depth.to_ref(),
+                                        trans_fac.to_ref(),
+                                    ));
                                 }
                                 _ => panic!("Unexpected input"),
                             }
@@ -720,7 +777,9 @@ impl ToCacheProcessor {
                 shader::CascadeUniform {
                     //depth_maps: std::mem::transmute::<_, [glium::texture::TextureHandle<'b>; 5]>(depth_texs),
                     far_planes: std::mem::transmute::<_, [f32; 4]>(fars),
-                    viewproj_mats: std::mem::transmute::<_, [[[f32; 4]; 4]; 5]>(mats),
+                    viewproj_mats: std::mem::transmute::<_, [[[f32; 4]; 4]; 5]>(
+                        mats,
+                    ),
                 },
             )
             .ok();
@@ -738,13 +797,15 @@ impl TextureProcessor for ToCacheProcessor {
     ) -> Option<TextureType> {
         if let Some(input) = input {
             if input.len() == 1 {
-                match input[0] {
-                    TextureType::WithArg(b, StageArgs::Object(i)) => {
+                match input.get(0) {
+                    Some(TextureType::WithArg(b, StageArgs::Object(i))) => {
                         if let TextureType::TexCube(cbo) = &**b {
                             cache.obj_cubemaps.insert(*i, cbo.to_ref());
                         }
                     }
-                    TextureType::Depth2d(tex) => cache.cam_depth = Some(tex.to_ref()),
+                    Some(TextureType::Depth2d(tex)) => {
+                        cache.cam_depth = Some(tex.to_ref());
+                    }
                     _ => (),
                 }
                 None

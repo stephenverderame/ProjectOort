@@ -7,7 +7,8 @@ use std::collections::HashMap;
 
 type HitCallback<'a, T> =
     Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, &HitData, &BaseRigidBody) + 'a>;
-type ResolveCallback<'a, T> = Box<dyn Fn(&RigidBody<T>, &RigidBody<T>, &HitData) -> bool + 'a>;
+type ResolveCallback<'a, T> =
+    Box<dyn Fn(&RigidBody<T>, &RigidBody<T>, &HitData) -> bool + 'a>;
 
 /// A simulation handles the collision detection, resolution, and movement of all objects
 pub struct Simulation<'a, 'b, T> {
@@ -33,7 +34,7 @@ fn insert_into_octree<T>(
         m.insert(o.base.transform.as_ptr() as *const _, idx as u32);
         if let Some(collider) = &o.base.collider {
             if !collider.is_in_collision_tree() {
-                tree.insert(collider)
+                tree.insert(collider);
             }
         }
     }
@@ -91,6 +92,7 @@ fn move_objects<T>(objs: &mut [&mut RigidBody<T>], dt: f64) {
 }
 
 /// Uses `resolvers` to update position and rotation based on collisions
+#[allow(clippy::mut_mut)]
 fn resolve_collisions<T>(
     objects: &mut [&mut RigidBody<T>],
     resolvers: &[CollisionResolution],
@@ -112,8 +114,9 @@ fn resolve_collisions<T>(
     }
 }
 
-type HitCb<'a, T> =
-    Option<Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, &HitData, &BaseRigidBody) + 'a>>;
+type HitCb<'a, T> = Option<
+    Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, &HitData, &BaseRigidBody) + 'a>,
+>;
 
 /// Keeps the centers of all objects within the scene bounds specified by the center
 /// and half width of the scene in each dimension
@@ -217,8 +220,10 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         scene_center: cgmath::Point3<f64>,
         scene_size: f64,
     ) -> Simulation<'static, 'static, T> {
-        let mut collision_methods: HashMap<CollisionMethod, Box<dyn HighPCollision>> =
-            HashMap::new();
+        let mut collision_methods: HashMap<
+            CollisionMethod,
+            Box<dyn HighPCollision>,
+        > = HashMap::new();
         collision_methods.insert(
             CollisionMethod::Triangle,
             Box::new(collisions::TriangleTriangleGPU::from_active_ctx()),
@@ -256,7 +261,10 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     /// Adds a hit callback that returns `true` if we should do collision resolution
     /// or `false` if we shouldn't
     /// @see `with_on_hit`
-    pub fn with_do_resolve<'c, F: Fn(&RigidBody<T>, &RigidBody<T>, &HitData) -> bool + 'c>(
+    pub fn with_do_resolve<
+        'c,
+        F: Fn(&RigidBody<T>, &RigidBody<T>, &HitData) -> bool + 'c,
+    >(
         self,
         f: F,
     ) -> Simulation<'a, 'c, T> {
@@ -279,21 +287,31 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         resolver: &mut CollisionResolution,
         body: &RigidBody<T>,
         other_body: &RigidBody<T>,
-        data: HitData,
+        data: &HitData,
         player: &BaseRigidBody,
     ) {
         let mut func = self.on_hit.take();
         if let Some(cb) = func.as_mut() {
-            cb(body, other_body, &data, player);
+            cb(body, other_body, data, player);
         }
         self.on_hit.set(func);
         let test_func = self.do_resolve.take();
         if let Some(cb) = test_func.as_ref() {
-            if cb(body, other_body, &data) {
-                resolver.add_collision(data.pos_norm_b.1, data.pos_norm_b.0, body, other_body);
+            if cb(body, other_body, data) {
+                resolver.add_collision(
+                    data.pos_norm_b.1,
+                    data.pos_norm_b.0,
+                    body,
+                    other_body,
+                );
             }
         } else {
-            resolver.add_collision(data.pos_norm_b.1, data.pos_norm_b.0, body, other_body);
+            resolver.add_collision(
+                data.pos_norm_b.1,
+                data.pos_norm_b.0,
+                body,
+                other_body,
+            );
         }
         self.do_resolve.set(test_func);
     }
@@ -302,7 +320,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     /// elements represent the change in position/rotation
     /// needed to resolve each object of collisions
     ///
-    /// Each CollisionResolution struct handles the collision for a single rigid body
+    /// Each `CollisionResolution` struct handles the collision for a single rigid body
     fn get_resolving_forces(
         &self,
         objects: &[&RigidBody<T>],
@@ -315,29 +333,31 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
             .iter()
             .enumerate()
             .filter(|(_, body)| {
-                body.base.collider.is_some() && body.base.body_type != BodyType::Static
+                body.base.collider.is_some()
+                    && body.base.body_type != BodyType::Static
             })
-            .map(|(idx, body)| (body, body.base.collider.as_ref().unwrap(), idx))
+            .map(|(idx, body)| {
+                (body, body.base.collider.as_ref().unwrap(), idx)
+            })
         {
             let mut temp_map = HashMap::new();
-            let method = &**self.collision_methods.get(&body.base.col_meth()).unwrap();
-            for other in self.obj_tree.get_colliders(collider) {
+            let method =
+                &**self.collision_methods.get(&body.base.col_meth()).unwrap();
+            for other in CollisionTree::get_colliders(collider) {
                 let other_body = objects
                     .iter()
                     .find(|x| {
-                        x.base
-                            .collider
-                            .as_ref()
-                            .map(|x| x == &other)
-                            .unwrap_or(false)
+                        x.base.collider.as_ref().map_or(false, |x| x == &other)
                     })
                     .unwrap();
-                if let Some((pos, norm)) = tested_collisions.get(&(other.clone(), collider.clone()))
+                if let Some((pos, norm)) =
+                    tested_collisions.get(&(other.clone(), collider.clone()))
                 {
                     // if we already tested the collision, no need to retest it
                     // or execute the collision callback again
                     // just do the collision resolution on this body now
-                    resolvers[body_idx].add_collision(*norm, *pos, body, other_body);
+                    resolvers[body_idx]
+                        .add_collision(*norm, *pos, body, other_body);
                 } else {
                     match other.collision(collider, method) {
                         Some(Hit::Hit(HitData {
@@ -348,16 +368,19 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
                                 &mut resolvers[body_idx],
                                 body,
                                 other_body,
-                                HitData {
+                                &HitData {
                                     pos_norm_a: pos_norm_b,
                                     pos_norm_b: pos_norm_a,
                                 },
                                 &objects[player_idx].base,
                             );
-                            temp_map.insert((collider.clone(), other.clone()), pos_norm_b);
+                            temp_map.insert(
+                                (collider.clone(), other.clone()),
+                                pos_norm_b,
+                            );
                         }
                         Some(Hit::NoData) => {
-                            panic!("Complete undo not implemented")
+                            panic!("Complete undo not implemented");
                         }
                         None => (),
                     }
@@ -406,7 +429,6 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     ///
     /// Requires resolvers and objects of the corresponding indices to match
     pub fn apply_resolvers(
-        &mut self,
         objects: &mut [&mut RigidBody<T>],
         resolvers: &[CollisionResolution],
         dt: std::time::Duration,

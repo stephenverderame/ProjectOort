@@ -124,9 +124,8 @@ impl Obb {
                     let n = axis_a.cross(self.center + axis_a - (other.center + axis_b));
                     if n.magnitude2() < 5. * f64::EPSILON {
                         return false;
-                    } else {
-                        n.normalize()
                     }
+                    n.normalize()
                 } else {
                     a.normalize()
                 }
@@ -245,7 +244,7 @@ impl Aabb {
     }
 
     /// Volume of the OBB
-    #[inline(always)]
+    #[inline]
     pub fn vol(&self) -> f64 {
         self.extents.x * self.extents.y * self.extents.z * 8.0
     }
@@ -256,6 +255,7 @@ mod test {
     use super::*;
     use crate::cg_support::node;
 
+    #[allow(clippy::many_single_char_names)]
     #[test]
     fn basic_collision() {
         let ident = node::Node::new(None, None, None, None);

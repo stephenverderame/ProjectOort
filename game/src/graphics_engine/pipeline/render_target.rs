@@ -1,3 +1,4 @@
+#![allow(clippy::module_name_repetitions)]
 use super::super::camera;
 use super::super::drawable::*;
 use super::shader;
@@ -9,7 +10,7 @@ use shader::PipelineCache;
 use shader::RenderPassType;
 use std::pin::*;
 
-/// RenderTarget which renders to an MSAA color and depth buffer
+/// `RenderTarget` which renders to an MSAA color and depth buffer
 ///
 /// ### Output
 /// 2D RGBA F16 texture with multisampling already resolved
@@ -30,11 +31,11 @@ impl MsaaRenderTarget {
         height: u32,
         facade: &F,
     ) -> MsaaRenderTarget {
-        let _depth_tex = Box::pin(
+        let depth_tex = Box::pin(
             glium::texture::DepthTexture2dMultisample::empty(facade, width, height, samples)
                 .unwrap(),
         );
-        let _tex = Box::pin(
+        let tex = Box::pin(
             glium::texture::Texture2dMultisample::empty_with_format(
                 facade,
                 glium::texture::UncompressedFloatFormat::F16F16F16F16,
@@ -55,9 +56,9 @@ impl MsaaRenderTarget {
             )
             .unwrap(),
         );
-        let ms_tex = &*_tex as *const glium::texture::Texture2dMultisample;
-        let rbo_ptr = &*_depth_tex as *const glium::texture::DepthTexture2dMultisample;
-        let out_ptr = &*out_tex as *const glium::texture::Texture2d;
+        let ms_tex = std::ptr::addr_of!(*tex);
+        let rbo_ptr = std::ptr::addr_of!(*depth_tex);
+        let out_ptr = std::ptr::addr_of!(*out_tex);
         unsafe {
             MsaaRenderTarget {
                 fbo: glium::framebuffer::SimpleFrameBuffer::with_depth_buffer(
@@ -65,8 +66,8 @@ impl MsaaRenderTarget {
                 )
                 .unwrap(),
                 out_fbo: glium::framebuffer::SimpleFrameBuffer::new(facade, &*out_ptr).unwrap(),
-                _tex,
-                _depth_tex,
+                _tex: tex,
+                _depth_tex: depth_tex,
                 out_tex,
                 width,
                 height,
@@ -123,10 +124,10 @@ type DepthFbo = (
     Pin<Box<texture::Texture2d>>,
 );
 
-/// RenderTarget which renders to Depth buffer
+/// `RenderTarget` which renders to Depth buffer
 ///
 /// ### Output
-/// F32 2D DepthTexture
+/// F32 2D `DepthTexture`
 ///
 /// If a custom view getter is specified, then returns the depth texture with
 /// the used viewer's viewproj matrix
@@ -153,8 +154,8 @@ impl DepthRenderTarget {
             None
         };
         DepthRenderTarget {
-            main_fbo,
             depth_tex,
+            main_fbo,
             trans_fbo,
             render_cascades,
         }
@@ -192,7 +193,7 @@ impl DepthRenderTarget {
             )
             .unwrap(),
         );
-        let rbo_ptr = &*rbo as *const texture::DepthTexture2d;
+        let rbo_ptr = std::ptr::addr_of!(*rbo);
         unsafe {
             let ctx = ctx.ctx.borrow();
             (
@@ -231,8 +232,8 @@ impl DepthRenderTarget {
             )
             .unwrap(),
         );
-        let tex_ptr = &*tex as *const texture::Texture2d;
-        let rbo_ptr = &*rbo as *const texture::DepthTexture2d;
+        let tex_ptr = std::ptr::addr_of!(*tex);
+        let rbo_ptr = std::ptr::addr_of!(*rbo);
         unsafe {
             let ctx = ctx.ctx.borrow();
             (
@@ -321,7 +322,7 @@ impl CubemapRenderBase {
         }
     }
 
-    /// Gets an array of tuples of view target direction, CubeFace, and up vector
+    /// Gets an array of tuples of view target direction, `CubeFace`, and up vector
     fn get_target_up() -> [(cgmath::Point3<f32>, cgmath::Vector3<f32>); 6] {
         use cgmath::*;
         [
@@ -365,7 +366,7 @@ impl CubemapRenderBase {
     }
 }
 
-/// RenderTarget which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
+/// `RenderTarget` which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
 /// and that its called once per face
 ///
 /// ### Output
@@ -381,7 +382,7 @@ pub struct CubemapRenderTarget {
 }
 
 impl CubemapRenderTarget {
-    /// Creates a new CubemapRenderTarget. The cubemap is a F16 RGB texture with no mipmapping
+    /// Creates a new `CubemapRenderTarget`. The cubemap is a F16 RGB texture with no mipmapping
     /// `view_dist` - the view distance for the viewer when rendering to a cubemap
     ///
     /// `size` - the square side length of each texture face in the cubemap
@@ -393,7 +394,7 @@ impl CubemapRenderTarget {
         get_view_pos: Box<dyn Fn() -> cgmath::Point3<f32>>,
         facade: &F,
     ) -> CubemapRenderTarget {
-        let _depth_buffer = Box::pin(
+        let depth_buffer = Box::pin(
             texture::DepthCubemap::empty_with_format(
                 facade,
                 texture::DepthFormat::I24,
@@ -411,8 +412,8 @@ impl CubemapRenderTarget {
             )
             .unwrap(),
         );
-        let color_ptr = &*cbo_tex as *const texture::Cubemap;
-        let depth_ptr = &*_depth_buffer as *const texture::DepthCubemap;
+        let color_ptr = std::ptr::addr_of!(*cbo_tex);
+        let depth_ptr = std::ptr::addr_of!(*depth_buffer);
         let fbo = unsafe {
             framebuffer::SimpleFrameBuffer::with_depth_buffer(
                 facade,
@@ -425,7 +426,7 @@ impl CubemapRenderTarget {
             _size: size,
             cubemap: CubemapRenderBase::new(view_dist, get_view_pos),
             cbo_tex,
-            _depth_buffer,
+            _depth_buffer: depth_buffer,
             pass_type: RenderPassType::LayeredVisual,
             get_trans_id: None,
             fbo,
@@ -489,7 +490,7 @@ impl RenderTarget for CubemapRenderTarget {
     }
 }
 
-/// RenderTarget which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
+/// `RenderTarget` which renders to a cubemap with perspective. Can assume that `draw()` ignores its viewer argument
 /// and that it is called once per face, per mipmap level, starting at level 0.
 ///
 /// ### Output
@@ -501,7 +502,7 @@ pub struct MipCubemapRenderTarget {
 }
 
 impl MipCubemapRenderTarget {
-    /// Creates a new CubemapRenderTarget. The cubemap is a F16 RGB texture with no mipmapping
+    /// Creates a new `CubemapRenderTarget`. The cubemap is a F16 RGB texture with no mipmapping
     /// `view_dist` - the view distance for the viewer when rendering to a cubemap
     ///
     /// `size` - the square side length of each texture face in the cubemap at the highest detail mipmap (level 0)
@@ -581,7 +582,7 @@ impl RenderTarget for MipCubemapRenderTarget {
     }
 }
 
-/// A RenderTarget decorator wich supplies the target with an arbitrary view
+/// A `RenderTarget` decorator wich supplies the target with an arbitrary view
 /// on draw
 pub struct CustomViewRenderTargetDecorator<V: Viewer, F: Fn(&dyn Viewer) -> V, Rt: RenderTarget> {
     target: Rt,

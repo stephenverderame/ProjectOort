@@ -164,7 +164,7 @@ impl Material {
                     mat as *const assimp_sys::AiMaterial,
                     tex_type,
                     i,
-                    &mut path as *mut assimp_sys::AiString,
+                    std::ptr::addr_of_mut!(path),
                     null_c(),
                     null(),
                     null(),
@@ -246,15 +246,15 @@ impl Material {
             diffuse_tex: Some(diffuse.swap_remove(0)),
             name,
             pbr_data: pbr,
-            normal_tex: if !normal.is_empty() {
+            normal_tex: if normal.is_empty() {
+                None
+            } else {
                 Some(normal.swap_remove(0))
-            } else {
-                None
             },
-            emission_tex: if !emissive.is_empty() {
-                Some(emissive.swap_remove(0))
-            } else {
+            emission_tex: if emissive.is_empty() {
                 None
+            } else {
+                Some(emissive.swap_remove(0))
             },
         }
     }

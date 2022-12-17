@@ -11,7 +11,10 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 pub struct SceneManager {
-    scenes: std::collections::HashMap<&'static str, Box<RefCell<dyn AbstractScene>>>,
+    scenes: std::collections::HashMap<
+        &'static str,
+        Box<RefCell<dyn AbstractScene>>,
+    >,
     active_scene: Option<&'static str>,
 }
 
@@ -40,14 +43,18 @@ impl SceneManager {
         self
     }
 
-    pub fn get_active_scene(&self) -> Option<RefMut<dyn AbstractScene + 'static>> {
+    pub fn get_active_scene(
+        &self,
+    ) -> Option<RefMut<dyn AbstractScene + 'static>> {
         self.active_scene
             .map(|x| self.scenes[x].as_ref().borrow_mut())
     }
 }
 
 pub struct WindowCallbacks<'a> {
-    input_cb: Option<&'a mut dyn FnMut(glutin::event::DeviceEvent, RefMut<SceneManager>)>,
+    input_cb: Option<
+        &'a mut dyn FnMut(glutin::event::DeviceEvent, RefMut<SceneManager>),
+    >,
     resize_cb: Option<&'a mut dyn FnMut(glutin::dpi::PhysicalSize<u32>)>,
     draw_cb: Option<&'a mut dyn FnMut(Duration, RefMut<dyn AbstractScene>)>,
 }
@@ -63,7 +70,10 @@ impl<'a> WindowCallbacks<'a> {
 
     pub fn with_input_handler(
         mut self,
-        on_input: &'a mut dyn FnMut(glutin::event::DeviceEvent, RefMut<SceneManager>),
+        on_input: &'a mut dyn FnMut(
+            glutin::event::DeviceEvent,
+            RefMut<SceneManager>,
+        ),
     ) -> Self {
         self.input_cb = Some(on_input);
         self
@@ -134,25 +144,31 @@ impl Window {
         let mut last_time = Instant::now();
         self.e_loop.borrow_mut().run_return(|ev, _, control| {
             match ev {
-                Event::LoopDestroyed => (),
                 Event::WindowEvent { event, .. } => match event {
                     WindowEvent::CloseRequested => *control = ControlFlow::Exit,
                     WindowEvent::Resized(new_size) => {
                         if let Some(resize) = callbacks.resize_cb.as_mut() {
-                            resize(new_size)
+                            resize(new_size);
                         }
                     }
                     _ => (),
                 },
-                Event::DeviceEvent { event, .. } if callbacks.input_cb.is_some() => {
-                    callbacks.input_cb.as_mut().unwrap()(event, self.scenes.borrow_mut())
+                Event::DeviceEvent { event, .. }
+                    if callbacks.input_cb.is_some() =>
+                {
+                    callbacks.input_cb.as_mut().unwrap()(
+                        event,
+                        self.scenes.borrow_mut(),
+                    );
                 }
                 Event::MainEventsCleared => {
                     let now = Instant::now();
                     let dt = now.duration_since(last_time);
                     last_time = now;
 
-                    if let Some(mut active_scene) = self.scenes.borrow().get_active_scene() {
+                    if let Some(mut active_scene) =
+                        self.scenes.borrow().get_active_scene()
+                    {
                         (&mut *active_scene).render(None, &*shaders);
                     }
 
@@ -179,7 +195,7 @@ impl Window {
 
 impl Drop for Window {
     fn drop(&mut self) {
-        super::remove_ctx_if_active(self.wnd_ctx.clone());
+        super::remove_ctx_if_active(&self.wnd_ctx);
     }
 }
 

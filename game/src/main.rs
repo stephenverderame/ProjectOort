@@ -1,3 +1,14 @@
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    clippy::wildcard_imports,
+    clippy::enum_glob_use,
+    clippy::similar_names,
+    clippy::module_name_repetitions
+)]
 extern crate cgmath;
 extern crate glium;
 #[macro_use]
@@ -38,9 +49,12 @@ fn get_cascade_target(
     Box::new(render_target::CustomViewRenderTargetDecorator::new(
         render_target::DepthRenderTarget::new_cascade(width, height, true),
         move |_| {
-            user.borrow()
-                .get_cam()
-                .get_cascade(vec3(-120., 120., 0.), near, far, 2048)
+            user.borrow().get_cam().get_cascade(
+                vec3(-120., 120., 0.),
+                near,
+                far,
+                2048,
+            )
         },
     ))
 }
@@ -107,15 +121,19 @@ fn get_main_render_pass(
         )
         .with_trans_getter(Box::new(|| 0))
         .with_pass(shader::RenderPassType::Transparent(
-            user.borrow().as_entity().as_ptr() as *const entity::Entity,
+            user.borrow().get_entity_id(),
         )),
     );
     let trans_to_cache = Box::new(texture_processor::ToCacheProcessor::new());
-    let cam_depth_to_cache = Box::new(texture_processor::ToCacheProcessor::new());
+    let cam_depth_to_cache =
+        Box::new(texture_processor::ToCacheProcessor::new());
 
-    let render_cascade_1 = get_cascade_target(2048, 2048, user.clone(), 0.1, 40.);
-    let render_cascade_2 = get_cascade_target(2048, 2048, user.clone(), 40., 200.);
-    let render_cascade_3 = get_cascade_target(2048, 2048, user.clone(), 200., 600.);
+    let render_cascade_1 =
+        get_cascade_target(2048, 2048, user.clone(), 0.1, 40.);
+    let render_cascade_2 =
+        get_cascade_target(2048, 2048, user.clone(), 40., 200.);
+    let render_cascade_3 =
+        get_cascade_target(2048, 2048, user.clone(), 200., 600.);
 
     pipeline! ([depth_render, msaa, render_cascade_1, render_cascade_2, render_cascade_3, translucency],
         [cull_lights, eb, blur, compose, to_cache, trans_to_cache, cam_depth_to_cache],
@@ -166,6 +184,7 @@ fn get_ui_render_pass(
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     let render_width = 1920;
     let render_height = 1080;
@@ -176,15 +195,20 @@ fn main() {
         .depth_buffer(24)
         .build();
 
-    let controller = LocalGameController::new(&shared_types::game_controller::AsteroidMap {});
+    let controller = LocalGameController::new(
+        &shared_types::game_controller::AsteroidMap {},
+    );
     let player = player::Player::new(
         model::Model::new("assets/Ships/StarSparrow01.obj", &*wnd.ctx()),
         render_width as f32 / render_height as f32,
         "assets/Ships/StarSparrow01.obj",
         controller.get_player_stats().pid,
     );
-    let mediator =
-        LocalGameMediator::<HasLightingAvailable>::new(&wnd.shaders, &*wnd.ctx(), controller);
+    let mediator = LocalGameMediator::<HasLightingAvailable>::new(
+        &wnd.shaders,
+        &*wnd.ctx(),
+        controller,
+    );
     let game = game::Game::new(mediator, player);
 
     let mut main_scene = scene::Scene::new(
@@ -216,7 +240,11 @@ fn main() {
         ))),
     )
     .bg((0., 0., 0., 0.6));
-    let map = minimap::Minimap::new(game.player.borrow().root().clone(), 3000., &*wnd.ctx());
+    let map = minimap::Minimap::new(
+        game.player.borrow().root().clone(),
+        3000.,
+        &*wnd.ctx(),
+    );
     let minimap = Rc::new(RefCell::new(map));
     map_scene.set_entities(vec![minimap.clone()]);
 
@@ -228,13 +256,15 @@ fn main() {
         &*wnd.ctx(),
     )));
 
-    let power_icon =
-        entity::EntityBuilder::new(text::Icon::new("assets/icons/electric.png", &*wnd.ctx()))
-            .at(node::Node::default()
-                .u_scale(0.05)
-                .pos(point3(-0.9, 0.8, 0.0)))
-            .with_pass(shader::RenderPassType::Visual)
-            .build();
+    let power_icon = entity::EntityBuilder::new(text::Icon::new(
+        "assets/icons/electric.png",
+        &*wnd.ctx(),
+    ))
+    .at(node::Node::default()
+        .u_scale(0.05)
+        .pos(point3(-0.9, 0.8, 0.0)))
+    .with_pass(shader::RenderPassType::Visual)
+    .build();
     let shield_icon = entity::EntityBuilder::new(text::Icon::new(
         "assets/icons/bubble-shield.png",
         &*wnd.ctx(),
@@ -255,8 +285,8 @@ fn main() {
     entities.push(game.player.borrow().as_entity());
     main_scene.set_entities(entities);
 
-    let map_screen_location =
-        Matrix3::from_translation(vec2(-2.0f32, 0.0)) * Matrix3::from_scale(3.0f32);
+    let map_screen_location = Matrix3::from_translation(vec2(-2.0f32, 0.0))
+        * Matrix3::from_scale(3.0f32);
     let screen_width = Rc::new(RefCell::new(render_width));
     let screen_height = Rc::new(RefCell::new(render_height));
     let compositor_scene = scene::compositor_scene_new(
@@ -285,43 +315,51 @@ fn main() {
             .with_on_hit(|a, b, hit, player| game.borrow().on_hit(a, b, hit, player)),
     );
 
-    let mut draw_cb = |dt, mut scene: std::cell::RefMut<dyn scene::AbstractScene>| {
-        minimap.borrow_mut().clear_items();
-        game.borrow().get_mediator().iter_bodies(|bods| {
-            for bod in bods {
-                minimap.borrow_mut().add_item(bod);
-            }
-        });
-        stat_text.borrow_mut().clear_text();
-        stat_text.borrow_mut().add_text(
-            &format!("{}", game.borrow().player.borrow().shield().round() as u64),
-            Rc::new(RefCell::new(
-                node::Node::default()
-                    .u_scale(0.07)
-                    .pos(point3(-0.78, 0.85, 0.1)),
-            )),
-            [0., 0., 1., 1.],
-        );
-        stat_text.borrow_mut().add_text(
-            &format!("{}", game.borrow().player.borrow().energy().round() as u64),
-            Rc::new(RefCell::new(
-                node::Node::default()
-                    .u_scale(0.07)
-                    .pos(point3(-0.78, 0.75, 0.1)),
-            )),
-            [1., 1., 0., 1.],
-        );
-        game.borrow().on_draw(
-            &mut sim.borrow_mut(),
-            dt,
-            &mut *scene,
-            &mut player_controls.borrow_mut(),
-        );
-        // will call on_hit, so cannot mutably borrow game
-        player_controls.borrow_mut().reset_toggles();
+    let mut draw_cb =
+        |dt, mut scene: std::cell::RefMut<dyn scene::AbstractScene>| {
+            minimap.borrow_mut().clear_items();
+            game.borrow().get_mediator().iter_bodies(|bods| {
+                for bod in bods {
+                    minimap.borrow_mut().add_item(bod);
+                }
+            });
+            stat_text.borrow_mut().clear_text();
+            stat_text.borrow_mut().add_text(
+                &format!(
+                    "{}",
+                    game.borrow().player.borrow().shield().round() as u64
+                ),
+                &Rc::new(RefCell::new(
+                    node::Node::default()
+                        .u_scale(0.07)
+                        .pos(point3(-0.78, 0.85, 0.1)),
+                )),
+                [0., 0., 1., 1.],
+            );
+            stat_text.borrow_mut().add_text(
+                &format!(
+                    "{}",
+                    game.borrow().player.borrow().energy().round() as u64
+                ),
+                &Rc::new(RefCell::new(
+                    node::Node::default()
+                        .u_scale(0.07)
+                        .pos(point3(-0.78, 0.75, 0.1)),
+                )),
+                [1., 1., 0., 1.],
+            );
+            game.borrow().on_draw(
+                &mut sim.borrow_mut(),
+                dt,
+                &mut *scene,
+                &mut player_controls.borrow_mut(),
+            );
+            // will call on_hit, so cannot mutably borrow game
+            player_controls.borrow_mut().reset_toggles();
+        };
+    let mut controller_cb = |ev, _: std::cell::RefMut<SceneManager>| {
+        (&mut *player_controls.borrow_mut()).on_input(&ev);
     };
-    let mut controller_cb =
-        |ev, _: std::cell::RefMut<SceneManager>| (&mut *player_controls.borrow_mut()).on_input(ev);
     let mut resize_cb = |new_size: glutin::dpi::PhysicalSize<u32>| {
         if new_size.height != 0 {
             game.borrow().player.borrow_mut().aspect =

@@ -11,7 +11,9 @@ use std::rc::Rc;
 pub type ObjectData = (ObjectType, ObjectId);
 
 /// Gets the collision mesh path, bvh tree stop criteria, and the density of the object type
-pub fn col_data_of_obj_type(typ: &ObjectType) -> Option<(&'static str, TreeStopCriteria, f64)> {
+pub fn col_data_of_obj_type(
+    typ: ObjectType,
+) -> Option<(&'static str, TreeStopCriteria, f64)> {
     match typ {
         ObjectType::Asteroid => Some((
             "assets/asteroid1/Asteroid.obj",
@@ -44,11 +46,15 @@ pub struct AnimGameObject {
 
 impl AnimGameObject {
     #[allow(dead_code)]
-    pub fn new(model: model::Model) -> Self {
-        AnimGameObject::from(model, node::Node::default(), Default::default())
+    pub fn new(model: &model::Model) -> Self {
+        AnimGameObject::from(model, &node::Node::default(), ObjectId::default())
     }
 
-    pub fn from(_model: model::Model, _transform: node::Node, _id: ObjectId) -> Self {
+    pub fn from(
+        _model: &model::Model,
+        _transform: &node::Node,
+        _id: ObjectId,
+    ) -> Self {
         todo!();
         /*
         let transform = Rc::new(RefCell::new(transform));
@@ -85,23 +91,23 @@ impl AnimGameObject {
 
     /// Starts the animation with the given name
     /// See `Animator`
-    #[inline(always)]
+    #[inline]
     #[allow(dead_code)]
     pub fn start_anim(&mut self, name: &str, do_loop: bool) {
         (*self.entity.borrow_mut())
             .geometry
             .get_animator()
-            .start(name, do_loop)
+            .start(name, do_loop);
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(unused)]
     pub fn as_entity(&self) -> Rc<RefCell<ModelEntity>> {
         self.entity.clone()
     }
 
     /// Gets the transform of this object
-    #[inline(always)]
+    #[inline]
     #[allow(dead_code)]
     pub fn transform(&self) -> &Rc<RefCell<node::Node>> {
         &self.data.base.transform
@@ -153,10 +159,9 @@ impl GameObject {
         collision_mesh: &str,
         tree_args: collisions::TreeStopCriteria,
     ) -> Self {
-        self.collision_prototype = Some(collisions::CollisionObject::prototype(
-            collision_mesh,
-            tree_args,
-        ));
+        self.collision_prototype = Some(
+            collisions::CollisionObject::prototype(collision_mesh, tree_args),
+        );
         for body in &mut self.instances {
             body.base.collider = Some(collisions::CollisionObject::from(
                 body.base.transform.clone(),
@@ -241,18 +246,18 @@ impl GameObject {
 
     pub fn iter_positions<F: FnMut(&node::Node)>(&self, mut cb: F) {
         for instance in &self.instances {
-            cb(&*instance.base.transform.borrow())
+            cb(&*instance.base.transform.borrow());
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn as_entity(&self) -> Rc<RefCell<Entity>> {
         self.entity.clone()
     }
 
     /// Assumes this object has at least one instance, gets the transform of the first instance
     /// Helper function for when the game object only represents on object
-    #[inline(always)]
+    #[inline]
     #[allow(dead_code)]
     pub fn transform(&self) -> &Rc<RefCell<node::Node>> {
         &self.instances[0].base.transform
@@ -260,14 +265,14 @@ impl GameObject {
 
     /// Gets a mutable reference to the rigid body at index `idx`
     /// Requires there are more instances than `idx`
-    #[inline(always)]
+    #[inline]
     #[allow(unused)]
     pub fn body(&mut self, idx: usize) -> &mut RigidBody<ObjectData> {
         &mut self.instances[idx]
     }
 
     /// Gets a vector of mutable references to the rigid bodies
-    #[inline(always)]
+    #[inline]
     pub fn bodies_ref(&mut self) -> Vec<&mut RigidBody<ObjectData>> {
         self.instances.iter_mut().collect()
     }

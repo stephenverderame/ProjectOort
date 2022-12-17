@@ -53,7 +53,7 @@ pub enum TargetType {
     Mipcube,
     Depth,
 }
-/// A RenderTarget is something that can be rendered to and produces a texture
+/// A `RenderTarget` is something that can be rendered to and produces a texture
 pub trait RenderTarget {
     /// Draws to the render target by passing a framebuffer to `func`. Must be called before `read()`.
     ///
@@ -81,11 +81,11 @@ pub trait RenderTarget {
         ),
     ) -> Option<TextureType>;
 
-    /// Gets the type of this RenderTarget
+    /// Gets the type of this `RenderTarget`
     fn type_of(&self) -> TargetType;
 }
 
-/// A TextureProcessor transforms input textures into an output texture. It is basically
+/// A `TextureProcessor` transforms input textures into an output texture. It is basically
 /// a function on textures
 pub trait TextureProcessor {
     /// `source` - input textures for the processor
@@ -103,7 +103,7 @@ pub trait TextureProcessor {
 }
 
 /// A pipeline is a connected DAG with start nodes. Pipeline stores the indices of
-/// transformations in a RenderPass
+/// transformations in a `RenderPass`
 pub struct Pipeline {
     pub starts: Vec<u16>,
     pub adj_list: HashMap<u16, Vec<(u16, usize)>>,

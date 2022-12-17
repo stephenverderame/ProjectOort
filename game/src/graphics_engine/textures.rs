@@ -3,7 +3,8 @@ use glium::Surface;
 /// Loads a 16 bit RGB texture
 fn load_hdr(path: &str) -> glium::texture::RawImage2d<u16> {
     //let img = image::codecs::hdr::read_raw_file(path).unwrap();
-    let f = std::fs::File::open(path).unwrap_or_else(|_| panic!("Could not load '{}'", path));
+    let f = std::fs::File::open(path)
+        .unwrap_or_else(|_| panic!("Could not load '{}'", path));
     let img = image::load(
         std::io::BufReader::new(f),
         image::ImageFormat::from_path(path).unwrap(),
@@ -16,7 +17,8 @@ fn load_hdr(path: &str) -> glium::texture::RawImage2d<u16> {
 
 /// Loads an 8bit RGBA image from `path`, reversing it on load if `rev` is `true`
 fn load_img(path: &str, rev: bool) -> glium::texture::RawImage2d<u8> {
-    let f = std::fs::File::open(path).unwrap_or_else(|_| panic!("Could not load '{}'", path));
+    let f = std::fs::File::open(path)
+        .unwrap_or_else(|_| panic!("Could not load '{}'", path));
     let img = image::load(
         std::io::BufReader::new(f),
         image::ImageFormat::from_path(path).unwrap(),
@@ -25,14 +27,17 @@ fn load_img(path: &str, rev: bool) -> glium::texture::RawImage2d<u8> {
     .to_rgba8();
     let dims = img.dimensions();
     if rev {
-        glium::texture::RawImage2d::from_raw_rgba_reversed(&img.into_raw(), dims)
+        glium::texture::RawImage2d::from_raw_rgba_reversed(
+            &img.into_raw(),
+            dims,
+        )
     } else {
         glium::texture::RawImage2d::from_raw_rgba(img.into_raw(), dims)
     }
 }
 
-/// Loads an sRGB texture as 8bit RGBA with mipmaps from `path`. The image is reversed on load
-/// This will convert whatever texture is loaded from sRGB to linear color space
+/// Loads an `sRGB` texture as 8bit RGBA with mipmaps from `path`. The image is reversed on load
+/// This will convert whatever texture is loaded from `sRGB` to linear color space
 pub fn load_texture_srgb<F: glium::backend::Facade>(
     path: &str,
     facade: &F,
@@ -132,7 +137,8 @@ where
             cubemap.main_level().image(cube_layer),
         )
         .unwrap();
-        let img = load_texture_2d(&format!("{}{}{}", dir, name, extension), facade);
+        let img =
+            load_texture_2d(&format!("{}{}{}", dir, name, extension), facade);
         img.as_surface().blit_whole_color_to(
             &fbo,
             &dst_target,
@@ -158,11 +164,15 @@ pub fn gen_cloud_noise_vol<F: glium::backend::Facade>(
     let scale = 0.1f64;
     let remap = |x| (x + 1.0) * 0.5;
     for idx in 0..width * height * depth {
-        let x = (idx % width) as f64;
-        let y = ((idx % voxels_per_slice) as f64 / width as f64).floor();
-        let z = (idx as f64 / voxels_per_slice as f64).floor();
+        let x = f64::from(idx % width);
+        let y = (f64::from(idx % voxels_per_slice) / f64::from(width)).floor();
+        let z = (f64::from(idx) / f64::from(voxels_per_slice)).floor();
 
-        let pt = cgmath::vec3(x / width as f64, y / height as f64, z / depth as f64);
+        let pt = cgmath::vec3(
+            x / f64::from(width),
+            y / f64::from(height),
+            z / f64::from(depth),
+        );
 
         let /*mut*/ noise = remap(perlin.get([x * scale, y * scale, z * scale]));
         /*noise *= remap(fbm.get([ pt.x * 100., pt.y * 100., pt.z * 100. ]));

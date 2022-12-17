@@ -104,7 +104,7 @@ impl BoneAnim {
 
     /// Interpolates to get current position for `anim_ticks`. Updates
     /// `self.last_pos`, looping if necessary
-    #[inline(always)]
+    #[inline]
     fn get_cur_pos(&self, anim_ticks: f64) -> Vector3<f64> {
         BoneAnim::get_cur(
             anim_ticks,
@@ -115,14 +115,14 @@ impl BoneAnim {
 
     /// Interpolates to get current scale for `anim_ticks`. Updates
     /// `self.last_scale`, looping if necessary
-    #[inline(always)]
+    #[inline]
     fn get_cur_scale(&self, anim_ticks: f64) -> Vector3<f64> {
         BoneAnim::get_cur(anim_ticks, &self.scales, &mut *self.last_scale.borrow_mut())
     }
 
     /// Interpolates to get current rotation for `anim_ticks`. Updates
     /// `self.last_rot`, looping if necessary
-    #[inline(always)]
+    #[inline]
     fn get_cur_rot(&self, anim_ticks: f64) -> Quaternion<f64> {
         BoneAnim::get_cur(
             anim_ticks,
@@ -141,7 +141,7 @@ impl BoneAnim {
     }
 }
 
-/// Encapsulates transformation information of an AiNode.
+/// Encapsulates transformation information of an `AiNode`.
 /// Essentially represents a node in the scene graph for the model
 pub struct AssimpNode {
     transformation: Matrix4<f64>,
@@ -207,7 +207,7 @@ impl Animation {
     fn play(&self, dt: f64) -> Vec<Matrix4<f32>> {
         let ticks = self.ticks_per_sec * dt;
         let iterations = (ticks / self.duration).floor() as i32;
-        let ticks = ticks - iterations as f64 * self.duration;
+        let ticks = ticks - f64::from(iterations) * self.duration;
 
         let mut final_mats = Vec::<Matrix4<f32>>::new();
         final_mats.resize(self.bone_map.len(), Matrix4::from_scale(1.));
@@ -253,7 +253,7 @@ impl Animation {
     }
 
     /// True if `anim_sec` exceeds the duration of a single play of the animation
-    #[inline(always)]
+    #[inline]
     fn is_finished(&self, anim_sec: f64) -> bool {
         anim_sec * self.ticks_per_sec > self.duration
     }
@@ -271,8 +271,8 @@ pub struct Animator {
 impl Animator {
     pub fn new(
         anims: assimp::scene::AnimationIter,
-        bone_map: Rc<HashMap<String, Bone>>,
-        root_node: Rc<AssimpNode>,
+        bone_map: &Rc<HashMap<String, Bone>>,
+        root_node: &Rc<AssimpNode>,
     ) -> Animator {
         let total_anims: Vec<Animation> = anims
             .map(|x| Animation::new(&x, root_node.clone(), bone_map.clone()))
@@ -296,7 +296,7 @@ impl Animator {
                         self.animations[cur_anim]
                             .play(anim_sec)
                             .into_iter()
-                            .map(|x| x.into())
+                            .map(std::convert::Into::into)
                             .collect(),
                     )
                 } else {

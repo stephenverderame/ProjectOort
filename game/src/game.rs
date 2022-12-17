@@ -8,6 +8,7 @@ use crate::graphics_engine::scene;
 use crate::object;
 use crate::physics::*;
 use cgmath::*;
+use controls::PlayerActionState;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -32,7 +33,12 @@ impl<M: GameMediator> Game<M> {
         hit: &HitData,
         emitter_id: usize,
     ) where
-        Func: Fn(Point3<f64>, Vector3<f64>, Vector3<f64>, &glium::Display) -> Box<dyn Emitter>,
+        Func: Fn(
+            Point3<f64>,
+            Vector3<f64>,
+            Vector3<f64>,
+            &glium::Display,
+        ) -> Box<dyn Emitter>,
     {
         use crate::graphics_engine;
         let relative_vel = a.base.velocity - b.base.velocity;
@@ -40,7 +46,12 @@ impl<M: GameMediator> Game<M> {
             let ctx = graphics_engine::get_active_ctx();
             let facade = ctx.ctx.borrow();
             self.mediator.borrow_mut().add_particle_emitter(
-                emitter_factory(hit.pos_norm_b.0, hit.pos_norm_b.1, relative_vel, &*facade),
+                emitter_factory(
+                    hit.pos_norm_b.0,
+                    hit.pos_norm_b.1,
+                    relative_vel,
+                    &*facade,
+                ),
                 emitter_id,
             );
         }
@@ -112,7 +123,8 @@ impl<M: GameMediator> Game<M> {
         player: &BaseRigidBody,
     ) {
         const SHIELD_DAMAGE_FAC: f64 = -0.01;
-        if let Some(other) = if Rc::ptr_eq(&a.base.transform, &player.transform) {
+        if let Some(other) = if Rc::ptr_eq(&a.base.transform, &player.transform)
+        {
             Some(b)
         } else if Rc::ptr_eq(&b.base.transform, &player.transform) {
             Some(a)
@@ -122,8 +134,10 @@ impl<M: GameMediator> Game<M> {
             if other.metadata.0 == object::ObjectType::Laser {
                 self.delta_shield.set(-10.);
             } else if other.metadata.0 != object::ObjectType::Hook {
-                self.delta_shield
-                    .set(SHIELD_DAMAGE_FAC * (a.base.velocity - b.base.velocity).magnitude());
+                self.delta_shield.set(
+                    SHIELD_DAMAGE_FAC
+                        * (a.base.velocity - b.base.velocity).magnitude(),
+                );
             }
         }
     }
@@ -138,7 +152,13 @@ impl<M: GameMediator> Game<M> {
     ) {
         use object::ObjectType::*;
         if a.metadata.0 == Laser || b.metadata.0 == Laser {
-            self.create_emitter(laser_hit_emitter::<glium::Display>, a, b, hit, 0);
+            self.create_emitter(
+                laser_hit_emitter::<glium::Display>,
+                a,
+                b,
+                hit,
+                0,
+            );
             let lt = if a.metadata.0 == Laser {
                 a.metadata.1
             } else {
@@ -149,7 +169,13 @@ impl<M: GameMediator> Game<M> {
         if a.metadata.0 == Ship && b.metadata.0 == Asteroid
             || a.metadata.0 == Asteroid && b.metadata.0 == Ship
         {
-            self.create_emitter(asteroid_hit_emitter::<glium::Display>, a, b, hit, 1);
+            self.create_emitter(
+                asteroid_hit_emitter::<glium::Display>,
+                a,
+                b,
+                hit,
+                1,
+            );
         }
         if a.metadata.0 == Hook || b.metadata.0 == Hook {
             self.on_hook(a, b, hit, player);
@@ -160,7 +186,7 @@ impl<M: GameMediator> Game<M> {
             };
             self.dead_lasers.borrow_mut().push(lt);
         }
-        self.check_player_hit(a, b, player)
+        self.check_player_hit(a, b, player);
     }
 
     /// Callback function for physics simulation
@@ -173,6 +199,7 @@ impl<M: GameMediator> Game<M> {
         _: &HitData,
     ) -> bool {
         use object::ObjectType::*;
+        #[allow(clippy::unnested_or_patterns)]
         !matches!(
             (a.metadata.0, b.metadata.0),
             (Hook, _) | (_, Hook) | (Laser, _) | (_, Laser)
@@ -192,7 +219,8 @@ impl<M: GameMediator> Game<M> {
         let mut u = self.player.borrow_mut();
         let forces = &self.forces.borrow();
         let objects: Vec<_> = self.mediator.borrow().game_objects().collect();
-        let mut borrows: Vec<_> = objects.iter().map(|o| o.borrow_mut()).collect();
+        let mut borrows: Vec<_> =
+            objects.iter().map(|o| o.borrow_mut()).collect();
         let mut bodies: Vec<_> = borrows
             .iter_mut()
             .flat_map(|o| o.bodies_ref().into_iter())
@@ -200,11 +228,17 @@ impl<M: GameMediator> Game<M> {
         bodies.push(u.as_rigid_body(controls, dt));
         let p_idx = bodies.len() - 1;
         let resolvers = {
-            let v = unsafe { std::mem::transmute::<_, &[&_]>(bodies.as_slice()) };
+            let v = unsafe {
+                &*(bodies.as_slice()
+                    as *const [&mut RigidBody<(
+                        shared_types::ObjectType,
+                        shared_types::ObjectId,
+                    )>] as *const [&_])
+            };
             sim.calc_resolvers(v, forces, p_idx, dt)
         };
-        sim.apply_resolvers(&mut bodies, &resolvers, dt);
-        u.change_shield(self.delta_shield.take())
+        Simulation::apply_resolvers(&mut bodies, &resolvers, dt);
+        u.change_shield(self.delta_shield.take());
     }
 
     /// Function thet should be called every frame to handle shooting lasers
@@ -214,18 +248,22 @@ impl<M: GameMediator> Game<M> {
         mediator: &mut M,
     ) {
         const ENERGY_PER_SHOT: f64 = 1.;
-        if controller.fire && user.energy() > ENERGY_PER_SHOT {
+        if (controller.state == PlayerActionState::Fire
+            || controller.state == PlayerActionState::FireRope)
+            && user.energy() > ENERGY_PER_SHOT
+        {
             let mut transform = user
                 .root()
                 .borrow()
                 .clone()
                 .scale(cgmath::vec3(0.3, 0.3, 1.));
             transform.translate(user.forward() * 10.);
-            let (typ, speed) = if controller.fire_rope {
-                (object::ObjectType::Hook, 200.)
-            } else {
-                (object::ObjectType::Laser, 120.)
-            };
+            let (typ, speed) =
+                if controller.state == PlayerActionState::FireRope {
+                    (object::ObjectType::Hook, 200.)
+                } else {
+                    (object::ObjectType::Laser, 120.)
+                };
             mediator.add_laser(transform, user.forward() * speed, typ);
             user.change_energy(-ENERGY_PER_SHOT);
         }
@@ -240,15 +278,20 @@ impl<M: GameMediator> Game<M> {
         controller: &mut controls::PlayerControls,
     ) {
         self.mediator.borrow_mut().sync();
-        *self.player.borrow().trans_fac() = controller.compute_transparency_fac();
+        *self.player.borrow().trans_fac() =
+            controller.compute_transparency_fac();
         self.dead_lasers.borrow_mut().clear();
         {
-            if controller.cut_rope {
+            if controller.state == PlayerActionState::CutRope {
                 self.forces.borrow_mut().clear();
                 self.mediator.borrow_mut().remove_line(0);
             }
             let mut u = self.player.borrow_mut();
-            Self::handle_shots(&mut *u, controller, &mut self.mediator.borrow_mut());
+            Self::handle_shots(
+                &mut *u,
+                controller,
+                &mut self.mediator.borrow_mut(),
+            );
         }
         self.step_sim(sim, controller, dt);
 
@@ -265,7 +308,9 @@ impl<M: GameMediator> Game<M> {
 
     #[inline]
     #[allow(unused)]
-    pub fn get_entities(&self) -> Vec<Rc<RefCell<dyn crate::entity::AbstractEntity>>> {
+    pub fn get_entities(
+        &self,
+    ) -> Vec<Rc<RefCell<dyn crate::entity::AbstractEntity>>> {
         self.mediator.borrow().get_entities()
     }
 }
@@ -282,7 +327,9 @@ impl<M: GameMediatorLightingAvailable> Game<M> {
         }
     }
 
-    pub fn get_lighting(self) -> (super::shader::PbrMaps, Vector3<f32>, Game<M::ReturnType>)
+    pub fn get_lighting(
+        self,
+    ) -> (super::shader::PbrMaps, Vector3<f32>, Game<M::ReturnType>)
     where
         <M as GameMediatorLightingAvailable>::ReturnType: GameMediator,
     {

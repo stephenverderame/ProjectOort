@@ -55,7 +55,10 @@ pub struct Font {
 }
 
 impl Font {
-    fn parse_line_to_glyph(line: &str, param_regex: &Regex) -> Option<(u8, Glyph)> {
+    fn parse_line_to_glyph(
+        line: &str,
+        param_regex: &Regex,
+    ) -> Option<(u8, Glyph)> {
         let mut x: Option<i32> = None;
         let mut y: Option<i32> = None;
         let mut height: Option<i32> = None;
@@ -104,7 +107,10 @@ impl Font {
         })
     }
 
-    fn parse_line_to_kerning(line: &str, regex: &Regex) -> Option<(u8, (u8, i32))> {
+    fn parse_line_to_kerning(
+        line: &str,
+        regex: &Regex,
+    ) -> Option<(u8, (u8, i32))> {
         let mut first: Option<u8> = None;
         let mut second: Option<u8> = None;
         let mut amount: Option<i32> = None;
@@ -138,7 +144,9 @@ impl Font {
             Regex::new(&format!("{}=([0-9]+)", key))
                 .unwrap()
                 .captures(header)
-                .unwrap_or_else(|| panic!("No matching pattern found for {}", key))
+                .unwrap_or_else(|| {
+                    panic!("No matching pattern found for {}", key)
+                })
                 .get(1)
                 .expect("No capture group at index 1")
                 .as_str()
@@ -161,14 +169,17 @@ impl Font {
     /// `path` - path to the `fnt` file which contains the textual metadata
     pub fn new<F: backend::Facade>(path: &str, f: &F) -> Font {
         let dir = dir_stem(path);
-        let mut file =
-            File::open(path).unwrap_or_else(|_| panic!("Could not open font file: {}", path));
+        let mut file = File::open(path)
+            .unwrap_or_else(|_| panic!("Could not open font file: {}", path));
         let mut data = String::new();
         file.read_to_string(&mut data)
             .expect("Could not read from font file");
-        let (header, content) = data.split_at(data.find("chars count").unwrap());
-        let (char_data, kerning_data) = content.split_at(content.find("kernings count").unwrap());
-        let (_line_height, img_width, img_height, tex_path) = Self::read_from_header(header);
+        let (header, content) =
+            data.split_at(data.find("chars count").unwrap());
+        let (char_data, kerning_data) =
+            content.split_at(content.find("kernings count").unwrap());
+        let (line_height, img_width, img_height, tex_path) =
+            Self::read_from_header(header);
 
         let rg_param = Regex::new(r#"([a-z][a-z\s]*)=(-?[0-9]+)"#).unwrap();
         let mut glyphs = HashMap::new();
@@ -179,7 +190,9 @@ impl Font {
             }
         }
         for line in kerning_data.split('\n') {
-            if let Some((first, (second, amount))) = Self::parse_line_to_kerning(line, &rg_param) {
+            if let Some((first, (second, amount))) =
+                Self::parse_line_to_kerning(line, &rg_param)
+            {
                 kernings
                     .entry(first)
                     .or_insert_with(HashMap::new)
@@ -189,12 +202,12 @@ impl Font {
 
         let sdf = load_texture_2d(&format!("{}/{}", dir, tex_path), f);
         Font {
-            _line_height,
             glyphs,
+            kernings,
             sdf,
+            _line_height: line_height,
             img_width,
             img_height,
-            kernings,
         }
     }
 }
@@ -230,7 +243,12 @@ impl Text {
     }
 
     /// Adds an instance of text with the given string, position/scaling, and color
-    pub fn add_text(&mut self, txt: &str, pos: Rc<RefCell<Node>>, color: [f32; 4]) {
+    pub fn add_text(
+        &mut self,
+        txt: &str,
+        pos: &Rc<RefCell<Node>>,
+        color: [f32; 4],
+    ) {
         use cgmath::*;
         let mut last_x = 0;
         let fnt = self.font.clone();
@@ -245,9 +263,11 @@ impl Text {
             } else {
                 0
             };
-            let pt = pos
-                .borrow()
-                .transform_pt(point3((last_x + offset) as f64, 0., 0.));
+            let pt = pos.borrow().transform_pt(point3(
+                f64::from(last_x + offset),
+                0.,
+                0.,
+            ));
             let p = Node::default().parent(pos.clone()).pos(pt);
             last_x += g.advance.min(9);
             self.positions.push(p);
@@ -310,11 +330,16 @@ impl Drawable for Text {
                 .per_instance()
                 .unwrap(),
         );
-        let vertices = VertexHolder::new(VertexSourceData::Single(From::from(&self.vertices)))
-            .append(locs)
-            .append(attribs);
+        let vertices = VertexHolder::new(VertexSourceData::Single(From::from(
+            &self.vertices,
+        )))
+        .append(locs)
+        .append(attribs);
         vec![(
-            shader::UniformInfo::Text(&self.font.sdf, [self.font.img_width, self.font.img_height]),
+            shader::UniformInfo::Text(
+                &self.font.sdf,
+                [self.font.img_width, self.font.img_height],
+            ),
             vertices,
             From::from(&self.indicies),
         )]
@@ -340,6 +365,10 @@ impl AbstractEntity for Text {
 
     fn render_order(&self) -> RenderOrder {
         RenderOrder::Unordered
+    }
+
+    fn get_id(&self) -> usize {
+        self as *const _ as usize
     }
 }
 
@@ -382,7 +411,9 @@ impl Drawable for Icon {
             .map(|pos| {
                 (
                     shader::UniformInfo::Icon(tex, *pos),
-                    VertexHolder::new(VertexSourceData::Single(From::from(verts))),
+                    VertexHolder::new(VertexSourceData::Single(From::from(
+                        verts,
+                    ))),
                     From::from(indicies),
                 )
             })

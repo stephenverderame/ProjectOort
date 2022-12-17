@@ -31,32 +31,33 @@ impl Particle {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn vel(mut self, vel: Vector3<f64>) -> Self {
         self.vel = vel;
         self
     }
 
     #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     pub fn rot_vel(mut self, rot_vel: Quaternion<f64>) -> Self {
         self.rot_vel = rot_vel;
         self
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn lifetime(mut self, life: std::time::Duration) -> Self {
         self.lifetime = life;
         self
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn color(mut self, color: Vector4<f32>) -> Self {
         self.color = color;
         self
     }
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub struct ParticleEmitter<I, S, D, Ia, G, Lg>
 where
     I: Fn(&Node) -> Particle,
@@ -164,7 +165,7 @@ where
 {
     fn emit(&mut self, dt: Duration) {
         let mut death = HashSet::new();
-        for p in self.particles.iter_mut() {
+        for p in &mut self.particles {
             if (self.dead_particle)(p) {
                 death.insert(p as *const Particle);
             } else {
@@ -187,7 +188,7 @@ where
         let mut v = Vec::new();
         for p in &self.particles {
             if let Some(data) = (self.light_getter)(p) {
-                v.push(data)
+                v.push(data);
             }
         }
         if v.is_empty() {

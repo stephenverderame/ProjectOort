@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 /// A collection of particle emitters
+#[allow(clippy::module_name_repetitions)]
 pub struct ParticleSystem {
     emitters: VecDeque<(Box<dyn Emitter>, usize)>,
     drawables: Vec<Box<dyn Drawable>>,
@@ -23,23 +24,27 @@ impl ParticleSystem {
 
     /// Adds a new emitter to this system, using the drawable at index `idx`
     /// Requires this system has `drawables.len() > idx`
-    #[inline(always)]
+    #[inline]
     #[allow(dead_code)]
-    pub fn with_emitter(mut self, emitter: Box<dyn Emitter>, drawable_idx: usize) -> Self {
+    pub fn with_emitter(
+        mut self,
+        emitter: Box<dyn Emitter>,
+        drawable_idx: usize,
+    ) -> Self {
         self.emitters.push_back((emitter, drawable_idx));
         self
     }
 
     /// Adds a new emitter to this system, using the drawable at index `idx`
     /// Requires this system has `drawables.len() > idx`
-    #[inline(always)]
+    #[inline]
     pub fn new_emitter(&mut self, e: Box<dyn Emitter>, idx: usize) {
         self.emitters.push_back((e, idx));
     }
 
     /// Adds a drawable at the next available index
     #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     pub fn with_drawable(mut self, draw: Box<dyn Drawable>) -> Self {
         self.drawables.push(draw);
         self
@@ -62,22 +67,23 @@ impl ParticleSystem {
 
     pub fn emit(&mut self, dt: std::time::Duration) {
         let mut death = Vec::new();
-        for (e, _) in self.emitters.iter_mut() {
+        for (e, _) in &mut self.emitters {
             if e.expired() {
                 death.push(e as *const Box<dyn Emitter>);
             } else {
                 e.emit(dt);
             }
         }
-        self.emitters
-            .retain(|(e, _)| !death.iter().any(|d| *d == e as *const Box<dyn Emitter>));
+        self.emitters.retain(|(e, _)| {
+            !death.iter().any(|d| *d == e as *const Box<dyn Emitter>)
+        });
     }
 
     pub fn lights(&self) -> Option<Vec<shader::LightData>> {
         let mut lights = Vec::new();
         for (e, _) in &self.emitters {
             if let Some(x) = e.lights().as_mut() {
-                lights.append(x)
+                lights.append(x);
             }
         }
         if lights.is_empty() {
@@ -99,7 +105,7 @@ impl Drawable for ParticleSystem {
     )> {
         let mut v = Vec::new();
         let drawables = self.drawables.as_mut_ptr();
-        for (e, draw_idx) in self.emitters.iter_mut() {
+        for (e, draw_idx) in &mut self.emitters {
             let (u, vh, i) = unsafe { &mut *drawables.add(*draw_idx) }
                 .render_args(p)
                 .swap_remove(0);
@@ -125,5 +131,8 @@ impl AbstractEntity for ParticleSystem {
     }
     fn render_order(&self) -> RenderOrder {
         RenderOrder::Last
+    }
+    fn get_id(&self) -> usize {
+        self as *const ParticleSystem as usize
     }
 }

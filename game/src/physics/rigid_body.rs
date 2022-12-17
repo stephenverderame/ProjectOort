@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 /// A bare-bones cell that is really really unsafe
-/// MUST use from a single thread, and MUST ensure no borrow_mut occurs
+/// MUST use from a single thread, and MUST ensure no `borrow_mut` occurs
 /// at the same time as borrow
 struct RaceyCell<T> {
     cell: UnsafeCell<T>,
@@ -60,7 +60,9 @@ const INVALID_SHARED_BODY_ID: usize = 0;
 impl SharedRigidBody {
     /// Computes the "unit" inertial tensor
     /// (must be multiplied by mass prior to usage)
-    fn calc_inertial_tensor(collider: &collisions::CollisionObject) -> Matrix3<f64> {
+    fn calc_inertial_tensor(
+        collider: &collisions::CollisionObject,
+    ) -> Matrix3<f64> {
         let mut ixx = 0.;
         let mut iyy = 0.;
         let mut izz = 0.;
@@ -85,7 +87,9 @@ impl SharedRigidBody {
             .entry(INVALID_SHARED_BODY_ID)
             .or_insert_with(|| Self {
                 collision_method: CollisionMethod::Triangle,
-                inertial_tensor: Matrix3::from_diagonal(Vector3::new(1., 1., 1.)),
+                inertial_tensor: Matrix3::from_diagonal(Vector3::new(
+                    1., 1., 1.,
+                )),
             });
         Self {
             collision_method: CollisionMethod::Triangle,
@@ -146,11 +150,9 @@ impl BaseRigidBody {
     pub fn density(&mut self, density: f64) {
         let scale = self.transform.borrow().local_scale();
         let scale = scale.x * scale.y * scale.z;
-        let mass = self
-            .collider
-            .as_ref()
-            .map(|collider| density * collider.aabb_volume() * scale)
-            .unwrap_or(density);
+        let mass = self.collider.as_ref().map_or(density, |collider| {
+            density * collider.aabb_volume() * scale
+        });
         self.mass = mass;
     }
 
@@ -187,10 +189,8 @@ impl<T> RigidBody<T> {
         body_type: BodyType,
         metadata: T,
     ) -> Self {
-        let mass = collider
-            .as_ref()
-            .map(|collider| collider.aabb_volume())
-            .unwrap_or(0.);
+        use collisions::CollisionObject;
+        let mass = collider.as_ref().map_or(0., CollisionObject::aabb_volume);
         Self {
             base: BaseRigidBody {
                 transform,

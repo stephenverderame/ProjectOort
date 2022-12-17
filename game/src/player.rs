@@ -3,6 +3,7 @@ use crate::camera;
 use crate::cg_support::node::*;
 use crate::collisions;
 use crate::controls;
+use crate::graphics_engine::entity::AbstractEntity;
 use crate::graphics_engine::{drawable, entity, shader};
 use crate::model::Model;
 use crate::physics;
@@ -42,8 +43,15 @@ impl Player {
     /// `view_aspect` - the screen aspect ratio to control the player perspective camera
     ///
     /// `c_str` - collision string, the path of the collision mesh
-    pub fn new(model: Model, view_aspect: f32, c_str: &str, id: object::ObjectId) -> Player {
-        let root_node = Rc::new(RefCell::new(Node::default().pos(point3(100., 100., 100.))));
+    pub fn new(
+        model: Model,
+        view_aspect: f32,
+        c_str: &str,
+        id: object::ObjectId,
+    ) -> Player {
+        let root_node = Rc::new(RefCell::new(
+            Node::default().pos(point3(100., 100., 100.)),
+        ));
         let mut cam = Node::new(Some(point3(0., 15., -25.)), None, None, None);
         cam.set_parent(root_node.clone());
         let mut model = model.with_transparency(0.99, 0);
@@ -110,13 +118,14 @@ impl Player {
                 }
             };
             self.energy = change_stat(self.energy, ENERGY_PER_SEC * dt_sec);
-            self.shield = change_stat(self.shield, ENERGY_PER_SEC / 3. * dt_sec);
+            self.shield =
+                change_stat(self.shield, ENERGY_PER_SEC / 3. * dt_sec);
             self.body.base.rot_vel = vec3(input.pitch, 0., input.roll) / 10000.;
         }
         &mut self.body
     }
 
-    #[inline(always)]
+    #[inline]
     #[allow(unused)]
     pub fn node(&self) -> &Rc<RefCell<Node>> {
         &self.body.base.transform
@@ -155,13 +164,13 @@ impl Player {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn as_entity(&self) -> Rc<RefCell<entity::Entity>> {
         self.entity.clone()
     }
 
     /// Gets the ship transform/player root node
-    #[inline(always)]
+    #[inline]
     pub fn root(&self) -> &Rc<RefCell<Node>> {
         &self.body.base.transform
     }
@@ -183,17 +192,26 @@ impl Player {
 
     #[inline]
     pub fn change_energy(&mut self, delta: f64) {
-        self.energy = change_stat(self.energy, delta)
+        self.energy = change_stat(self.energy, delta);
     }
 
     #[inline]
     pub fn change_shield(&mut self, delta: f64) {
-        self.shield = change_stat(self.shield, delta)
+        self.shield = change_stat(self.shield, delta);
+    }
+
+    pub fn get_entity_id(&self) -> usize {
+        self.entity.borrow().get_id()
     }
 }
 impl drawable::Viewer for Player {
     fn proj_mat(&self) -> cgmath::Matrix4<f32> {
-        cgmath::perspective(cgmath::Deg::<f32>(60f32), self.aspect, 0.1, FAR_PLANE)
+        cgmath::perspective(
+            cgmath::Deg::<f32>(60f32),
+            self.aspect,
+            0.1,
+            FAR_PLANE,
+        )
     }
 
     fn cam_pos(&self) -> cgmath::Point3<f32> {

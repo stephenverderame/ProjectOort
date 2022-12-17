@@ -52,15 +52,16 @@ impl CollisionResolution {
         let body_angular_denom_term = body_lever
             .cross(norm)
             .dot(body_inertia.invert().unwrap() * body_lever.cross(norm));
-        let colliding_angular_denom_term = colliding_lever
-            .cross(norm)
-            .dot(colliding_inertia.invert().unwrap() * colliding_lever.cross(norm));
+        let colliding_angular_denom_term = colliding_lever.cross(norm).dot(
+            colliding_inertia.invert().unwrap() * colliding_lever.cross(norm),
+        );
         let impulse = 1.52 * (impact_speed + impact_angular_speed)
             / (m_eff + body_angular_denom_term + colliding_angular_denom_term);
         // (1 + coeff of resitution) * effective mass * impact speed
         // impulse = kg * m/s = Ns
         self.vel -= impulse / body.mass * norm;
-        self.rot += body_inertia.invert().unwrap() * (impulse * norm).cross(body_lever);
+        self.rot +=
+            body_inertia.invert().unwrap() * (impulse * norm).cross(body_lever);
     }
 
     /// Performs a collision between `body` and `colliding_body`
@@ -77,9 +78,11 @@ impl CollisionResolution {
         // Assumes eleastic collisions
         let relative_vel = body.base.velocity - colliding_body.base.velocity;
         let v = relative_vel.dot(norm) * norm;
-        if colliding_body.base.center().dot(v) / v.dot(v) > body.base.center().dot(v) / v.dot(v) {
+        if colliding_body.base.center().dot(v) / v.dot(v)
+            > body.base.center().dot(v) / v.dot(v)
+        {
             //self.vel -= v;
-            self.do_collision(norm, pt, body, colliding_body)
+            self.do_collision(norm, pt, body, colliding_body);
         }
         if body.base.velocity.magnitude() < 0.00001
             && colliding_body.base.velocity.magnitude() < 0.00001
@@ -109,7 +112,10 @@ pub trait Forcer {
     /// and the force vector
     ///
     /// Otherwise `None`
-    fn get_force(&self, body: &BaseRigidBody) -> Option<(Point3<f64>, Vector3<f64>)>;
+    fn get_force(
+        &self,
+        body: &BaseRigidBody,
+    ) -> Option<(Point3<f64>, Vector3<f64>)>;
 }
 
 /// Something that can apply a force on, or manipulate, one or more rigid bodies
@@ -194,7 +200,8 @@ impl<T> Manipulator<T> for ForceManipulator<T> {
         {
             for f in &self.forces {
                 if let Some((pt, force)) = f.get_force(&bod.base) {
-                    let (delta_v, delta_a_v) = delta_vels_from_force(&pt, &force, &bod.base, dt);
+                    let (delta_v, delta_a_v) =
+                        delta_vels_from_force(&pt, &force, &bod.base, dt);
                     resolvers[idx].add_vel_change(delta_v, Some(delta_a_v));
                 }
             }
@@ -228,7 +235,9 @@ impl<T> Tether<T> {
     /// `true` if the tether is taught (at or beyond its maximum length)
     #[allow(unused)]
     pub fn is_taught(&self) -> bool {
-        if let (Some(a), Some(b)) = (self.data.a.upgrade(), self.data.b.upgrade()) {
+        if let (Some(a), Some(b)) =
+            (self.data.a.upgrade(), self.data.b.upgrade())
+        {
             (a.borrow().transform_point(self.data.attach_a)
                 - b.borrow().transform_point(self.data.attach_b))
             .magnitude()
@@ -285,16 +294,21 @@ impl<T> Manipulator<T> for Tether<T> {
                 get_r_projections_mass(objs[a_idx], objs[b_idx], t.length)
             {
                 let mut total_parallel_p = vec3(0., 0., 0.);
-                let calc_momentum = |body: &RigidBody<T>, t, resolver: &mut CollisionResolution| {
-                    let v = t * a_to_b;
-                    resolver.add_vel_change(v * -1., None);
-                    v * body.base.mass
-                };
+                let calc_momentum =
+                    |body: &RigidBody<T>,
+                     t,
+                     resolver: &mut CollisionResolution| {
+                        let v = t * a_to_b;
+                        resolver.add_vel_change(v * -1., None);
+                        v * body.base.mass
+                    };
                 if t_a < 0. {
-                    total_parallel_p += calc_momentum(objs[a_idx], t_a, &mut resolvers[a_idx]);
+                    total_parallel_p +=
+                        calc_momentum(objs[a_idx], t_a, &mut resolvers[a_idx]);
                 }
                 if t_b > 0. {
-                    total_parallel_p += calc_momentum(objs[b_idx], t_b, &mut resolvers[b_idx]);
+                    total_parallel_p +=
+                        calc_momentum(objs[b_idx], t_b, &mut resolvers[b_idx]);
                 }
                 total_parallel_p /= total_mass;
                 resolvers[a_idx].add_vel_change(total_parallel_p, None);

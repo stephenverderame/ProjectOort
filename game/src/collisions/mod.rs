@@ -187,23 +187,23 @@ impl CollisionObject {
     }
 
     #[allow(dead_code)]
-    #[inline(always)]
+    #[inline]
     pub fn get_transformation(&self) -> Rc<RefCell<node::Node>> {
         self.obj.borrow().model.clone()
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn update_in_collision_tree(&self) {
-        Octree::update(&self.obj)
+        Octree::update(&self.obj);
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn is_in_collision_tree(&self) -> bool {
         self.obj.borrow().octree_cell.upgrade().is_some()
     }
 
     /// Gets the center and radius of a bounding sphere for this mesh in world space
-    #[inline(always)]
+    #[inline]
     pub fn bounding_sphere(&self) -> (cgmath::Point3<f64>, f64) {
         use cgmath::*;
         let transform = self.obj.borrow().model.clone();
@@ -215,15 +215,15 @@ impl CollisionObject {
     }
 
     /// Gets the estimated volume of this collision object
-    #[inline(always)]
+    #[inline]
     pub fn aabb_volume(&self) -> f64 {
         self.mesh.borrow().aabb_volume()
     }
 
     /// Calls `func` on all vertices of this mesh
-    #[inline(always)]
+    #[inline]
     pub fn forall_verts<F: FnMut(&bvh::CollisionVertex<f32>)>(&self, mut func: F) {
-        self.mesh.borrow().forall_verts(&mut func)
+        self.mesh.borrow().forall_verts(&mut func);
     }
 
     /// Gets an id that uniquely identifies this collision objects's shared geometry
@@ -267,18 +267,17 @@ impl CollisionTree {
 
     #[inline]
     pub fn insert(&mut self, obj: &CollisionObject) {
-        self.tree.insert(obj.obj.clone());
+        self.tree.insert(&obj.obj);
     }
 
     #[inline]
     #[allow(dead_code)]
-    pub fn remove(&mut self, obj: &CollisionObject) {
-        self.tree.remove(&obj.obj)
+    pub fn remove(obj: &CollisionObject) {
+        Octree::remove(&obj.obj);
     }
 
-    pub fn get_colliders(&self, obj: &CollisionObject) -> Vec<CollisionObject> {
-        self.tree
-            .get_colliders(&obj.obj)
+    pub fn get_colliders(obj: &CollisionObject) -> Vec<CollisionObject> {
+        Octree::get_colliders(&obj.obj)
             .into_iter()
             .map(|x| CollisionObject {
                 mesh: x.borrow().mesh.upgrade().unwrap(),

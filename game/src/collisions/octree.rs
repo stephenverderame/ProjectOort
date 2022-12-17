@@ -50,7 +50,7 @@ impl ONode {
     }
 
     fn create_children(
-        parent: Weak<RefCell<ONode>>,
+        parent: &Weak<RefCell<ONode>>,
         parent_c: &Point3<f64>,
         parent_h: f64,
     ) -> [Rc<RefCell<ONode>>; 8] {
@@ -87,7 +87,7 @@ impl ONode {
             match ONode::get_octant_index(center, h_width, &obj) {
                 Some(idx) => {
                     //println!("{:?} has octant index: {}", obj, idx);
-                    children[idx as usize].borrow_mut().insert(obj)
+                    children[idx as usize].borrow_mut().insert(&obj);
                 }
                 None => new_objs.push(Rc::downgrade(&obj)),
             }
@@ -113,14 +113,14 @@ impl ONode {
         Some(index)
     }
 
-    pub fn insert(&mut self, obj: Rc<RefCell<Object>>) {
+    pub fn insert(&mut self, obj: &Rc<RefCell<Object>>) {
         if self.children.is_none() && self.objects.len() + 1 < ONode::MAX_OBJS_PER_LEAF {
             obj.borrow_mut().octree_cell = self.self_ref.clone();
-            self.objects.push(Rc::downgrade(&obj));
+            self.objects.push(Rc::downgrade(obj));
             return;
         } else if self.children.is_none() {
             self.children = Some(ONode::create_children(
-                self.self_ref.clone(),
+                &self.self_ref,
                 &self.center,
                 self.h_width,
             ));
@@ -131,13 +131,13 @@ impl ONode {
                 self.h_width,
             );
         }
-        match ONode::get_octant_index(&self.center, self.h_width, &obj) {
+        match ONode::get_octant_index(&self.center, self.h_width, obj) {
             Some(idx) => self.children.as_mut().unwrap()[idx as usize]
                 .borrow_mut()
-                .insert(obj.clone()),
+                .insert(obj),
             None => {
                 obj.borrow_mut().octree_cell = self.self_ref.clone();
-                self.objects.push(Rc::downgrade(&obj))
+                self.objects.push(Rc::downgrade(obj));
             }
         }
     }
@@ -159,12 +159,12 @@ impl ONode {
             .filter(|x| !Rc::ptr_eq(x, test_obj))
         {
             if obj.borrow().bounding_sphere_collide(&*test_obj.borrow()) {
-                v.push(obj)
+                v.push(obj);
             }
         }
         if let Some(children) = node.borrow().children.as_ref() {
             for c in children {
-                v.append(&mut ONode::get_subtree_colliders(c, test_obj))
+                v.append(&mut ONode::get_subtree_colliders(c, test_obj));
             }
         }
         v
@@ -183,7 +183,7 @@ impl ONode {
             parent.borrow_mut().objects.retain(|x| x.strong_count() > 0);
             for obj in parent.borrow().objects.iter().map(|x| x.upgrade().unwrap()) {
                 if obj.borrow().bounding_sphere_collide(&*test_obj.borrow()) {
-                    v.push(obj)
+                    v.push(obj);
                 }
             }
             n = parent.borrow().parent.clone();
@@ -214,16 +214,14 @@ impl ONode {
             {
                 self.objects
                     .retain(|o| o.strong_count() > 0 && !Rc::ptr_eq(&o.upgrade().unwrap(), obj));
-                return parent.borrow_mut().insert(obj.clone());
+                return parent.borrow_mut().insert(obj);
             }
         }
         if let Some(child_idx) = ONode::get_octant_index(&self.center, self.h_width, obj) {
             if let Some(children) = self.children.as_mut() {
                 self.objects
                     .retain(|o| o.strong_count() > 0 && !Rc::ptr_eq(&o.upgrade().unwrap(), obj));
-                children[child_idx as usize]
-                    .borrow_mut()
-                    .insert(obj.clone())
+                children[child_idx as usize].borrow_mut().insert(obj);
             }
         }
     }
@@ -236,12 +234,12 @@ pub struct Octree {
 impl Octree {
     /// Inserts a node in the tree. If the node doesn't fit,
     /// ~~it stays at the root node~~ panics
-    #[inline(always)]
-    pub fn insert(&mut self, obj: Rc<RefCell<Object>>) {
+    #[inline]
+    pub fn insert(&mut self, obj: &Rc<RefCell<Object>>) {
         if obj.borrow().radius() > self.root.borrow().h_width * 2. {
             panic!("Cannot fit into tree");
         }
-        self.root.borrow_mut().insert(obj)
+        self.root.borrow_mut().insert(obj);
     }
 
     /// Creates a new octree centered at `center` with a half width (width of child) as
@@ -253,11 +251,11 @@ impl Octree {
     }
 
     /// Get's all objects that have overlapping bounding spheres with `obj`
-    pub fn get_colliders(&self, obj: &Rc<RefCell<Object>>) -> Vec<Rc<RefCell<Object>>> {
+    pub fn get_colliders(obj: &Rc<RefCell<Object>>) -> Vec<Rc<RefCell<Object>>> {
         ONode::get_possible_colliders(obj)
     }
 
-    pub fn remove(&mut self, obj: &Rc<RefCell<Object>>) {
+    pub fn remove(obj: &Rc<RefCell<Object>>) {
         if let Some(node) = obj.borrow().octree_cell.upgrade() {
             node.borrow_mut()
                 .objects
@@ -346,10 +344,10 @@ mod test {
         let mut ot = Octree::new(point3(0., 0., 0.), 25.);
         let o1 = new_obj(point3(10., 1., 1.), 4.);
         let o2 = new_obj(point3(-5., 2., 2.), 3.);
-        ot.insert(o1.clone());
-        ot.insert(o2.clone());
-        assert_eq!(ot.get_colliders(&o1).len(), 0);
-        assert_eq!(ot.get_colliders(&o2).len(), 0);
+        ot.insert(&o1);
+        ot.insert(&o2);
+        assert_eq!(Octree::get_colliders(&o1).len(), 0);
+        assert_eq!(Octree::get_colliders(&o2).len(), 0);
         assert!(o1.borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root)));
     }
 
@@ -358,10 +356,10 @@ mod test {
         let mut ot = Octree::new(point3(0., 0., 0.), 25.);
         let o1 = new_obj(point3(10., 1., 1.), 4.);
         let o2 = new_obj(point3(8., 2., 2.), 3.);
-        ot.insert(o1.clone());
-        ot.insert(o2.clone());
-        assert!(Rc::ptr_eq(&ot.get_colliders(&o1)[0], &o2));
-        assert!(Rc::ptr_eq(&ot.get_colliders(&o2)[0], &o1));
+        ot.insert(&o1);
+        ot.insert(&o2);
+        assert!(Rc::ptr_eq(&Octree::get_colliders(&o1)[0], &o2));
+        assert!(Rc::ptr_eq(&Octree::get_colliders(&o2)[0], &o1));
     }
 
     #[test]
@@ -386,7 +384,7 @@ mod test {
             new_obj(point3(0., -3., 3.), 2.),
         ];
         for o in &obj {
-            ot.insert(o.clone());
+            ot.insert(o);
         }
         assert!(!obj[0].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root)));
         assert!(obj[6].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root)));
@@ -409,8 +407,7 @@ mod test {
         for o in &obj {
             let oct = ONode::get_octant_index(&point3(0., 0., 0.), 25., o);
             assert!(o.borrow().octree_cell.ptr_eq(&Rc::downgrade(
-                oct.map(|id| &root.children.as_ref().unwrap()[id as usize])
-                    .unwrap_or(&ot.root)
+                oct.map_or(&ot.root, |id| &root.children.as_ref().unwrap()[id as usize])
             )));
         }
     }
@@ -437,18 +434,18 @@ mod test {
             new_obj(point3(0., -3., 3.), 2.),
         ];
         for o in &obj {
-            ot.insert(o.clone());
+            ot.insert(o);
         }
-        ot.remove(&obj[0]);
-        assert_eq!(ot.get_colliders(&obj[0]).len(), 0);
-        ot.remove(&obj[10]);
+        Octree::remove(&obj[0]);
+        assert_eq!(Octree::get_colliders(&obj[0]).len(), 0);
+        Octree::remove(&obj[10]);
         assert_eq!(
             obj[10].borrow().octree_cell.as_ptr(),
             Weak::default().as_ptr()
         );
 
         for o in &obj {
-            ot.remove(o);
+            Octree::remove(o);
         }
 
         assert!(ot.root.borrow().children.is_none());
@@ -477,7 +474,7 @@ mod test {
             new_obj(point3(0., -3., 3.), 2.),
         ];
         for o in &obj {
-            ot.insert(o.clone());
+            ot.insert(o);
         }
         obj[0]
             .borrow_mut()
@@ -565,10 +562,9 @@ mod test {
             parent_collider.clone(),
         ];
         for o in &obj {
-            ot.insert(o.clone());
+            ot.insert(o);
         }
-        assert!(ot
-            .get_colliders(&obj[0])
+        assert!(Octree::get_colliders(&obj[0])
             .iter()
             .any(|x| Rc::ptr_eq(x, &parent_collider)));
     }
@@ -581,7 +577,7 @@ mod test {
         let mut objs: Vec<Rc<RefCell<Object>>> = (0..300)
             .map(|_| {
                 let o = random_obj(point3(0., 0., 0.), 200.);
-                tree.insert(o.clone());
+                tree.insert(&o);
                 o
             })
             .collect();
@@ -591,8 +587,7 @@ mod test {
                 .filter(|e| !Rc::ptr_eq(o, e) && e.borrow().bounding_sphere_collide(&*o.borrow()))
                 .map(|x| x.as_ptr() as *const Object)
                 .collect();
-            let tree_colliders: Vec<*const Object> = tree
-                .get_colliders(o)
+            let tree_colliders: Vec<*const Object> = Octree::get_colliders(o)
                 .iter()
                 .map(|x| x.as_ptr() as *const Object)
                 .collect();
@@ -613,8 +608,7 @@ mod test {
                 .filter(|e| !Rc::ptr_eq(o, e) && e.borrow().bounding_sphere_collide(&*o.borrow()))
                 .map(|x| x.as_ptr() as *const Object)
                 .collect();
-            let tree_colliders: Vec<*const Object> = tree
-                .get_colliders(o)
+            let tree_colliders: Vec<*const Object> = Octree::get_colliders(o)
                 .iter()
                 .map(|x| x.as_ptr() as *const Object)
                 .collect();

@@ -1,3 +1,4 @@
+#![allow(clippy::unreadable_literal)]
 use super::bvh::{CollisionVertex, OBBTree, TreeStopCriteria};
 use super::highp_col::{HighPCollision, Hit};
 use super::obb;
@@ -138,7 +139,7 @@ impl CollisionMesh {
     pub fn aabb_volume(&self) -> f64 {
         let mut vol = 0.;
         for mesh in &self.sub_meshes {
-            vol += mesh.bounding_box().vol()
+            vol += mesh.bounding_box().vol();
         }
         vol
     }
@@ -146,7 +147,7 @@ impl CollisionMesh {
     /// Iterates over all the vertices of this mesh
     pub fn forall_verts<F: FnMut(&CollisionVertex<f32>)>(&self, func: &mut F) {
         for mesh in &self.sub_meshes {
-            mesh.forall_verts(func)
+            mesh.forall_verts(func);
         }
     }
 }
@@ -309,8 +310,7 @@ mod test {
                 norm: vec3(0., 0., 1.),
             },
         ];
-        let triangle =
-            bvh::Triangle::array_from(vec![0, 1, 2], &vertices as *const Vec<CollisionVertex<f32>>);
+        let triangle = bvh::Triangle::array_from(vec![0, 1, 2], std::ptr::addr_of!(vertices));
         let mut t_b = node::Node::default();
         let mut t_a = node::Node::default();
         assert!(strat
@@ -364,10 +364,7 @@ mod test {
         t_a = t_a
             .pos(point3(0., 0f64, 0.))
             .rot(Matrix3::from_angle_x(Deg(0.)).into());
-        let triangle2 = bvh::Triangle::array_from(
-            vec![0, 1, 2],
-            &vertices2 as *const Vec<CollisionVertex<f32>>,
-        );
+        let triangle2 = bvh::Triangle::array_from(vec![0, 1, 2], std::ptr::addr_of!(vertices2));
         assert!(strat
             .collide(&triangle2, &t_a.mat(), &triangle, &t_b.mat())
             .is_none()); // random triangle no intersect
