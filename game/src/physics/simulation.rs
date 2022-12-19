@@ -6,7 +6,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 
 type HitCallback<'a, T> =
-    Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, &HitData, &BaseRigidBody) + 'a>;
+    Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, &HitData) + 'a>;
 type ResolveCallback<'a, T> =
     Box<dyn Fn(&RigidBody<T>, &RigidBody<T>, &HitData) -> bool + 'a>;
 
@@ -114,10 +114,6 @@ fn resolve_collisions<T>(
     }
 }
 
-type HitCb<'a, T> = Option<
-    Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, &HitData, &BaseRigidBody) + 'a>,
->;
-
 /// Keeps the centers of all objects within the scene bounds specified by the center
 /// and half width of the scene in each dimension
 ///
@@ -128,12 +124,9 @@ fn apply_bounds<'a, T>(
     resolvers: &mut [CollisionResolution],
     scene_size: f64,
     scene_center: Point3<f64>,
-    player_idx: usize,
-    on_hit: &mut Cell<HitCb<'a, T>>,
+    on_hit: &mut Cell<Option<HitCallback<'a, T>>>,
 ) {
     let objs_len = objs.len();
-    // safe bc player_idx is an index in objs
-    let player_ptr = unsafe { objs.as_ptr().add(player_idx) };
     for (obj, obj_idx) in objs.iter().zip(0..objs_len) {
         let p = obj.base.center();
         let mut hit = false;
@@ -189,12 +182,7 @@ fn apply_bounds<'a, T>(
             (true, Some(mut cb)) => {
                 hit_data.pos_norm_a.1 = hit_data.pos_norm_a.1.normalize();
                 hit_data.pos_norm_b.1 = hit_data.pos_norm_b.1.normalize();
-                if obj_idx == player_idx {
-                    cb(obj, obj, &hit_data, &obj.base);
-                } else {
-                    // safe bc mutable borrowed obj is not the player
-                    cb(obj, obj, &hit_data, unsafe { &(*player_ptr).base });
-                }
+                cb(obj, obj, &hit_data);
                 on_hit.set(Some(cb));
             }
             (false, Some(cb)) => {
@@ -247,7 +235,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     /// physical collision resolution
     pub fn with_on_hit<'c, F>(self, f: F) -> Simulation<'c, 'b, T>
     where
-        F: FnMut(&RigidBody<T>, &RigidBody<T>, &HitData, &BaseRigidBody) + 'c,
+        F: FnMut(&RigidBody<T>, &RigidBody<T>, &HitData) + 'c,
     {
         Simulation {
             obj_tree: self.obj_tree,
@@ -289,11 +277,10 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         body: &RigidBody<T>,
         other_body: &RigidBody<T>,
         data: &HitData,
-        player: &BaseRigidBody,
     ) {
         let mut func = self.on_hit.take();
         if let Some(cb) = func.as_mut() {
-            cb(body, other_body, data, player);
+            cb(body, other_body, data);
         }
         self.on_hit.set(func);
         let test_func = self.do_resolve.take();
@@ -326,7 +313,6 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     fn get_resolving_forces(
         &self,
         objects: &[&RigidBody<T>],
-        player_idx: usize,
     ) -> Vec<CollisionResolution> {
         let mut resolvers = Vec::<CollisionResolution>::new();
         resolvers.resize(objects.len(), CollisionResolution::identity());
@@ -374,7 +360,6 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
                                     pos_norm_a: pos_norm_b,
                                     pos_norm_b: pos_norm_a,
                                 },
-                                &objects[player_idx].base,
                             );
                             temp_map.insert(
                                 (collider.clone(), other.clone()),
@@ -406,12 +391,11 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         &mut self,
         objects: &[&RigidBody<T>],
         forces: &[Box<dyn Manipulator<T>>],
-        player_idx: usize,
         dt: std::time::Duration,
     ) -> Vec<CollisionResolution> {
         let body_map = insert_into_octree(&mut self.obj_tree, objects);
         update_octree(objects);
-        let mut resolvers = self.get_resolving_forces(objects, player_idx);
+        let mut resolvers = self.get_resolving_forces(objects);
         apply_forces(objects, &mut resolvers, &body_map, forces, dt);
         /*move_objects(objects, dt_sec);
         resolve_collisions(objects,
@@ -421,7 +405,6 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
             &mut resolvers,
             self.scene_size,
             self.scene_center,
-            player_idx,
             &mut self.on_hit,
         );
         resolvers

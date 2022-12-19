@@ -161,7 +161,7 @@ fn get_main_render_pass(
         blur -> compose.1,
         msaa -> compose.0,
 
-        { trans_to_cache | translucency if *user.borrow().trans_fac() > f32::EPSILON }
+        { trans_to_cache | translucency if user.borrow().trans_fac() > f32::EPSILON }
     )
 }
 
@@ -190,7 +190,6 @@ fn main() {
     let render_width = 1920;
     let render_height = 1080;
 
-    let player_controls = RefCell::new(controls::PlayerControls::new());
     let mut wnd = WindowMaker::new(render_width, render_height)
         .title("Space Fight")
         .depth_buffer(24)
@@ -199,11 +198,14 @@ fn main() {
     let controller = LocalGameController::new(
         &shared_types::game_controller::AsteroidMap {},
     );
+    let player_controls =
+        Rc::new(RefCell::new(controls::PlayerControls::new()));
     let player = player::Player::new(
         model::Model::new("assets/Ships/StarSparrow01.obj", &*wnd.ctx()),
         render_width as f32 / render_height as f32,
         "assets/Ships/StarSparrow01.obj",
         controller.get_player_stats().pid,
+        player_controls.clone(),
     );
     let mediator = LocalGameMediator::<HasLightingAvailable>::new(
         &wnd.shaders,
@@ -216,10 +218,10 @@ fn main() {
         get_main_render_pass(
             render_width,
             render_height,
-            game.player.clone(),
+            game.player_1(),
             &*wnd.ctx(),
         ),
-        game.player.clone(),
+        game.player_1(),
     );
     let (ibl, ldir, game) = game.get_lighting();
     main_scene.set_ibl_maps(ibl);
@@ -242,7 +244,7 @@ fn main() {
     )
     .bg((0., 0., 0., 0.6));
     let map = minimap::Minimap::new(
-        game.player.borrow().root().clone(),
+        game.player_1().borrow().root().clone(),
         3000.,
         &*wnd.ctx(),
     );
@@ -283,7 +285,7 @@ fn main() {
 
     // skybox must be rendered first, particles must be rendered last
     let mut entities = game.get_mediator().get_entities();
-    entities.push(game.player.borrow().as_entity());
+    entities.push(game.player_1().borrow().as_entity());
     main_scene.set_entities(entities);
 
     let map_screen_location = Matrix3::from_translation(vec2(-2.0f32, 0.0))
@@ -313,7 +315,7 @@ fn main() {
     let sim = RefCell::new(
         physics::Simulation::<object::ObjectData>::new(point3(0., 0., 0.), 1500.)
             .with_do_resolve(game::Game::<LocalGameMediator<NoLightingAvailable>>::should_resolve)
-            .with_on_hit(|a, b, hit, player| game.borrow().on_hit(a, b, hit, player)),
+            .with_on_hit(|a, b, hit| game.borrow().on_hit(a, b, hit)),
     );
 
     let mut draw_cb =
@@ -328,7 +330,7 @@ fn main() {
             stat_text.borrow_mut().add_text(
                 &format!(
                     "{}",
-                    game.borrow().player.borrow().shield().round() as u64
+                    game.borrow().player_1().borrow().shield().round() as u64
                 ),
                 &Rc::new(RefCell::new(
                     node::Node::default()
@@ -340,7 +342,7 @@ fn main() {
             stat_text.borrow_mut().add_text(
                 &format!(
                     "{}",
-                    game.borrow().player.borrow().energy().round() as u64
+                    game.borrow().player_1().borrow().energy().round() as u64
                 ),
                 &Rc::new(RefCell::new(
                     node::Node::default()
@@ -349,21 +351,16 @@ fn main() {
                 )),
                 [1., 1., 0., 1.],
             );
-            game.borrow().on_draw(
-                &mut sim.borrow_mut(),
-                dt,
-                &mut *scene,
-                &mut player_controls.borrow_mut(),
-            );
+            game.borrow()
+                .on_draw(&mut sim.borrow_mut(), dt, &mut *scene);
             // will call on_hit, so cannot mutably borrow game
-            player_controls.borrow_mut().reset_toggles();
         };
     let mut controller_cb = |ev, _: std::cell::RefMut<SceneManager>| {
         (&mut *player_controls.borrow_mut()).on_input(&ev);
     };
     let mut resize_cb = |new_size: glutin::dpi::PhysicalSize<u32>| {
         if new_size.height != 0 {
-            game.borrow().player.borrow_mut().aspect =
+            game.borrow().player_1().borrow_mut().aspect =
                 new_size.width as f32 / new_size.height as f32;
             *screen_width.borrow_mut() = new_size.width;
             *screen_height.borrow_mut() = new_size.height;

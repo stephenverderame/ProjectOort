@@ -288,13 +288,16 @@ impl<T> Manipulator<T> for Tether<T> {
     ) {
         let t = &self.data;
         if let (Some(a), Some(b)) = (t.a.upgrade(), t.b.upgrade()) {
-            let a_idx = body_indices[&(a.as_ptr() as *const _)] as usize;
-            let b_idx = body_indices[&(b.as_ptr() as *const _)] as usize;
-            if let Some((a_to_b, t_a, t_b, total_mass)) =
-                get_r_projections_mass(objs[a_idx], objs[b_idx], t.length)
-            {
-                let mut total_parallel_p = vec3(0., 0., 0.);
-                let calc_momentum =
+            let a_idx = body_indices.get(&(a.as_ptr() as *const _));
+            let b_idx = body_indices.get(&(b.as_ptr() as *const _));
+            if let (Some(a_idx), Some(b_idx)) = (a_idx, b_idx) {
+                let a_idx = *a_idx as usize;
+                let b_idx = *b_idx as usize;
+                if let Some((a_to_b, t_a, t_b, total_mass)) =
+                    get_r_projections_mass(objs[a_idx], objs[b_idx], t.length)
+                {
+                    let mut total_parallel_p = vec3(0., 0., 0.);
+                    let calc_momentum =
                     |body: &RigidBody<T>,
                      t,
                      resolver: &mut CollisionResolution| {
@@ -302,17 +305,24 @@ impl<T> Manipulator<T> for Tether<T> {
                         resolver.add_vel_change(v * -1., None);
                         v * body.base.mass
                     };
-                if t_a < 0. {
-                    total_parallel_p +=
-                        calc_momentum(objs[a_idx], t_a, &mut resolvers[a_idx]);
+                    if t_a < 0. {
+                        total_parallel_p += calc_momentum(
+                            objs[a_idx],
+                            t_a,
+                            &mut resolvers[a_idx],
+                        );
+                    }
+                    if t_b > 0. {
+                        total_parallel_p += calc_momentum(
+                            objs[b_idx],
+                            t_b,
+                            &mut resolvers[b_idx],
+                        );
+                    }
+                    total_parallel_p /= total_mass;
+                    resolvers[a_idx].add_vel_change(total_parallel_p, None);
+                    resolvers[b_idx].add_vel_change(total_parallel_p, None);
                 }
-                if t_b > 0. {
-                    total_parallel_p +=
-                        calc_momentum(objs[b_idx], t_b, &mut resolvers[b_idx]);
-                }
-                total_parallel_p /= total_mass;
-                resolvers[a_idx].add_vel_change(total_parallel_p, None);
-                resolvers[b_idx].add_vel_change(total_parallel_p, None);
             }
         }
     }

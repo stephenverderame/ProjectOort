@@ -3,24 +3,31 @@ use super::game_mediator::*;
 use super::player;
 use crate::cg_support::node;
 use crate::collisions::*;
+use crate::entity::AbstractEntity;
 use crate::graphics_engine::particles::*;
 use crate::graphics_engine::scene;
 use crate::object;
 use crate::physics::*;
+use crate::player::Player;
 use cgmath::*;
 use controls::PlayerActionState;
 use std::cell::Cell;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 /// Encapsulates the game map and handles the logic for base game mechanics
 pub struct Game<M: GameMediator> {
     mediator: RefCell<M>,
-    pub player: Rc<RefCell<player::Player>>,
+    characters: Vec<Rc<RefCell<player::Player>>>,
+    // to access some character data during hit callback when characters
+    // are already borrowed
+    health_deltas: RefCell<HashMap<object::ObjectData, f64>>,
+    player_1_base: Cell<Option<BaseRigidBody>>,
+
     forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectData>>>>,
     dead_lasers: RefCell<Vec<shared_types::ObjectId>>,
     new_forces: RefCell<Vec<Box<dyn Manipulator<object::ObjectData>>>>,
-    delta_shield: Cell<f64>,
 }
 
 impl<M: GameMediator> Game<M> {
@@ -114,30 +121,26 @@ impl<M: GameMediator> Game<M> {
             })));
     }
 
-    /// Checks if the player was involved in a collision, and if so,
-    /// reduces the player's health accordingly by setting `delta_shield`
+    /// Checks if a `check` is a character that was involved in a collision, and if so,
+    /// reduces the player's health accordingly
     fn check_player_hit(
         &self,
-        a: &RigidBody<object::ObjectData>,
-        b: &RigidBody<object::ObjectData>,
-        player: &BaseRigidBody,
+        check: &RigidBody<object::ObjectData>,
+        collider: &RigidBody<object::ObjectData>,
     ) {
         const SHIELD_DAMAGE_FAC: f64 = -0.01;
-        if let Some(other) = if Rc::ptr_eq(&a.base.transform, &player.transform)
+        if let Some((_, shield_delta)) = self
+            .health_deltas
+            .borrow_mut()
+            .iter_mut()
+            .find(|(key, _)| **key == collider.metadata)
         {
-            Some(b)
-        } else if Rc::ptr_eq(&b.base.transform, &player.transform) {
-            Some(a)
-        } else {
-            None
-        } {
-            if other.metadata.0 == object::ObjectType::Laser {
-                self.delta_shield.set(-10.);
-            } else if other.metadata.0 != object::ObjectType::Hook {
-                self.delta_shield.set(
-                    SHIELD_DAMAGE_FAC
-                        * (a.base.velocity - b.base.velocity).magnitude(),
-                );
+            if check.metadata.0 == object::ObjectType::Laser {
+                *shield_delta -= 10.;
+            } else if check.metadata.0 != object::ObjectType::Hook {
+                *shield_delta -= SHIELD_DAMAGE_FAC
+                    * (check.base.velocity - collider.base.velocity)
+                        .magnitude();
             }
         }
     }
@@ -148,7 +151,6 @@ impl<M: GameMediator> Game<M> {
         a: &RigidBody<object::ObjectData>,
         b: &RigidBody<object::ObjectData>,
         hit: &HitData,
-        player: &BaseRigidBody,
     ) {
         use object::ObjectType::*;
         if a.metadata.0 == Laser || b.metadata.0 == Laser {
@@ -178,7 +180,10 @@ impl<M: GameMediator> Game<M> {
             );
         }
         if a.metadata.0 == Hook || b.metadata.0 == Hook {
-            self.on_hook(a, b, hit, player);
+            // TODO: allow multiple hooks
+            let p1_base = self.player_1_base.take();
+            self.on_hook(a, b, hit, p1_base.as_ref().unwrap());
+            self.player_1_base.replace(p1_base);
             let lt = if a.metadata.0 == Hook {
                 a.metadata.1
             } else {
@@ -186,7 +191,8 @@ impl<M: GameMediator> Game<M> {
             };
             self.dead_lasers.borrow_mut().push(lt);
         }
-        self.check_player_hit(a, b, player);
+        self.check_player_hit(a, b);
+        self.check_player_hit(b, a);
     }
 
     /// Callback function for physics simulation
@@ -210,13 +216,25 @@ impl<M: GameMediator> Game<M> {
     fn step_sim<'a, 'b>(
         &self,
         sim: &mut Simulation<'a, 'b, object::ObjectData>,
-        controls: &controls::PlayerControls,
         dt: std::time::Duration,
     ) {
         self.forces
             .borrow_mut()
             .append(&mut self.new_forces.borrow_mut());
-        let mut u = self.player.borrow_mut();
+        let mut characters: Vec<_> =
+            self.characters.iter().map(|p| p.borrow_mut()).collect();
+
+        // Reset health deltas
+        self.health_deltas.borrow_mut().clear();
+        for c in &characters {
+            self.health_deltas
+                .borrow_mut()
+                .insert(c.get_ridid_body().metadata, 0.);
+        }
+
+        self.player_1_base
+            .set(Some(characters[0].get_ridid_body().base.clone()));
+
         let forces = &self.forces.borrow();
         let objects: Vec<_> = self.mediator.borrow().game_objects().collect();
         let mut borrows: Vec<_> =
@@ -225,8 +243,9 @@ impl<M: GameMediator> Game<M> {
             .iter_mut()
             .flat_map(|o| o.bodies_ref().into_iter())
             .collect();
-        bodies.push(u.as_rigid_body(controls, dt));
-        let p_idx = bodies.len() - 1;
+        for c in &mut characters {
+            bodies.push(c.update_rigid_body(dt));
+        }
         let resolvers = {
             let v = unsafe {
                 &*(bodies.as_slice()
@@ -235,22 +254,24 @@ impl<M: GameMediator> Game<M> {
                         shared_types::ObjectId,
                     )>] as *const [&_])
             };
-            sim.calc_resolvers(v, forces, p_idx, dt)
+            sim.calc_resolvers(v, forces, dt)
         };
         Simulation::apply_resolvers(&mut bodies, &resolvers, dt);
-        u.change_shield(self.delta_shield.take());
+
+        // Updates players' health
+        for c in &mut characters {
+            let index = c.get_ridid_body().metadata;
+            c.change_shield(self.health_deltas.borrow()[&index]);
+        }
     }
 
     /// Function thet should be called every frame to handle shooting lasers
-    fn handle_shots(
-        user: &mut player::Player,
-        controller: &controls::PlayerControls,
-        mediator: &mut M,
-    ) {
+    fn handle_shots(user: &mut player::Player, mediator: &mut M) {
         const ENERGY_PER_SHOT: f64 = 1.;
-        if (controller.state == PlayerActionState::Fire
-            || controller.state == PlayerActionState::FireRope)
-            && user.energy() > ENERGY_PER_SHOT
+        if matches!(
+            user.get_action_state(),
+            PlayerActionState::Fire | PlayerActionState::FireRope
+        ) && user.energy() > ENERGY_PER_SHOT
         {
             let mut transform = user
                 .root()
@@ -259,7 +280,7 @@ impl<M: GameMediator> Game<M> {
                 .scale(cgmath::vec3(0.3, 0.3, 1.));
             transform.translate(user.forward() * 10.);
             let (typ, speed) =
-                if controller.state == PlayerActionState::FireRope {
+                if user.get_action_state() == PlayerActionState::FireRope {
                     (object::ObjectType::Hook, 200.)
                 } else {
                     (object::ObjectType::Laser, 120.)
@@ -267,6 +288,7 @@ impl<M: GameMediator> Game<M> {
             mediator.add_laser(transform, user.forward() * speed, typ);
             user.change_energy(-ENERGY_PER_SHOT);
         }
+        user.transition_action_state();
     }
 
     /// Callback function for when a frame is drawn
@@ -275,31 +297,28 @@ impl<M: GameMediator> Game<M> {
         sim: &mut Simulation<'a, 'b, object::ObjectData>,
         dt: std::time::Duration,
         scene: &mut dyn scene::AbstractScene,
-        controller: &mut controls::PlayerControls,
     ) {
         self.mediator.borrow_mut().sync();
-        *self.player.borrow().trans_fac() =
-            controller.compute_transparency_fac();
         self.dead_lasers.borrow_mut().clear();
-        {
-            if controller.state == PlayerActionState::CutRope {
+        for player in &self.characters {
+            let mut u = player.borrow_mut();
+            if u.get_action_state() == PlayerActionState::CutRope {
                 self.forces.borrow_mut().clear();
                 self.mediator.borrow_mut().remove_line(0);
             }
-            let mut u = self.player.borrow_mut();
-            Self::handle_shots(
-                &mut *u,
-                controller,
-                &mut self.mediator.borrow_mut(),
-            );
+            Self::handle_shots(&mut *u, &mut self.mediator.borrow_mut());
         }
-        self.step_sim(sim, controller, dt);
+        self.step_sim(sim, dt);
 
         self.mediator
             .borrow_mut()
             .remove_lasers(&self.dead_lasers.borrow());
         self.mediator.borrow_mut().emit_particles(dt);
         scene.set_lights(&self.mediator.borrow().get_lights());
+
+        for player in &self.characters {
+            player.borrow_mut().on_frame_update(dt);
+        }
     }
 
     pub fn get_mediator(&self) -> std::cell::Ref<M> {
@@ -308,10 +327,13 @@ impl<M: GameMediator> Game<M> {
 
     #[inline]
     #[allow(unused)]
-    pub fn get_entities(
-        &self,
-    ) -> Vec<Rc<RefCell<dyn crate::entity::AbstractEntity>>> {
+    pub fn get_entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>> {
         self.mediator.borrow().get_entities()
+    }
+
+    /// Returns the player who view we are currently rendering
+    pub fn player_1(&self) -> Rc<RefCell<Player>> {
+        self.characters[0].clone()
     }
 }
 
@@ -319,11 +341,12 @@ impl<M: GameMediatorLightingAvailable> Game<M> {
     pub fn new(mediator: M, player: player::Player) -> Self {
         Self {
             mediator: RefCell::new(mediator),
-            player: Rc::new(RefCell::new(player)),
+            characters: vec![Rc::new(RefCell::new(player))],
             forces: RefCell::default(),
             dead_lasers: RefCell::new(Vec::new()),
             new_forces: RefCell::new(Vec::new()),
-            delta_shield: Cell::new(0.),
+            health_deltas: RefCell::new(HashMap::new()),
+            player_1_base: Cell::default(),
         }
     }
 
@@ -339,11 +362,12 @@ impl<M: GameMediatorLightingAvailable> Game<M> {
             vec,
             Game {
                 mediator: RefCell::new(mediator),
-                player: self.player,
+                characters: self.characters,
                 forces: self.forces,
                 dead_lasers: self.dead_lasers,
                 new_forces: self.new_forces,
-                delta_shield: self.delta_shield,
+                health_deltas: self.health_deltas,
+                player_1_base: self.player_1_base,
             },
         )
     }

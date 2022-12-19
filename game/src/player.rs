@@ -1,8 +1,9 @@
+use super::controls;
 use super::object;
 use crate::camera;
 use crate::cg_support::node::*;
 use crate::collisions;
-use crate::controls;
+use crate::controls::MovementControl;
 use crate::graphics_engine::entity::AbstractEntity;
 use crate::graphics_engine::{drawable, entity, shader};
 use crate::model::Model;
@@ -27,8 +28,10 @@ fn change_stat(stat: f64, change: f64) -> f64 {
 pub struct Player {
     cam: Node,
     entity: Rc<RefCell<entity::Entity>>,
+    controller: Rc<RefCell<dyn MovementControl>>,
     pub aspect: f32,
     body: physics::RigidBody<object::ObjectData>,
+    // The transparency factor as read by the graphics engine
     pub inv_fac: Rc<RefCell<f32>>,
     em_fac: Rc<RefCell<f32>>,
     energy: f64,
@@ -48,6 +51,7 @@ impl Player {
         view_aspect: f32,
         c_str: &str,
         id: object::ObjectId,
+        controller: Rc<RefCell<dyn MovementControl>>,
     ) -> Self {
         let root_node = Rc::new(RefCell::new(
             Node::default().pos(point3(100., 100., 100.)),
@@ -85,13 +89,13 @@ impl Player {
             inv_fac,
             energy: 100.,
             shield: 100.,
+            controller,
         }
     }
 
     /// Updates the players' forces based on the input controls and returns the rigid body
-    pub fn as_rigid_body(
+    pub fn update_rigid_body(
         &mut self,
-        input: &controls::PlayerControls,
         dt: std::time::Duration,
     ) -> &mut physics::RigidBody<object::ObjectData> {
         use cgmath::*;
@@ -101,7 +105,11 @@ impl Player {
             let forward = model.transform_vector(cgmath::vec3(0., 0., 1.));
             let dt_sec = dt.as_secs_f64();
             let energy_cost = 10. * dt_sec;
-            self.body.base.velocity += match input.movement {
+            self.body.base.velocity += match self
+                .controller
+                .borrow()
+                .get_movement()
+            {
                 controls::Movement::Forward if self.energy >= energy_cost => {
                     *self.em_fac.borrow_mut() = 4.;
                     self.energy = change_stat(self.energy, -energy_cost);
@@ -120,9 +128,19 @@ impl Player {
             self.energy = change_stat(self.energy, ENERGY_PER_SEC * dt_sec);
             self.shield =
                 change_stat(self.shield, ENERGY_PER_SEC / 3. * dt_sec);
-            self.body.base.rot_vel = vec3(input.pitch, 0., input.roll) / 10000.;
+            self.body.base.rot_vel = vec3(
+                self.controller.borrow().get_pitch(),
+                0.,
+                self.controller.borrow().get_roll(),
+            ) / 10000.;
         }
         &mut self.body
+    }
+
+    pub const fn get_ridid_body(
+        &self,
+    ) -> &physics::RigidBody<object::ObjectData> {
+        &self.body
     }
 
     #[inline]
@@ -176,8 +194,10 @@ impl Player {
     }
 
     #[inline]
-    pub fn trans_fac(&self) -> std::cell::RefMut<f32> {
-        self.inv_fac.borrow_mut()
+    pub fn trans_fac(&self) -> f32 {
+        let tf = self.controller.borrow_mut().get_transparency_fac();
+        *self.inv_fac.borrow_mut() = tf;
+        tf
     }
 
     #[inline]
@@ -200,8 +220,24 @@ impl Player {
         self.shield = change_stat(self.shield, delta);
     }
 
+    /// Gets the player's entity id
     pub fn get_entity_id(&self) -> usize {
         self.entity.borrow().get_id()
+    }
+
+    /// See `controls::PlayerController::get_action_state`
+    pub fn get_action_state(&self) -> controls::PlayerActionState {
+        self.controller.borrow().get_action_state()
+    }
+
+    /// See `controls::PlayerController::transition_action_state`
+    pub fn transition_action_state(&mut self) {
+        self.controller.borrow_mut().transition_action_state();
+    }
+
+    /// See `controls::PlayerController::on_frame_update`
+    pub fn on_frame_update(&mut self, dt: std::time::Duration) {
+        self.controller.borrow_mut().on_frame_update(dt);
     }
 }
 impl drawable::Viewer for Player {

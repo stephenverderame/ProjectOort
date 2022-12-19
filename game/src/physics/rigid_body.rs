@@ -112,6 +112,7 @@ impl SharedRigidBody {
 
 /// Contains the data for a rigid body simulation
 /// MUST use from a single thread
+#[derive(Clone)]
 pub struct BaseRigidBody {
     pub transform: Rc<RefCell<node::Node>>,
     pub velocity: cgmath::Vector3<f64>,

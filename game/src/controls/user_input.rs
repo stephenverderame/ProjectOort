@@ -1,25 +1,12 @@
+use super::{Movement, MovementControl, PlayerActionState};
 use glutin::event::*;
-pub enum Movement {
-    Stopped,
-    Forward,
-    Backwards,
-}
-
-#[derive(PartialEq, Eq, Copy, Clone)]
-pub enum PlayerActionState {
-    Idle,
-    Fire,
-    FireRope,
-    CutRope,
-}
-
-/// `PlayerControls` converts device inputs to higher level
+// `PlayerControls` converts device inputs to higher level
 /// game controls
 pub struct PlayerControls {
-    pub movement: Movement,
-    pub pitch: f64,
-    pub roll: f64,
-    pub state: PlayerActionState,
+    movement: Movement,
+    pitch: f64,
+    roll: f64,
+    state: PlayerActionState,
     mouse_capture: bool,
     visible: bool,
     vis_transition_start: std::time::Instant,
@@ -52,24 +39,7 @@ impl PlayerControls {
         rev
     }
 
-    /// Get the player's transparency factor from `0.0` (opaque) to `1.0` (fully refractive)
-    /// and updates it if it is transitioning
-    pub fn compute_transparency_fac(&mut self) -> f32 {
-        let goal_fac = if self.visible { 0.0 } else { 1.0 };
-        if (self.inv_fac - goal_fac).abs() > f32::EPSILON {
-            let dt = (std::time::Instant::now()
-                .duration_since(self.vis_transition_start)
-                .as_secs_f32()
-                / 3.)
-                .min(1.);
-            self.inv_fac = dt.mul_add(
-                goal_fac - self.inv_trans_fac_start,
-                self.inv_trans_fac_start,
-            );
-        }
-        self.inv_fac
-    }
-
+    /// Callback to handle input events from the window to control the player
     #[allow(clippy::too_many_lines)]
     pub fn on_input(&mut self, ev: &DeviceEvent) {
         let ctx = crate::graphics_engine::get_active_ctx();
@@ -125,12 +95,47 @@ impl PlayerControls {
             _ => (),
         }
     }
+}
 
-    /// Resets all toggle controls.
-    /// Should be called at the end of every iteration of the game loop
-    pub fn reset_toggles(&mut self) {
+impl MovementControl for PlayerControls {
+    fn get_movement(&self) -> Movement {
+        self.movement
+    }
+
+    fn get_roll(&self) -> f64 {
+        self.roll
+    }
+
+    fn get_pitch(&self) -> f64 {
+        self.pitch
+    }
+
+    fn get_action_state(&self) -> PlayerActionState {
+        self.state
+    }
+
+    fn get_transparency_fac(&mut self) -> f32 {
+        let goal_fac = if self.visible { 0.0 } else { 1.0 };
+        if (self.inv_fac - goal_fac).abs() > f32::EPSILON {
+            let dt = (std::time::Instant::now()
+                .duration_since(self.vis_transition_start)
+                .as_secs_f32()
+                / 3.)
+                .min(1.);
+            self.inv_fac = dt.mul_add(
+                goal_fac - self.inv_trans_fac_start,
+                self.inv_trans_fac_start,
+            );
+        }
+        self.inv_fac
+    }
+
+    fn transition_action_state(&mut self) {
+        self.state = PlayerActionState::Idle;
+    }
+
+    fn on_frame_update(&mut self, _dt: std::time::Duration) {
         self.pitch = 0.;
         self.roll = 0.;
-        self.state = PlayerActionState::Idle;
     }
 }
