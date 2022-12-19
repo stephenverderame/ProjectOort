@@ -25,6 +25,10 @@ pub trait Serializeable {
         Self: Sized;
 }
 
+const LOGIN_ID: u8 = b'L';
+const UPDATE_OBJS_ID: u8 = b'U';
+const ID_FETCH_ID: u8 = b'I';
+
 /// Converts a command into chunks of `MAX_DATAGRAM_SIZE` bytes.
 ///
 /// `cmd_id` - the command type id
@@ -163,7 +167,7 @@ fn serialize_objects(objects: &[RemoteObject]) -> (Vec<u8>, u8) {
                     .chain([obj.typ as u8])
             })
             .collect(),
-        b'U',
+        UPDATE_OBJS_ID,
     )
 }
 
@@ -240,7 +244,7 @@ fn serialize_login(login: &LoginInfo) -> (Vec<u8>, u8) {
         .chain(std::iter::once(login.lighting.skybox.len() as u8))
         .chain(login.lighting.skybox.as_bytes().iter().copied())
         .collect();
-    (data, b'L')
+    (data, LOGIN_ID)
 }
 
 fn deserialize_login(data: &[u8]) -> Result<LoginInfo, Box<dyn Error>> {
@@ -278,7 +282,39 @@ fn deserialize_login(data: &[u8]) -> Result<LoginInfo, Box<dyn Error>> {
     })
 }
 
-impl Serializeable for ClientCommandType {
+fn serialize_id_range(ids: (ObjectId, ObjectId)) -> (Vec<u8>, u8) {
+    let data: Vec<_> = ids
+        .0
+        .to_be_bytes()
+        .into_iter()
+        .chain(ids.1.to_be_bytes().into_iter())
+        .collect();
+    (data, ID_FETCH_ID)
+}
+
+fn deserialize_id_range(
+    data: &[u8],
+) -> Result<(ObjectId, ObjectId), Box<dyn Error>> {
+    if data.len() != 8 {
+        return Err("Invalid ID range size")?;
+    }
+    let start = ObjectId::from_be_bytes(data[0..4].try_into()?);
+    let end = ObjectId::from_be_bytes(data[4..8].try_into()?);
+    Ok((start, end))
+}
+
+fn serialize_id_request(id_amount: u32) -> (Vec<u8>, u8) {
+    (id_amount.to_be_bytes().to_vec(), ID_FETCH_ID)
+}
+
+fn deserialize_id_request(data: &[u8]) -> Result<u32, Box<dyn Error>> {
+    if data.len() != 4 {
+        return Err("Invalid ID request size")?;
+    }
+    Ok(u32::from_be_bytes(data[0..4].try_into()?))
+}
+
+impl<'a> Serializeable for ClientCommandType<'a> {
     fn serialize(&self, msg_id: MsgId) -> Result<ChunkedMsg, Box<dyn Error>> {
         let (data, cmd_id) = match self {
             ClientCommandType::Login(name) => {
@@ -287,9 +323,13 @@ impl Serializeable for ClientCommandType {
                 }
                 let mut data = vec![name.len() as u8];
                 data.extend(name.bytes());
-                (data, b'L')
+                (data, LOGIN_ID)
             }
             ClientCommandType::Update(objects) => serialize_objects(objects),
+            ClientCommandType::UpdateReadOnly(objects) => {
+                serialize_objects(objects)
+            }
+            ClientCommandType::GetIds(amount) => serialize_id_request(*amount),
         };
 
         Ok(chunk_serialized_data(cmd_id, data.into_iter(), msg_id))
@@ -300,7 +340,7 @@ impl Serializeable for ClientCommandType {
     ) -> Result<(Self, MsgId), Box<dyn Error>> {
         let (data, cmd_id, msg_id) = dechunk_serialized_data(chunks)?;
         match cmd_id {
-            b'L' => {
+            LOGIN_ID => {
                 if data.is_empty() {
                     return Err("Login command too short")?;
                 }
@@ -311,8 +351,13 @@ impl Serializeable for ClientCommandType {
                 let name = std::str::from_utf8(&data[1..])?;
                 Ok((Self::Login(name.to_string()), msg_id))
             }
-            b'U' => Ok((Self::Update(deserialize_update(data)?), msg_id)),
-            _ => Err("Unknown command")?,
+            UPDATE_OBJS_ID => {
+                Ok((Self::Update(deserialize_update(data)?), msg_id))
+            }
+            ID_FETCH_ID => {
+                Ok((Self::GetIds(deserialize_id_request(&data)?), msg_id))
+            }
+            x => Err(format!("Unknown command with value '{}'", x))?,
         }
     }
 }
@@ -322,6 +367,7 @@ impl Serializeable for ServerCommandType {
         let (data, cmd_id) = match self {
             ServerCommandType::ReturnLogin(login) => serialize_login(login),
             ServerCommandType::Update(objects) => serialize_objects(objects),
+            ServerCommandType::ReturnIds(ids) => serialize_id_range(*ids),
         };
         Ok(chunk_serialized_data(cmd_id, data.into_iter(), msg_id))
     }
@@ -331,12 +377,17 @@ impl Serializeable for ServerCommandType {
     ) -> Result<(Self, MsgId), Box<dyn Error>> {
         let (data, cmd_id, msg_id) = dechunk_serialized_data(chunks)?;
         match cmd_id {
-            b'L' => {
+            LOGIN_ID => {
                 let login = deserialize_login(&data)?;
                 Ok((Self::ReturnLogin(login), msg_id))
             }
-            b'U' => Ok((Self::Update(deserialize_update(data)?), msg_id)),
-            _ => Err("Unknown command")?,
+            UPDATE_OBJS_ID => {
+                Ok((Self::Update(deserialize_update(data)?), msg_id))
+            }
+            ID_FETCH_ID => {
+                Ok((Self::ReturnIds(deserialize_id_range(&data)?), msg_id))
+            }
+            x => Err(format!("Unknown command with value '{}'", x))?,
         }
     }
 }

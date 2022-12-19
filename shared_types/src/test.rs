@@ -8,6 +8,41 @@ fn cct_serialize_deserialize() {
     let chunks = cct.serialize(msg_id).unwrap();
     let cct2 = ClientCommandType::deserialize(chunks).unwrap();
     assert_eq!((cct, msg_id), cct2);
+
+    let cct = ClientCommandType::GetIds(1024);
+    let msg_id = 0x22458;
+    let chunks = cct.serialize(msg_id).unwrap();
+    let cct2 = ClientCommandType::deserialize(chunks).unwrap();
+    assert_eq!((cct, msg_id), cct2);
+
+    let cct = ClientCommandType::Update(vec![
+        RemoteObject {
+            mat: [
+                [1.0, 2.0, 3.0, 4.0],
+                [5.0, 6.0, 7.0, 8.0],
+                [9.0, 10.0, 11.0, 12.0],
+                [13.0, 14.0, 15.0, 16.0],
+                [17., 18., 19., 20.],
+            ],
+            id: ObjectId::new(0x12345678),
+            typ: ObjectType::Asteroid,
+        },
+        RemoteObject {
+            mat: [
+                [1.0, 2.0, 3.0, 4.0],
+                [5.0, 6.0, 7.0, 8.0],
+                [9.0, 10.0, 11.0, 12.0],
+                [13.0, 14.0, 15.0, 16.0],
+                [17., 18., 19., 20.],
+            ],
+            id: ObjectId::new(0x12345679),
+            typ: ObjectType::Ship,
+        },
+    ]);
+    let msg_id = 0x22458;
+    let chunks = cct.serialize(msg_id).unwrap();
+    let cct2 = ClientCommandType::deserialize(chunks).unwrap();
+    assert_eq!((cct, msg_id), cct2);
 }
 
 #[allow(clippy::too_many_lines)]
@@ -75,6 +110,15 @@ fn sct_serialize_deserialize() {
     }
 
     let sct = ServerCommandType::Update(objs);
+    let msg_id = 0x2A458;
+    let chunks = sct.serialize(msg_id).unwrap();
+    let sct2 = ServerCommandType::deserialize(chunks).unwrap();
+    assert_eq!((sct, msg_id), sct2);
+
+    let sct = ServerCommandType::ReturnIds((
+        ObjectId::new(0x123456),
+        ObjectId::new(0x12345679),
+    ));
     let msg_id = 0x2A458;
     let chunks = sct.serialize(msg_id).unwrap();
     let sct2 = ServerCommandType::deserialize(chunks).unwrap();

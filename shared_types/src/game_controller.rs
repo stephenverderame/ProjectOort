@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::*;
 pub use game_map::*;
 use std::collections::{HashMap, VecDeque};
@@ -71,6 +72,60 @@ impl LocalGameController {
 
 type RemoteObjectMapPair = (Vec<RemoteObject>, HashMap<ObjectId, usize>);
 
+/// Sets the given objects to the given new objects
+fn set_objects(
+    objects: &mut Vec<RemoteObject>,
+    indices: &mut HashMap<ObjectId, usize>,
+    new_objects: &[RemoteObject],
+) {
+    for obj in new_objects {
+        if let Some(i) = indices.get(&obj.id) {
+            objects[*i] = *obj;
+        } else {
+            indices.insert(obj.id, objects.len());
+            objects.push(*obj);
+        }
+    }
+}
+
+/// Updates the given objects with the given updates
+fn update_objects(
+    objects: &mut [RemoteObject],
+    indices: &mut HashMap<ObjectId, usize>,
+    updates: &[RemoteObjectUpdate],
+) {
+    for update in updates {
+        if let Some(idx) = indices.get(&update.id) {
+            let (node, mut vel, mut rot, typ, id) =
+                node::from_remote_object(&objects[*idx]);
+            vel += From::from(update.delta_vel);
+            rot += From::from(update.delta_rot);
+
+            // TODO: update position here?
+
+            objects[*idx] = node::to_remote_object(&node, &vel, &rot, typ, id);
+        }
+    }
+}
+
+/// Removes the objects with the given ids from the given objects
+fn remove_objects(
+    objects: &mut Vec<RemoteObject>,
+    indices: &mut HashMap<ObjectId, usize>,
+    ids: &[ObjectId],
+) {
+    for id in ids {
+        if let Some(index) = indices.remove(id) {
+            if objects.len() > 1 {
+                let last_index = objects.len() - 1;
+                let last_id = objects[last_index].id;
+                indices.insert(last_id, index);
+            }
+            objects.swap_remove(index);
+        }
+    }
+}
+
 impl GameController for LocalGameController {
     fn get_game_objects(&self) -> &[RemoteObject] {
         &self.objects
@@ -89,43 +144,15 @@ impl GameController for LocalGameController {
     }
 
     fn set_objects(&mut self, objects: &[RemoteObject]) {
-        for obj in objects {
-            if let Some(i) = self.indices.get(&obj.id) {
-                self.objects[*i] = *obj;
-            } else {
-                self.indices.insert(obj.id, self.objects.len());
-                self.objects.push(*obj);
-            }
-        }
+        set_objects(&mut self.objects, &mut self.indices, objects);
     }
 
     fn update_objects(&mut self, updates: &[RemoteObjectUpdate]) {
-        for update in updates {
-            if let Some(idx) = self.indices.get(&update.id) {
-                let (node, mut vel, mut rot, typ, id) =
-                    node::from_remote_object(&self.objects[*idx]);
-                vel += From::from(update.delta_vel);
-                rot += From::from(update.delta_rot);
-
-                // TODO: update position here?
-
-                self.objects[*idx] =
-                    node::to_remote_object(&node, &vel, &rot, typ, id);
-            }
-        }
+        update_objects(&mut self.objects, &mut self.indices, updates);
     }
 
     fn remove_objects(&mut self, ids: &[ObjectId]) {
-        for id in ids {
-            if let Some(index) = self.indices.remove(id) {
-                if self.objects.len() > 1 {
-                    let last_index = self.objects.len() - 1;
-                    let last_id = self.objects[last_index].id;
-                    self.indices.insert(last_id, index);
-                }
-                self.objects.swap_remove(index);
-            }
-        }
+        remove_objects(&mut self.objects, &mut self.indices, ids);
     }
 
     fn request_n_ids(&mut self, n: u32) {
@@ -147,7 +174,9 @@ impl GameController for LocalGameController {
 
 #[allow(unused)]
 pub struct RemoteGameController {
-    objects: Vec<RemoteObject>,
+    client_objects: Vec<RemoteObject>,
+    server_objects: Vec<RemoteObject>,
+    game_objects: Vec<RemoteObject>,
     indices: HashMap<ObjectId, usize>,
     available_ids: id_list::IdList,
     lighting: GlobalLightingInfo,
@@ -155,6 +184,7 @@ pub struct RemoteGameController {
     sock: UdpSocket,
     peer: (IpAddr, u16),
     msg_buffer: ClientBuffer<ServerCommandType>,
+    last_out_id: MsgId,
 }
 
 impl RemoteGameController {
@@ -239,14 +269,16 @@ impl RemoteGameController {
             ObjectType::Ship,
             login_info.pid,
         );
-        let (objects, indices) = Self::get_initial_objects(
+        let (server_objects, indices) = Self::get_initial_objects(
             &sock,
             player,
             &mut last_out_id,
             &mut recieved_msgs,
         )?;
         Ok(Self {
-            objects,
+            server_objects,
+            client_objects: vec![],
+            game_objects: vec![],
             indices,
             available_ids,
             lighting: login_info.lighting,
@@ -257,6 +289,99 @@ impl RemoteGameController {
             sock,
             peer: server,
             msg_buffer: recieved_msgs,
+            last_out_id,
         })
+    }
+
+    /// Requests `n` ids from the server
+    fn get_ids_from_server(&mut self, n: u32) {
+        match remote::send_important(
+            &self.sock,
+            &ClientCommandType::GetIds(n),
+            self.last_out_id,
+            &mut self.msg_buffer,
+            &ImportantArguments::default(),
+        )
+        .expect("Could not send ID request")
+        {
+            ServerCommandType::ReturnIds(ids) => {
+                self.last_out_id = self.last_out_id.wrapping_add(1);
+                self.available_ids.add_ids(ids);
+            }
+            _ => panic!("Unexpected response"),
+        }
+    }
+
+    fn send_update(&mut self) -> Result<(), Box<dyn Error>> {
+        if self.client_objects.is_empty() {
+            return Ok(());
+        }
+        let out = remote::send_data(
+            &self.sock,
+            self.peer,
+            &ClientCommandType::UpdateReadOnly(&self.client_objects),
+            self.last_out_id,
+        );
+        self.last_out_id = self.last_out_id.wrapping_add(1);
+        out
+    }
+
+    fn get_response(&mut self) {
+        if let Ok(Some(response)) =
+            remote::recv_data(&self.sock, &mut self.msg_buffer)
+        {
+            match response {
+                (ServerCommandType::Update(objs), _) => {
+                    self.server_objects = objs;
+                }
+                _ => panic!("Unexpected response"),
+            }
+        }
+    }
+}
+
+impl GameController for RemoteGameController {
+    fn get_game_objects(&self) -> &[RemoteObject] {
+        &self.game_objects
+    }
+
+    fn get_game_time(&self) -> std::time::Duration {
+        todo!()
+    }
+
+    fn get_game_stats(&self) -> &GameStats {
+        &GameStats {}
+    }
+
+    fn get_player_stats(&self) -> &PlayerStats {
+        &self.player
+    }
+
+    fn set_objects(&mut self, objects: &[RemoteObject]) {
+        self.client_objects = objects.to_vec();
+    }
+
+    fn update_objects(&mut self, _updates: &[RemoteObjectUpdate]) {
+        todo!()
+    }
+
+    fn remove_objects(&mut self, _ids: &[ObjectId]) {
+        todo!()
+    }
+
+    fn request_n_ids(&mut self, n: u32) {
+        self.get_ids_from_server(n);
+    }
+
+    fn get_requested_ids(&mut self) -> Option<(ObjectId, ObjectId)> {
+        self.available_ids.pop_front()
+    }
+
+    fn sync(&mut self) {
+        self.get_response();
+    }
+
+    fn get_lighting_info(&self) -> &GlobalLightingInfo {
+        &self.lighting
     }
 }

@@ -48,6 +48,10 @@ impl IdList {
         self.ids.push_back(range);
     }
 
+    pub fn pop_front(&mut self) -> Option<(ObjectId, ObjectId)> {
+        self.ids.pop_front()
+    }
+
     /// Computes the number of remaining IDs in the list
     #[must_use]
     pub fn remaining(&self) -> usize {

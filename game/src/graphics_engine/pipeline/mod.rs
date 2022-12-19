@@ -20,7 +20,7 @@ pub enum Ownership<'a, T> {
 impl<'a, T> Ownership<'a, T> {
     /// Gets a reference of the data, regardless of the onwership type
     pub const fn to_ref(&self) -> &T {
-        match &self {
+        match self {
             Own(s) => s,
             Ref(s) => s,
         }

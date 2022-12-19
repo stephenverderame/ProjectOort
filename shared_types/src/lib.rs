@@ -242,9 +242,11 @@ impl Eq for RemoteObject {}
 
 /// A command that is sent from the client to the server
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum ClientCommandType {
+pub enum ClientCommandType<'a> {
     Login(String),
     Update(Vec<RemoteObject>),
+    UpdateReadOnly(&'a [RemoteObject]),
+    GetIds(u32),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -268,4 +270,5 @@ impl Eq for LoginInfo {}
 pub enum ServerCommandType {
     ReturnLogin(LoginInfo),
     Update(Vec<RemoteObject>),
+    ReturnIds((ObjectId, ObjectId)),
 }

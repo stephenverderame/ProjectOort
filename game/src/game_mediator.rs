@@ -481,7 +481,7 @@ impl<State> GameMediator for LocalGameMediator<State> {
         vel: Vector3<f64>,
         typ: ObjectType,
     ) {
-        assert!(typ == ObjectType::Laser || typ == ObjectType::Hook);
+        assert!(matches!(typ, ObjectType::Laser | ObjectType::Hook));
         self.base.add_laser(transform, vel, typ);
     }
 
