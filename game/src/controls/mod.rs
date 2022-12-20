@@ -1,3 +1,5 @@
+mod ai;
+mod pathfinding;
 mod user_input;
 #[derive(PartialEq, Eq, Copy, Clone)]
 pub enum Movement {

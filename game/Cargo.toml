@@ -24,6 +24,7 @@ regex = "1.6.0"
 shared_types = { path = "../shared_types" }
 static_assertions = "1.1.0"
 lazy_static = "1.4.0"
+priority-queue = "1.3.0"
 
 [dev-dependencies]
 assertables = "5.2.0"
