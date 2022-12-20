@@ -143,8 +143,15 @@ impl Player {
         &self.body
     }
 
+    /// This is a tempory function so the AI can mutate velocity directly for now
+    #[deprecated]
+    pub fn get_rigid_body_mut(
+        &mut self,
+    ) -> &mut physics::RigidBody<object::ObjectData> {
+        &mut self.body
+    }
+
     #[inline]
-    #[allow(unused)]
     pub const fn node(&self) -> &Rc<RefCell<Node>> {
         &self.body.base.transform
     }

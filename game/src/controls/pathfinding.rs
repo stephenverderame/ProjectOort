@@ -1,13 +1,30 @@
 use super::ai::{ActionResult, BTNode, BehaviorTree, Blackboard};
+use crate::collisions::CollisionTree;
+use crate::player::Player;
 use cgmath::*;
 use priority_queue::PriorityQueue;
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 /// A linked list in order to backtrack the shortest path
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Eq)]
 struct PathNode {
     index: Point3<i32>,
     parent: Option<Rc<Self>>,
+    cost: u32,
+}
+
+impl PartialEq for PathNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.index == other.index
+    }
+}
+
+impl std::hash::Hash for PathNode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.index.hash(state);
+    }
 }
 
 /// Priority Newtype to wrap the priority of a node
@@ -22,20 +39,127 @@ impl Priority {
     }
 }
 
-/// A Behavior Tree action node that moves the AI to a target
-/// Implements A* by tiling the space around the current position in intervals of `tile_dim`
-pub struct GoTo {
+/// A computed path to a target with stores indices of tiles from the origin
+/// to the target in units of `tile_dim`
+///
+/// The path is stored as a VecDeque of indices, where the first element is the
+/// next tile that we haven't reached yet
+pub(super) struct ComputedPath {
+    path: VecDeque<Point3<i32>>,
+    target: Point3<f64>,
+    origin: Point3<f64>,
     tile_dim: f64,
-    // the computed path and its target
-    computed_path: Option<(Rc<PathNode>, Point3<f64>)>,
 }
 
-/// A Behavior Tree action node that moves the AI to a target in a straight line
-/// If the target is obstructed, we search for the nearest unobstructed tile to
-/// the original target
+impl ComputedPath {
+    /// Constructs a computed path by backtracking from the terminal node
+    ///
+    /// The terminal node is the last node in the path
+    fn new(
+        terminal_node: Rc<PathNode>,
+        target: Point3<f64>,
+        origin: Point3<f64>,
+        tile_dim: f64,
+    ) -> Self {
+        let mut path = VecDeque::new();
+        let mut cur_node = terminal_node;
+        while let Some(parent) = cur_node.parent.clone() {
+            path.push_front(cur_node.index);
+            cur_node = parent;
+        }
+        Self {
+            path,
+            target,
+            origin,
+            tile_dim,
+        }
+    }
+
+    /// Converts an index, which is relative to an origin and a tile dimension,
+    /// to a point in world space
+    #[inline]
+    fn index_to_point(&self, index: &Point3<i32>) -> Point3<f64> {
+        self.origin + index.to_vec().cast().unwrap() * self.tile_dim
+    }
+}
+
+/// A Behavior Tree action node that moves the AI along a path in relatively straight lines
 ///
-/// This is designed to be used to navigate over small distances
-pub struct StraightLineNav {}
+/// This is designed to be used to navigate on a precomputed path
+/// relatively small spacing between points in the path
+pub struct StraightLineNav {
+    last_pos: Option<Point3<f64>>,
+    last_velocity: Option<Vector3<f64>>,
+}
+
+impl StraightLineNav {
+    /// Get's the next point we haven't passed yet in the path
+    /// and mutates the path to remove the points we've already passed
+    ///
+    /// Returns None if the path is empty or we've passed the last point
+    fn get_next_point_in_path(
+        &self,
+        path: &mut ComputedPath,
+        cur_pos: &Point3<f64>,
+    ) -> Option<Point3<f64>> {
+        let mut next_point = path.index_to_point(path.path.front()?);
+        let last_pos = self.last_pos.unwrap_or(*cur_pos);
+        let v = cur_pos - last_pos;
+        let get_projection_coef = |pt: Point3<f64>| {
+            let v2 = pt - cur_pos;
+            v2.dot(v) / (v.magnitude2() + f64::EPSILON)
+        };
+        while get_projection_coef(next_point) > 1.0 {
+            path.path.pop_front();
+            next_point = path.index_to_point(path.path.front()?);
+        }
+        Some(next_point)
+    }
+
+    /// Slightly adjusts the target location as little as possible to avoid
+    /// any obstacles if the target location has become obstructed
+    fn adjust_point_to_avoid_obstacles(point: Point3<f64>) -> Point3<f64> {
+        point
+        // TODO: implement
+    }
+
+    /// Returns true if our current velocity has changed direction too much from
+    /// the last velocity, which would indicate that we've hit an obstacle
+    /// and should recalculate the path
+    fn did_hit_obstacle(&self, npc: &Rc<RefCell<Player>>) -> bool {
+        self.last_velocity.map_or(false, |v| {
+            v.normalize()
+                .dot(npc.borrow().get_ridid_body().base.velocity.normalize())
+                < 0.0
+            // less than 0 means > 90 degrees
+        })
+    }
+
+    fn follow_path(
+        &mut self,
+        path: &mut ComputedPath,
+        npc: &Rc<RefCell<Player>>,
+        _dt: std::time::Duration,
+    ) -> ActionResult {
+        if self.did_hit_obstacle(npc) {
+            // recalculate path
+            return ActionResult::Failure;
+        }
+        self.get_next_point_in_path(
+            path,
+            &npc.borrow().node().borrow().get_pos(),
+        )
+        .map_or(ActionResult::Success, |point| {
+            let point = Self::adjust_point_to_avoid_obstacles(point);
+            let dir = point - npc.borrow().node().borrow().get_pos();
+            // let rot_axis = dir.cross(vec3(0.0, 1.0, 0.0));
+            // TODO: rotate the npc to face the direction of the next point
+            npc.borrow_mut().get_rigid_body_mut().base.velocity =
+                dir.normalize() * 10.0;
+            ActionResult::Running
+        })
+    }
+}
 
 const NEIGHBORS: [Vector3<i32>; 6] = [
     vec3(1, 0, 0),
@@ -46,7 +170,21 @@ const NEIGHBORS: [Vector3<i32>; 6] = [
     vec3(0, 0, -1),
 ];
 
-impl GoTo {
+fn tile_cost(tile_center: Point3<f64>, tile_dim: f64, scene: &CollisionTree) {
+    let r = f64::sqrt((tile_dim / 2.0) * (tile_dim / 2.0));
+    let colliders = scene.test_for_collisions(tile_center, r);
+    for c in colliders {}
+}
+
+/// A Behavior Tree action node that computes a path to a target using A*
+/// Implements A* by tiling the space around the current position in intervals of `tile_dim`
+///
+/// The action will succeed if a path was computed or fail if there is no target or no path
+pub struct ComputePath {
+    tile_dim: f64,
+}
+
+impl ComputePath {
     /// Gets the cost of the tile
     fn tile_cost(
         _cur_pos: &Point3<f64>,
@@ -83,6 +221,8 @@ impl GoTo {
 
     /// Gets a path to the target, avoiding obstacles at a resolution of `tile_dim`
     /// using A*
+    ///
+    /// Returns None if no path could be found
     fn get_path(
         cur_pos: &Point3<f64>,
         tile_dim: f64,
@@ -92,33 +232,37 @@ impl GoTo {
         let mut cur_node = Rc::new(PathNode {
             index: point3(0, 0, 0),
             parent: None,
+            cost: 0,
         });
         let mut frontier = PriorityQueue::new();
-        frontier.push(
-            cur_node.clone(),
-            Priority::from_cost(Self::heuristic(
-                &point3(0, 0, 0),
-                &target_tile,
-            )),
-        );
-        while let Some((n, cur_cost)) = frontier.pop() {
+        frontier.push(cur_node.clone(), Priority::from_cost(0));
+        while let Some((n, _)) = frontier.pop() {
             cur_node = n;
             let cur_tile = cur_node.index;
             if cur_tile == target_tile {
                 break;
             }
+            let cur_cost = cur_node.cost;
             for neighbor in NEIGHBORS.map(|n| cur_tile + n) {
-                let neighbor_cost = cur_cost.0
-                    + Self::tile_cost(cur_pos, tile_dim, neighbor)
-                    + 1;
+                let neighbor_cost = cur_cost
+                    .saturating_add(Self::tile_cost(
+                        cur_pos, tile_dim, neighbor,
+                    ))
+                    .saturating_add(1);
                 let n = Rc::new(PathNode {
                     index: neighbor,
                     parent: Some(cur_node.clone()),
+                    cost: neighbor_cost,
                 });
-                frontier.push(n, Priority::from_cost(neighbor_cost));
+                frontier.push(
+                    n,
+                    Priority::from_cost(neighbor_cost.saturating_add(
+                        Self::heuristic(&neighbor, &target_tile),
+                    )),
+                );
             }
         }
-        if cur_node.index == target_tile {
+        if cur_node.index == target_tile && cur_node.cost < u32::MAX {
             Some(cur_node)
         } else {
             None
@@ -126,25 +270,78 @@ impl GoTo {
     }
 }
 
-impl BTNode for GoTo {
+impl BTNode for ComputePath {
     fn tick(
         &mut self,
         _children: &mut [BehaviorTree],
         blackboard: &mut Blackboard,
+        scene: &CollisionTree,
+        _dt: std::time::Duration,
+    ) -> ActionResult {
+        if let Some(target_location) = &blackboard.target_location {
+            let cur_pos = blackboard.npc.borrow().node().borrow().get_pos();
+            blackboard.computed_path =
+                Self::get_path(&cur_pos, self.tile_dim, target_location).map(
+                    |path| {
+                        ComputedPath::new(
+                            path,
+                            *target_location,
+                            cur_pos,
+                            self.tile_dim,
+                        )
+                    },
+                );
+            blackboard
+                .computed_path
+                .as_ref()
+                .map_or(ActionResult::Failure, |_| ActionResult::Success)
+        } else {
+            ActionResult::Failure
+        }
+    }
+}
+
+/// A Behavior Tree action node that identifies a target to follow
+/// This will succeed if there is a target already identified or if a new target is identified
+/// otherwise it will be running
+pub struct IdentifyTarget {
+    fov: cgmath::Rad<f64>,
+    view_distance: f64,
+}
+
+impl BTNode for IdentifyTarget {
+    fn tick(
+        &mut self,
+        children: &mut [BehaviorTree],
+        blackboard: &mut Blackboard,
+        scene: &CollisionTree,
         dt: std::time::Duration,
     ) -> ActionResult {
-        // TODO: Review this
-        if self.computed_path.is_none() {
-            self.computed_path = Self::get_path(
-                &blackboard.cur_location.borrow().get_pos(),
-                self.tile_dim,
-                &blackboard.target_location.borrow().get_pos(),
-            )
-            .map(|path| (path, blackboard.target_location.borrow().get_pos()));
-        }
-        ActionResult::Running
-        // straight line navigate from point to point?
-        // how to deal if we overshoot a few points and end up closer to a later point?
-        // TODO
+        todo!()
+    }
+}
+
+/// A Behavior Tree action node that gets the position of an IDed target
+///
+/// If the target is too far away or out of sight too long, this will mark the target
+/// as lost so a new one can be identified
+///
+/// This will succeed if the target is in sight and close enough, otherwise it
+/// will fail and the target will be marked as lost
+pub struct SearchForIDedTarget {
+    fov: cgmath::Rad<f64>,
+    view_distance: f64,
+    max_lost_time: std::time::Duration,
+}
+
+impl BTNode for SearchForIDedTarget {
+    fn tick(
+        &mut self,
+        children: &mut [BehaviorTree],
+        blackboard: &mut Blackboard,
+        scene: &CollisionTree,
+        dt: std::time::Duration,
+    ) -> ActionResult {
+        todo!()
     }
 }

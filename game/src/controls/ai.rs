@@ -1,4 +1,6 @@
-use crate::cg_support::node;
+use super::pathfinding::ComputedPath;
+use crate::collisions::CollisionTree;
+use crate::player;
 use std::cell::RefCell;
 use std::rc::Rc;
 pub enum ActionResult {
@@ -12,13 +14,16 @@ pub trait BTNode {
         &mut self,
         children: &mut [BehaviorTree],
         blackboard: &mut Blackboard,
+        scene: &CollisionTree,
         dt: std::time::Duration,
     ) -> ActionResult;
 }
 
 pub struct Blackboard {
-    pub(super) target_location: Rc<RefCell<node::Node>>,
-    pub(super) cur_location: Rc<RefCell<node::Node>>,
+    pub(super) target_location: Option<cgmath::Point3<f64>>,
+    pub(super) npc: Rc<RefCell<player::Player>>,
+    pub(super) computed_path: Option<ComputedPath>,
+    pub(super) target_id: Option<usize>,
 }
 
 pub struct BehaviorTree {
@@ -34,26 +39,29 @@ impl BehaviorTree {
     pub fn tick(
         &mut self,
         blackboard: &mut Blackboard,
+        scene: &CollisionTree,
         dt: std::time::Duration,
     ) -> ActionResult {
-        self.root.tick(&mut self.children, blackboard, dt)
+        self.root.tick(&mut self.children, blackboard, scene, dt)
     }
 }
 
 /// A node that succeeds if all of its children succeed, processed left to right
+/// If any child fails or is running, the sequence returns the status of
+/// the first non-successful child
 pub struct Sequence {}
 impl BTNode for Sequence {
     fn tick(
         &mut self,
         children: &mut [BehaviorTree],
         blackboard: &mut Blackboard,
+        scene: &CollisionTree,
         dt: std::time::Duration,
     ) -> ActionResult {
         for child in children {
-            match child.tick(blackboard, dt) {
+            match child.tick(blackboard, scene, dt) {
                 ActionResult::Success => continue,
-                ActionResult::Failure => return ActionResult::Failure,
-                ActionResult::Running => return ActionResult::Running,
+                x => return x,
             }
         }
         ActionResult::Success
@@ -61,19 +69,20 @@ impl BTNode for Sequence {
 }
 
 /// A node that succeeds if any of its children succeed, processed left to right
+/// The fallback returns the status of the first non-failure child
 pub struct Fallback {}
 impl BTNode for Fallback {
     fn tick(
         &mut self,
         children: &mut [BehaviorTree],
         blackboard: &mut Blackboard,
+        scene: &CollisionTree,
         dt: std::time::Duration,
     ) -> ActionResult {
         for child in children {
-            match child.tick(blackboard, dt) {
-                ActionResult::Success => return ActionResult::Success,
+            match child.tick(blackboard, scene, dt) {
                 ActionResult::Failure => continue,
-                ActionResult::Running => return ActionResult::Running,
+                x => return x,
             }
         }
         ActionResult::Failure
