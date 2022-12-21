@@ -7,6 +7,7 @@ mod octree;
 use crate::cg_support::node;
 pub use bvh::TreeStopCriteria;
 pub use highp_col::*;
+pub use obb::{Aabb, BoundingVolume, Obb};
 use octree::Octree;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -143,21 +144,23 @@ impl CollisionObject {
         (
             main.into_iter()
                 .map(|x| {
-                    Matrix4::from_translation(x.center.to_vec())
+                    assert!(matches!(x, obb::BoundingVolume::Aabb(_)));
+                    Matrix4::from_translation(x.center().to_vec())
                         * Matrix4::from_nonuniform_scale(
-                            x.extents.x,
-                            x.extents.y,
-                            x.extents.z,
+                            x.extents().x,
+                            x.extents().y,
+                            x.extents().z,
                         )
                 })
                 .collect(),
             leaf.into_iter()
                 .map(|x| {
-                    Matrix4::from_translation(x.center.to_vec())
+                    assert!(matches!(x, obb::BoundingVolume::Aabb(_)));
+                    Matrix4::from_translation(x.center().to_vec())
                         * Matrix4::from_nonuniform_scale(
-                            x.extents.x,
-                            x.extents.y,
-                            x.extents.z,
+                            x.extents().x,
+                            x.extents().y,
+                            x.extents().z,
                         )
                 })
                 .collect(),
@@ -181,21 +184,23 @@ impl CollisionObject {
         );
         our.into_iter()
             .map(|x| {
+                assert!(matches!(x, obb::BoundingVolume::Aabb(_)));
                 our_mat
-                    * Matrix4::from_translation(x.center.to_vec())
+                    * Matrix4::from_translation(x.center().to_vec())
                     * Matrix4::from_nonuniform_scale(
-                        x.extents.x,
-                        x.extents.y,
-                        x.extents.z,
+                        x.extents().x,
+                        x.extents().y,
+                        x.extents().z,
                     )
             })
             .chain(other.into_iter().map(|x| {
+                assert!(matches!(x, obb::BoundingVolume::Aabb(_)));
                 other_mat
-                    * Matrix4::from_translation(x.center.to_vec())
+                    * Matrix4::from_translation(x.center().to_vec())
                     * Matrix4::from_nonuniform_scale(
-                        x.extents.x,
-                        x.extents.y,
-                        x.extents.z,
+                        x.extents().x,
+                        x.extents().y,
+                        x.extents().z,
                     )
             }))
             .collect()
@@ -249,6 +254,26 @@ impl CollisionObject {
         assert_eq_size!(usize, *mut collision_mesh::CollisionMesh);
         self.mesh.as_ptr() as usize
     }
+
+    /// Gets an id that uniquely identifies this collision object by its transformation
+    /// node
+    pub fn node_id(&self) -> usize {
+        self.obj.borrow().model.as_ptr() as usize
+    }
+
+    /// Performs collision detection with just another bounding volume
+    /// performs no high precision collision detection
+    pub fn collision_simple(
+        &self,
+        volume: obb::BoundingVolume,
+        volume_transform: &cgmath::Matrix4<f64>,
+    ) -> bool {
+        self.mesh.borrow().bounding_volume_collision(
+            &self.obj.borrow().model.borrow().mat(),
+            volume,
+            volume_transform,
+        )
+    }
 }
 
 impl std::hash::Hash for CollisionObject {
@@ -294,8 +319,38 @@ impl CollisionTree {
         Octree::remove(&obj.obj);
     }
 
+    /// Gets all objects that collide with the given object which is part of this
+    /// collision tree
     pub fn get_colliders(obj: &CollisionObject) -> Vec<CollisionObject> {
         Octree::get_colliders(&obj.obj)
+            .into_iter()
+            .map(|x| CollisionObject {
+                mesh: x.borrow().mesh.upgrade().unwrap(),
+                obj: x.clone(),
+            })
+            .collect()
+    }
+
+    /// Gets all objects that collide with the given sphere in this collision tree
+    pub fn test_for_collisions(
+        &self,
+        center: cgmath::Point3<f64>,
+        radius: f64,
+    ) -> Vec<CollisionObject> {
+        self.tree
+            .test_for_collisions(center, radius)
+            .into_iter()
+            .map(|x| CollisionObject {
+                mesh: x.borrow().mesh.upgrade().unwrap(),
+                obj: x.clone(),
+            })
+            .collect()
+    }
+
+    /// Gets all objects in the tree
+    pub fn get_all_objects(&self) -> Vec<CollisionObject> {
+        self.tree
+            .get_all_objects()
             .into_iter()
             .map(|x| CollisionObject {
                 mesh: x.borrow().mesh.upgrade().unwrap(),

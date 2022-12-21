@@ -1,4 +1,5 @@
-use super::{Movement, MovementControl, PlayerActionState};
+use super::{Movement, MovementControl, PlayerActionState, PlayerIterator};
+use crate::{collisions, physics};
 use glutin::event::*;
 // `PlayerControls` converts device inputs to higher level
 /// game controls
@@ -134,8 +135,15 @@ impl MovementControl for PlayerControls {
         self.state = PlayerActionState::Idle;
     }
 
-    fn on_frame_update(&mut self, _dt: std::time::Duration) {
+    fn on_frame_update(
+        &mut self,
+        _scene: &collisions::CollisionTree,
+        _player: &physics::BaseRigidBody,
+        _dt: std::time::Duration,
+        _other_players: PlayerIterator,
+    ) -> Option<super::ControllerAction> {
         self.pitch = 0.;
         self.roll = 0.;
+        None
     }
 }

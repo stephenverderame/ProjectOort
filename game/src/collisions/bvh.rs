@@ -1,4 +1,4 @@
-use super::obb::Aabb;
+use super::obb::{Aabb, BoundingVolume};
 use cgmath::*;
 use std::collections::{HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -125,12 +125,12 @@ fn aobb_from_triangles<T: BaseFloat>(triangles: &[Triangle<T>]) -> Aabb {
     Aabb::from(&v)
 }
 
-fn largest_extent_index(aobb: &Aabb) -> usize {
+fn largest_extent_index(aobb: &BoundingVolume) -> usize {
     let mut idx = 0;
     let mut max_extents = f64::MIN;
     for i in 0..3 {
-        if aobb.extents[i] > max_extents {
-            max_extents = aobb.extents[i];
+        if aobb.extents()[i] > max_extents {
+            max_extents = aobb.extents()[i];
             idx = i;
         }
     }
@@ -141,7 +141,7 @@ type CollisionResult<T> = (Vec<Triangle<T>>, Vec<Triangle<T>>);
 struct BVHNode<T: BaseFloat> {
     left: Option<Box<BVHNode<T>>>,
     right: Option<Box<BVHNode<T>>>,
-    volume: Aabb,
+    volume: BoundingVolume,
     triangles: Option<Vec<Triangle<T>>>,
 }
 
@@ -155,14 +155,14 @@ impl<T: BaseFloat> BVHNode<T> {
     fn with_split(
         triangles: Vec<Triangle<T>>,
         split: usize,
-        volume: Aabb,
+        volume: BoundingVolume,
         rec_depth: u32,
         stop: TreeStopCriteria,
     ) -> Self {
         let mut left = Vec::<Triangle<T>>::new();
         let mut right = Vec::<Triangle<T>>::new();
         for tri in triangles {
-            if tri.centroid()[split] < volume.center[split] {
+            if tri.centroid()[split] < volume.center()[split] {
                 left.push(tri);
             } else {
                 right.push(tri);
@@ -192,7 +192,7 @@ impl<T: BaseFloat> BVHNode<T> {
         recursion_depth: u32,
         stop: TreeStopCriteria,
     ) -> Self {
-        let volume = aobb_from_triangles(&triangles);
+        let volume = BoundingVolume::Aabb(aobb_from_triangles(&triangles));
         if stop.should_stop(triangles.len(), recursion_depth) {
             Self {
                 left: None,
@@ -208,7 +208,8 @@ impl<T: BaseFloat> BVHNode<T> {
 
     #[inline]
     const fn is_leaf(&self) -> bool {
-        self.triangles.is_some()
+        self.left.is_none() && self.right.is_none()
+        // used to be self.triangles.is_some()
     }
 
     /// Returns `true` if we should descend this BVH heirarchy, otherwise `false` to indicate
@@ -238,7 +239,11 @@ impl<T: BaseFloat> BVHNode<T> {
         stack.push_front((self, other));
         while !stack.is_empty() {
             let (a, b) = stack.pop_front().unwrap();
-            if !a.volume.collide(self_transform, &b.volume, other_transform) {
+            if !a.volume.is_colliding(
+                Some(self_transform),
+                &b.volume,
+                Some(other_transform),
+            ) {
                 continue;
             }
             if a.is_leaf() && b.is_leaf() {
@@ -274,7 +279,9 @@ impl<T: BaseFloat> BVHNode<T> {
             let ptr = r as *const Self;
             if !added_triangles.contains(&ptr) {
                 added_triangles.insert(ptr);
-                vec.append(&mut r.triangles.as_ref().unwrap().clone());
+                if let Some(x) = r.triangles.as_ref() {
+                    vec.append(&mut x.clone());
+                }
             }
         };
         self.descend_heirarchy(
@@ -296,7 +303,7 @@ impl<T: BaseFloat> BVHNode<T> {
     /// get's all bounding boxes of leaves
     /// Testing purposes
     #[allow(dead_code)]
-    fn get_leaf_boxes(&self, boxes: &mut Vec<Aabb>) {
+    fn get_leaf_boxes(&self, boxes: &mut Vec<BoundingVolume>) {
         if self.is_leaf() {
             boxes.push(self.volume.clone());
         }
@@ -316,11 +323,11 @@ impl<T: BaseFloat> BVHNode<T> {
         self_transform: &Matrix4<f64>,
         other: &Self,
         other_transform: &Matrix4<f64>,
-    ) -> (Vec<Aabb>, Vec<Aabb>) {
+    ) -> (Vec<BoundingVolume>, Vec<BoundingVolume>) {
         let mut our_v = Vec::new();
         let mut other_v = Vec::new();
         let mut added_triangles = HashSet::<*const Self>::new();
-        let mut add = |r: &Self, vec: &mut Vec<Aabb>| {
+        let mut add = |r: &Self, vec: &mut Vec<BoundingVolume>| {
             let ptr = r as *const Self;
             if !added_triangles.contains(&ptr) {
                 added_triangles.insert(ptr);
@@ -368,6 +375,24 @@ impl<T: BaseFloat> OBBTree<T> {
         }
     }
 
+    /// Creates a new tree from a bounding volume
+    /// The tree will have a single node with the given bounding volume
+    /// and no triangles
+    pub fn from_volume(volume: BoundingVolume) -> Self {
+        Self {
+            vertices: Box::pin(SelfRef {
+                vertices: Vec::new(),
+                _m: PhantomPinned,
+            }),
+            root: BVHNode {
+                left: None,
+                right: None,
+                triangles: None,
+                volume,
+            },
+        }
+    }
+
     /// If there is a collision, gets a vector of triangles to check from each object as a tuple
     /// If no bounding volume collision occurs, `None` is returned
     pub fn collision(
@@ -384,14 +409,14 @@ impl<T: BaseFloat> OBBTree<T> {
     }
 
     /// Gets the largest local space AABB that encloses the entire bvh
-    pub fn bounding_box(&self) -> Aabb {
+    pub fn bounding_box(&self) -> BoundingVolume {
         self.root.volume.clone()
     }
 
     /// Gets the main bounding box at index 0, followed by all leaf bounding boxes
     /// Testing method
     #[allow(dead_code)]
-    pub fn main_and_leaf_bounding_boxes(&self) -> Vec<Aabb> {
+    pub fn main_and_leaf_bounding_boxes(&self) -> Vec<BoundingVolume> {
         let mut v = vec![self.root.volume.clone()];
         self.root.get_leaf_boxes(&mut v);
         v
@@ -404,7 +429,7 @@ impl<T: BaseFloat> OBBTree<T> {
         self_transform: &Matrix4<f64>,
         other: &Self,
         other_transform: &Matrix4<f64>,
-    ) -> (Vec<Aabb>, Vec<Aabb>) {
+    ) -> (Vec<BoundingVolume>, Vec<BoundingVolume>) {
         self.root.get_colliding_boxes(
             self_transform,
             &other.root,

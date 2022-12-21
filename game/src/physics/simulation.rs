@@ -422,4 +422,8 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
         move_objects(objects, dt_sec);
         resolve_collisions(objects, resolvers, dt_sec);
     }
+
+    pub const fn get_collision_tree(&self) -> &CollisionTree {
+        &self.obj_tree
+    }
 }

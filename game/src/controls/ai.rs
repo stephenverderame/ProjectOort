@@ -1,29 +1,43 @@
 use super::pathfinding::ComputedPath;
+use super::{Movement, MovementControl, PlayerActionState, PlayerIterator};
 use crate::collisions::CollisionTree;
-use crate::player;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::physics;
+
 pub enum ActionResult {
     Success,
     Failure,
-    Running,
+    Running(Option<super::ControllerAction>),
 }
 
 pub trait BTNode {
-    fn tick(
+    #[allow(clippy::too_many_arguments)]
+    // TODO: fix
+    fn tick<'a>(
         &mut self,
         children: &mut [BehaviorTree],
         blackboard: &mut Blackboard,
         scene: &CollisionTree,
+        player: &physics::BaseRigidBody,
         dt: std::time::Duration,
+        other_players: PlayerIterator<'a>,
     ) -> ActionResult;
 }
 
 pub struct Blackboard {
     pub(super) target_location: Option<cgmath::Point3<f64>>,
-    pub(super) npc: Rc<RefCell<player::Player>>,
     pub(super) computed_path: Option<ComputedPath>,
     pub(super) target_id: Option<usize>,
+}
+
+impl Blackboard {
+    /// Creates a new blackboard for the player
+    pub fn new() -> Self {
+        Self {
+            target_location: None,
+            computed_path: None,
+            target_id: None,
+        }
+    }
 }
 
 pub struct BehaviorTree {
@@ -36,30 +50,43 @@ impl BehaviorTree {
         Self { root, children }
     }
 
-    pub fn tick(
+    pub fn tick<'a>(
         &mut self,
         blackboard: &mut Blackboard,
         scene: &CollisionTree,
+        player: &physics::BaseRigidBody,
         dt: std::time::Duration,
+        other_players: PlayerIterator<'a>,
     ) -> ActionResult {
-        self.root.tick(&mut self.children, blackboard, scene, dt)
+        self.root.tick(
+            &mut self.children,
+            blackboard,
+            scene,
+            player,
+            dt,
+            other_players,
+        )
     }
 }
 
 /// A node that succeeds if all of its children succeed, processed left to right
 /// If any child fails or is running, the sequence returns the status of
 /// the first non-successful child
+///
+/// Later non-none action results overwrite earlier ones
 pub struct Sequence {}
 impl BTNode for Sequence {
-    fn tick(
+    fn tick<'a>(
         &mut self,
         children: &mut [BehaviorTree],
         blackboard: &mut Blackboard,
         scene: &CollisionTree,
+        player: &physics::BaseRigidBody,
         dt: std::time::Duration,
+        other_players: PlayerIterator<'a>,
     ) -> ActionResult {
         for child in children {
-            match child.tick(blackboard, scene, dt) {
+            match child.tick(blackboard, scene, player, dt, other_players) {
                 ActionResult::Success => continue,
                 x => return x,
             }
@@ -72,19 +99,82 @@ impl BTNode for Sequence {
 /// The fallback returns the status of the first non-failure child
 pub struct Fallback {}
 impl BTNode for Fallback {
-    fn tick(
+    fn tick<'a>(
         &mut self,
         children: &mut [BehaviorTree],
         blackboard: &mut Blackboard,
         scene: &CollisionTree,
+        player: &physics::BaseRigidBody,
         dt: std::time::Duration,
+        other_players: PlayerIterator<'a>,
     ) -> ActionResult {
         for child in children {
-            match child.tick(blackboard, scene, dt) {
+            match child.tick(blackboard, scene, player, dt, other_players) {
                 ActionResult::Failure => continue,
                 x => return x,
             }
         }
         ActionResult::Failure
+    }
+}
+
+pub struct AIController {
+    pub(super) behavior_tree: BehaviorTree,
+    pub(super) blackboard: Blackboard,
+}
+
+impl AIController {
+    /// Creates a new AI controller for the player
+    pub fn new(behavior_tree: BehaviorTree) -> Self {
+        Self {
+            behavior_tree,
+            blackboard: Blackboard::new(),
+        }
+    }
+}
+
+impl MovementControl for AIController {
+    fn get_movement(&self) -> Movement {
+        Movement::Stopped
+    }
+
+    fn get_roll(&self) -> f64 {
+        0.
+    }
+
+    fn get_pitch(&self) -> f64 {
+        0.
+    }
+
+    fn get_action_state(&self) -> PlayerActionState {
+        PlayerActionState::Idle
+    }
+
+    fn get_transparency_fac(&mut self) -> f32 {
+        0.
+    }
+
+    fn transition_action_state(&mut self) {
+        // TODO
+    }
+
+    fn on_frame_update<'a>(
+        &mut self,
+        scene: &CollisionTree,
+        player: &physics::BaseRigidBody,
+        dt: std::time::Duration,
+        other_players: PlayerIterator<'a>,
+    ) -> Option<super::ControllerAction> {
+        if let ActionResult::Running(Some(action)) = self.behavior_tree.tick(
+            &mut self.blackboard,
+            scene,
+            player,
+            dt,
+            other_players,
+        ) {
+            Some(action)
+        } else {
+            None
+        }
     }
 }

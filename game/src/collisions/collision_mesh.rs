@@ -1,7 +1,7 @@
 #![allow(clippy::unreadable_literal)]
 use super::bvh::{CollisionVertex, OBBTree, TreeStopCriteria};
 use super::highp_col::{HighPCollision, Hit};
-use super::obb;
+use super::obb::{self, BoundingVolume};
 use cgmath::*;
 
 pub struct CollisionMesh {
@@ -97,10 +97,13 @@ impl CollisionMesh {
         let mut max_z = f64::MIN;
         for mesh in &self.sub_meshes {
             let aabb = mesh.bounding_box();
-            c += aabb.center.to_vec();
-            max_x = max_x.max(aabb.center.x + aabb.extents.x);
-            max_y = max_y.max(aabb.center.y + aabb.extents.y);
-            max_z = max_z.max(aabb.center.z + aabb.extents.z);
+            assert!(matches!(aabb, obb::BoundingVolume::Aabb(_)));
+            let center = aabb.center().to_vec();
+            let extents = aabb.extents();
+            c += center;
+            max_x = max_x.max(center.x + extents.x);
+            max_y = max_y.max(center.y + extents.y);
+            max_z = max_z.max(center.z + extents.z);
         }
         c /= self.sub_meshes.len() as f64;
         let center = point3(c.x, c.y, c.z);
@@ -111,7 +114,9 @@ impl CollisionMesh {
 
     /// Gets a tuple of the largest bounding volume in the tree and the leaf bounding volumes
     #[allow(dead_code)]
-    pub fn main_and_leaf_boxes(&self) -> (Vec<obb::Aabb>, Vec<obb::Aabb>) {
+    pub fn main_and_leaf_boxes(
+        &self,
+    ) -> (Vec<obb::BoundingVolume>, Vec<obb::BoundingVolume>) {
         let mut main_boxes = Vec::new();
         let mut leaf_boxes = Vec::new();
         for sb in &self.sub_meshes {
@@ -129,7 +134,7 @@ impl CollisionMesh {
         self_transform: &Matrix4<f64>,
         other: &Self,
         other_transform: &Matrix4<f64>,
-    ) -> (Vec<obb::Aabb>, Vec<obb::Aabb>) {
+    ) -> (Vec<obb::BoundingVolume>, Vec<obb::BoundingVolume>) {
         let mut our_v = Vec::new();
         let mut other_v = Vec::new();
         for sb in &self.sub_meshes {
@@ -160,6 +165,22 @@ impl CollisionMesh {
         for mesh in &self.sub_meshes {
             mesh.forall_verts(func);
         }
+    }
+
+    /// Determines if there is a collision between this mesh and another bounding volume
+    ///
+    /// Performs no high precision collision detection
+    pub fn bounding_volume_collision(
+        &self,
+        self_transform: &Matrix4<f64>,
+        other: BoundingVolume,
+        other_transform: &Matrix4<f64>,
+    ) -> bool {
+        let tree = OBBTree::from_volume(other);
+        self.sub_meshes.iter().any(|m| {
+            m.collision(self_transform, &tree, other_transform)
+                .is_some()
+        })
     }
 }
 

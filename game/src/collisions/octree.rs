@@ -213,6 +213,22 @@ impl ONode {
             })
     }
 
+    /// Tests for collisions with an object that is not in the octree
+    pub fn test_for_collisions(
+        node: &Rc<RefCell<Self>>,
+        center: Point3<f64>,
+        radius: f64,
+    ) -> Vec<Rc<RefCell<Object>>> {
+        use crate::node;
+        let test_obj = Rc::new(RefCell::new(Object {
+            model: Rc::new(RefCell::new(node::Node::default().pos(center))),
+            local_radius: radius,
+            octree_cell: Weak::new(),
+            mesh: Weak::new(),
+        }));
+        Self::get_subtree_colliders(node, &test_obj)
+    }
+
     /// Indicates that `obj` has changed and should be re-evaluated for placement in the octree
     ///
     /// If `obj` no longer fits in the octree, it remains in the root node
@@ -242,6 +258,20 @@ impl ONode {
                 children[child_idx as usize].borrow_mut().insert(obj);
             }
         }
+    }
+
+    /// Gets all objects in the tree
+    pub fn get_all_objects(&self) -> Vec<Rc<RefCell<Object>>> {
+        let mut v = Vec::new();
+        for obj in self.objects.iter().filter_map(|x| x.upgrade()) {
+            v.push(obj);
+        }
+        if let Some(children) = self.children.as_ref() {
+            for c in children {
+                v.append(&mut c.borrow().get_all_objects());
+            }
+        }
+        v
     }
 }
 
@@ -315,6 +345,23 @@ impl Octree {
         if let Some(n) = res {
             n.borrow_mut().update(obj);
         }
+    }
+
+    /// Returns all objects that have overlapping bounding spheres with the given
+    /// sphere
+    #[inline]
+    pub fn test_for_collisions(
+        &self,
+        center: Point3<f64>,
+        radius: f64,
+    ) -> Vec<Rc<RefCell<Object>>> {
+        ONode::test_for_collisions(&self.root, center, radius)
+    }
+
+    /// Returns all objects in the tree
+    #[inline]
+    pub fn get_all_objects(&self) -> Vec<Rc<RefCell<Object>>> {
+        self.root.borrow().get_all_objects()
     }
 }
 

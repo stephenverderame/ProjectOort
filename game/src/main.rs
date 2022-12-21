@@ -40,6 +40,8 @@ use cg_support::node;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::controls::get_std_ai_controller;
+
 fn get_cascade_target(
     width: u32,
     height: u32,
@@ -185,6 +187,8 @@ fn get_ui_render_pass(
     )
 }
 
+// Long function for ad-hoc testing
+// TODO: refactor
 #[allow(clippy::too_many_lines)]
 fn main() {
     let render_width = 1920;
@@ -207,12 +211,24 @@ fn main() {
         controller.get_player_stats().pid,
         player_controls.clone(),
     );
+
+    let enemy_controls = get_std_ai_controller();
+    let enemy = player::Player::new(
+        model::Model::new("assets/Ships/StarSparrow02.obj", &*wnd.ctx()),
+        render_width as f32 / render_height as f32,
+        "assets/Ships/StarSparrow02.obj",
+        controller.get_player_stats().pid,
+        enemy_controls.clone(),
+    );
+    enemy.get_node().borrow_mut().set_pos(point3(0., 0., 500.));
+
     let mediator = LocalGameMediator::<HasLightingAvailable>::new(
         &wnd.shaders,
         &*wnd.ctx(),
         controller,
     );
-    let game = game::Game::new(mediator, player);
+    let mut game = game::Game::new(mediator, player);
+    game.add_character(Rc::new(RefCell::new(enemy)));
 
     let mut main_scene = scene::Scene::new(
         get_main_render_pass(
@@ -318,6 +334,7 @@ fn main() {
             .with_on_hit(|a, b, hit| game.borrow().on_hit(a, b, hit)),
     );
 
+    // TODO: factor out HUD updates
     let mut draw_cb =
         |dt, mut scene: std::cell::RefMut<dyn scene::AbstractScene>| {
             minimap.borrow_mut().clear_items();

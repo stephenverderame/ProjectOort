@@ -11,12 +11,16 @@ pub struct Aabb {
 
 /// A fully defined OBB with arbitrary basis vectors
 #[derive(Clone)]
-struct Obb {
-    center: Point3<f64>,
-    extents: Vector3<f64>,
-    x: Vector3<f64>,
-    y: Vector3<f64>,
-    z: Vector3<f64>,
+pub struct Obb {
+    pub center: Point3<f64>,
+    /// The length of the x, y, and z basis vectors
+    pub extents: Vector3<f64>,
+    /// The x basis vector
+    pub x: Vector3<f64>,
+    /// The y basis vector
+    pub y: Vector3<f64>,
+    /// The z basis vector
+    pub z: Vector3<f64>,
 }
 
 impl Obb {
@@ -167,6 +171,10 @@ impl Obb {
         }
         true
     }
+
+    fn vol(&self) -> f64 {
+        8. * self.extents.x * self.extents.y * self.extents.z
+    }
 }
 
 impl Aabb {
@@ -251,10 +259,75 @@ impl Aabb {
         this.collision(&other)
     }
 
+    /// Returns true if this bounding box collides with `obb`
+    pub fn obb_collide(
+        &self,
+        self_transform: &Matrix4<f64>,
+        obb: &Obb,
+    ) -> bool {
+        let this = Obb::from_local_aligned(self, *self_transform);
+        this.collision(obb)
+    }
+
     /// Volume of the OBB
     #[inline]
     pub fn vol(&self) -> f64 {
         self.extents.x * self.extents.y * self.extents.z * 8.0
+    }
+}
+
+#[derive(Clone)]
+pub enum BoundingVolume {
+    Aabb(Aabb),
+    Obb(Obb),
+}
+
+impl BoundingVolume {
+    /// Returns true if this bounding volume collides with `other`
+    /// `self_transform` - the matrix transform this bounding volume to
+    /// world coordinates
+    /// `other_transform` - the matrix transforming `other` to world coordinates
+    ///  If `self` or `other` is an AABB, `self_transform` and `other_transform`
+    /// must be provided, respectively
+    pub fn is_colliding(
+        &self,
+        self_transform: Option<&Matrix4<f64>>,
+        other: &Self,
+        other_transform: Option<&Matrix4<f64>>,
+    ) -> bool {
+        match (self, other) {
+            (BoundingVolume::Aabb(a), BoundingVolume::Aabb(b)) => {
+                a.collide(self_transform.unwrap(), b, other_transform.unwrap())
+            }
+            (BoundingVolume::Aabb(a), BoundingVolume::Obb(b))
+            | (BoundingVolume::Obb(b), BoundingVolume::Aabb(a)) => {
+                a.obb_collide(self_transform.unwrap(), b)
+            }
+            (BoundingVolume::Obb(a), BoundingVolume::Obb(b)) => a.collision(b),
+        }
+    }
+
+    /// Gets the center of the bounding volume
+    pub fn center(&self) -> Point3<f64> {
+        match self {
+            BoundingVolume::Aabb(a) => a.center,
+            BoundingVolume::Obb(o) => o.center,
+        }
+    }
+
+    /// Volume of the bounding volume
+    pub fn vol(&self) -> f64 {
+        match self {
+            BoundingVolume::Aabb(a) => a.vol(),
+            BoundingVolume::Obb(o) => o.vol(),
+        }
+    }
+
+    pub fn extents(&self) -> Vector3<f64> {
+        match self {
+            BoundingVolume::Aabb(a) => a.extents,
+            BoundingVolume::Obb(o) => o.extents,
+        }
     }
 }
 

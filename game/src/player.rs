@@ -4,9 +4,11 @@ use crate::camera;
 use crate::cg_support::node::*;
 use crate::collisions;
 use crate::controls::MovementControl;
+use crate::controls::PlayerIteratorHolder;
 use crate::graphics_engine::entity::AbstractEntity;
 use crate::graphics_engine::{drawable, entity, shader};
 use crate::model::Model;
+use crate::node;
 use crate::physics;
 use drawable::Viewer;
 use std::cell::RefCell;
@@ -54,7 +56,7 @@ impl Player {
         controller: Rc<RefCell<dyn MovementControl>>,
     ) -> Self {
         let root_node = Rc::new(RefCell::new(
-            Node::default().pos(point3(100., 100., 100.)),
+            Node::default().pos(point3(200., 100., 100.)),
         ));
         let mut cam = Node::new(Some(point3(0., 15., -25.)), None, None, None);
         cam.set_parent(root_node.clone());
@@ -137,23 +139,16 @@ impl Player {
         &mut self.body
     }
 
-    pub const fn get_ridid_body(
+    pub const fn get_rigid_body(
         &self,
     ) -> &physics::RigidBody<object::ObjectData> {
         &self.body
     }
 
-    /// This is a tempory function so the AI can mutate velocity directly for now
-    #[deprecated]
     pub fn get_rigid_body_mut(
         &mut self,
     ) -> &mut physics::RigidBody<object::ObjectData> {
         &mut self.body
-    }
-
-    #[inline]
-    pub const fn node(&self) -> &Rc<RefCell<Node>> {
-        &self.body.base.transform
     }
 
     /// Gets the player's forward vector
@@ -243,8 +238,26 @@ impl Player {
     }
 
     /// See `controls::PlayerController::on_frame_update`
-    pub fn on_frame_update(&mut self, dt: std::time::Duration) {
-        self.controller.borrow_mut().on_frame_update(dt);
+    pub fn on_controller_tick<'a, T>(
+        &'a self,
+        scene: &'a collisions::CollisionTree,
+        dt: std::time::Duration,
+        other_players: &'a T,
+    ) -> Option<controls::ControllerAction>
+    where
+        T: crate::controls::PlayerIteratorTrait + Clone,
+    {
+        let it = PlayerIteratorHolder(Box::new(other_players.clone()));
+        self.controller.borrow_mut().on_frame_update(
+            scene,
+            &self.body.base,
+            dt,
+            other_players,
+        )
+    }
+
+    pub fn get_node(&self) -> Rc<RefCell<Node>> {
+        self.body.base.transform.clone()
     }
 }
 impl drawable::Viewer for Player {

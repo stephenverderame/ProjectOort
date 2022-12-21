@@ -229,11 +229,11 @@ impl<M: GameMediator> Game<M> {
         for c in &characters {
             self.health_deltas
                 .borrow_mut()
-                .insert(c.get_ridid_body().metadata, 0.);
+                .insert(c.get_rigid_body().metadata, 0.);
         }
 
         self.player_1_base
-            .set(Some(characters[0].get_ridid_body().base.clone()));
+            .set(Some(characters[0].get_rigid_body().base.clone()));
 
         let forces = &self.forces.borrow();
         let objects: Vec<_> = self.mediator.borrow().game_objects().collect();
@@ -260,7 +260,7 @@ impl<M: GameMediator> Game<M> {
 
         // Updates players' health
         for c in &mut characters {
-            let index = c.get_ridid_body().metadata;
+            let index = c.get_rigid_body().metadata;
             c.change_shield(self.health_deltas.borrow()[&index]);
         }
     }
@@ -298,6 +298,7 @@ impl<M: GameMediator> Game<M> {
         dt: std::time::Duration,
         scene: &mut dyn scene::AbstractScene,
     ) {
+        use controls::PlayerIteratorHolder;
         self.mediator.borrow_mut().sync();
         self.dead_lasers.borrow_mut().clear();
         for player in &self.characters {
@@ -316,9 +317,28 @@ impl<M: GameMediator> Game<M> {
         self.mediator.borrow_mut().emit_particles(dt);
         scene.set_lights(&self.mediator.borrow().get_lights());
 
-        for player in &self.characters {
-            player.borrow_mut().on_frame_update(dt);
+        let it = self.characters.iter();
+        let mut actions = HashMap::new();
+        for (player, idx) in self.characters.iter().zip(0..) {
+            if let Some(action) = player.borrow_mut().on_controller_tick(
+                sim.get_collision_tree(),
+                dt,
+                &PlayerIteratorHolder(Box::new(
+                    it.clone()
+                        .filter(|p| !Rc::ptr_eq(p, player))
+                        .map(|p| p.borrow().get_node()),
+                )),
+            ) {
+                actions.insert(idx, action);
+            }
         }
+        // for (idx, action) in actions {
+        //     self.characters[idx]
+        //         .borrow_mut()
+        //         .get_rigid_body_mut()
+        //         .base
+        //         .velocity = action.velocity;
+        // }
     }
 
     pub fn get_mediator(&self) -> std::cell::Ref<M> {
@@ -348,6 +368,10 @@ impl<M: GameMediatorLightingAvailable> Game<M> {
             health_deltas: RefCell::new(HashMap::new()),
             player_1_base: Cell::default(),
         }
+    }
+
+    pub fn add_character(&mut self, player: Rc<RefCell<player::Player>>) {
+        self.characters.push(player);
     }
 
     pub fn get_lighting(

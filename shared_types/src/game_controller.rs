@@ -64,7 +64,7 @@ impl LocalGameController {
             lighting: map.lighting_info(),
             player: PlayerStats {
                 pid: player_id,
-                spawn_pos: cgmath::point3(0., 0., 0.),
+                spawn_pos: cgmath::point3(300., 100., 0.),
             },
         }
     }
