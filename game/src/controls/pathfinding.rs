@@ -42,7 +42,7 @@ impl Priority {
 /// A computed path to a target with stores indices of tiles from the origin
 /// to the target in units of `tile_dim`
 ///
-/// The path is stored as a VecDeque of indices, where the first element is the
+/// The path is stored as a `VecDeque` of indices, where the first element is the
 /// next tile that we haven't reached yet
 pub(super) struct ComputedPath {
     path: VecDeque<Point3<i32>>,
@@ -98,6 +98,20 @@ pub struct StraightLineNav {
 }
 
 impl StraightLineNav {
+    /// Returns true if the next point in the path is not the target
+    /// or the target is within 1 unit of the current position
+    ///
+    /// This prevents us from skipping the last point in the path if we are way
+    /// off
+    #[inline]
+    fn can_remove_next_point(
+        path: &ComputedPath,
+        next_point: &Point3<f64>,
+        cur_pos: &Point3<f64>,
+    ) -> bool {
+        next_point.abs_diff_ne(&path.target, f64::EPSILON)
+            || (cur_pos - path.target).magnitude() < 1.0
+    }
     /// Get's the next point we haven't passed yet in the path
     /// and mutates the path to remove the points we've already passed
     ///
@@ -109,12 +123,19 @@ impl StraightLineNav {
     ) -> Option<Point3<f64>> {
         let mut next_point = path.index_to_point(path.path.front()?);
         let last_pos = self.last_pos.unwrap_or(*cur_pos);
-        let v = cur_pos - last_pos;
-        let get_projection_coef = |pt: Point3<f64>| {
-            let v2 = pt - cur_pos;
-            v2.dot(v) / (v.magnitude2() + f64::EPSILON)
+        let u = cur_pos - last_pos;
+        let get_projection_coef = |goal: Point3<f64>| {
+            let v = goal - last_pos;
+            let mag = v.magnitude2();
+            if mag <= f64::EPSILON {
+                0.0
+            } else {
+                v.dot(u) / mag
+            }
         };
-        while get_projection_coef(next_point) > 1.0 {
+        while get_projection_coef(next_point) >= 1.0 - f64::EPSILON
+            && Self::can_remove_next_point(path, &next_point, cur_pos)
+        {
             path.path.pop_front();
             next_point = path.index_to_point(path.path.front()?);
         }
@@ -156,7 +177,13 @@ impl StraightLineNav {
                 let dir = point - npc.transform.borrow().get_pos();
                 // let rot_axis = dir.cross(vec3(0.0, 1.0, 0.0));
                 // TODO: rotate the npc to face the direction of the next point
-                let velocity = dir.normalize() * 10.0;
+                let velocity = if dir.is_zero() {
+                    vec3(0., 0., 0.)
+                } else {
+                    dir.normalize() * 10.0
+                };
+                self.last_velocity = Some(velocity);
+                self.last_pos = Some(npc.transform.borrow().get_pos());
                 ActionResult::Running(Some(ControllerAction { velocity }))
             })
     }
@@ -197,11 +224,12 @@ fn tile_cost(
     scene: &CollisionTree,
 ) -> u32 {
     use crate::collisions;
-    let r = f64::sqrt((tile_dim / 2.0) * (tile_dim / 2.0));
+    const DIAGONAL_LEN_FAC: f64 = 1.732_050_807_57; //sqrt(3)
+    let r = DIAGONAL_LEN_FAC * tile_dim;
     let colliders = scene.test_for_collisions(tile_center, r);
     let obb = collisions::BoundingVolume::Obb(collisions::Obb {
         center: tile_center,
-        extents: vec3(tile_dim, tile_dim, tile_dim),
+        extents: vec3(tile_dim, tile_dim, tile_dim) / 2.0,
         x: vec3(1.0f64, 0.0, 0.0),
         y: vec3(0.0f64, 1.0, 0.0),
         z: vec3(0.0f64, 0.0, 1.0),
@@ -227,7 +255,7 @@ impl ComputePath {
     /// Creates a new `ComputePath` node with the given tile dimension
     /// The tile dimension is the length, width, and height of the tiles
     /// that the space is divided into for the A* algorithm
-    pub fn new(tile_dim: f64) -> Self {
+    pub const fn new(tile_dim: f64) -> Self {
         Self { tile_dim }
     }
 
@@ -237,12 +265,8 @@ impl ComputePath {
         index: Point3<i32>,
         scene: &CollisionTree,
     ) -> u32 {
-        let tile_center = cur_pos
-            + vec3(
-                f64::from(index.x) * tile_dim,
-                f64::from(index.y) * tile_dim,
-                f64::from(index.z) * tile_dim,
-            );
+        let tile_center =
+            cur_pos + index.to_vec().cast::<f64>().unwrap() * tile_dim;
         tile_cost(tile_center, tile_dim, scene)
     }
     /// Gets the heuristic cost of the tile
@@ -382,6 +406,7 @@ impl BTNode for IdentifyTarget {
     }
 }
 
+#[allow(clippy::doc_markdown)]
 /// A Behavior Tree action node that gets the position of an IDed target
 ///
 /// If the target is too far away or out of sight too long, this will mark the target
@@ -425,6 +450,214 @@ impl BTNode for SearchForIDedTarget {
             ActionResult::Failure
         } else {
             ActionResult::Failure
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::collisions::*;
+    use crate::node;
+    use assertables::*;
+    use std::cell::RefCell;
+
+    #[test]
+    fn sln_get_next_point() {
+        let mut sln = StraightLineNav {
+            last_pos: None,
+            last_velocity: None,
+        };
+        let mut path1 = VecDeque::new();
+        path1.push_back(point3(1, 0, 0));
+        path1.push_back(point3(2, 0, 0));
+        path1.push_back(point3(2, 2, 0));
+        path1.push_back(point3(2, 2, 2));
+        path1.push_back(point3(2, 2, 3));
+        let p_len = path1.len();
+        let mut path1 = ComputedPath {
+            path: path1,
+            target: point3(2., 2., 3.),
+            origin: point3(0.0, 0.0, 0.0),
+            tile_dim: 1.0,
+        };
+        let mut cur_pos = point3(0.0, 0.0, 0.0);
+        assert_relative_eq!(
+            sln.get_next_point_in_path(&mut path1, &cur_pos).unwrap(),
+            point3(1f64, 0., 0.)
+        );
+
+        sln.last_pos = Some(point3(0f64, 0., 0.));
+        cur_pos = point3(0.5, 0.0, 0.0);
+        assert_relative_eq!(
+            sln.get_next_point_in_path(&mut path1, &cur_pos).unwrap(),
+            point3(1f64, 0., 0.)
+        );
+
+        sln.last_pos = Some(point3(0.5f64, 0., 0.));
+        cur_pos = point3(1.2, 0.0, 0.0);
+        assert_relative_eq!(
+            sln.get_next_point_in_path(&mut path1, &cur_pos).unwrap(),
+            point3(2f64, 0., 0.)
+        );
+        assert_eq!(path1.path.len(), p_len - 1);
+
+        sln.last_pos = Some(point3(1.2f64, 0., 0.));
+        cur_pos = point3(2.2, -1.0, 0.0);
+        assert_relative_eq!(
+            sln.get_next_point_in_path(&mut path1, &cur_pos).unwrap(),
+            point3(2f64, 2., 0.)
+        );
+        assert_eq!(path1.path.len(), p_len - 2);
+
+        sln.last_pos = Some(point3(2.2f64, -1., 0.));
+        cur_pos = point3(2.2, 2.4, 2.2);
+        assert_relative_eq!(
+            sln.get_next_point_in_path(&mut path1, &cur_pos).unwrap(),
+            point3(2f64, 2., 3.)
+        );
+    }
+
+    /// Simulates straight line navigation of following `path` and asserts
+    /// if we can't get to the target
+    fn test_follows_path(
+        mut sln: StraightLineNav,
+        mut path: ComputedPath,
+        start_pos: Point3<f64>,
+    ) {
+        let body = physics::BaseRigidBody::new(Rc::new(RefCell::new(
+            node::Node::default().pos(start_pos),
+        )));
+        loop {
+            match sln.follow_path(
+                &mut path,
+                &body,
+                std::time::Duration::from_secs(1),
+            ) {
+                ActionResult::Failure => unreachable!("Shouldn't fail"),
+                ActionResult::Success => {
+                    assert_lt!(
+                        body.transform
+                            .borrow()
+                            .local_pos()
+                            .distance(path.target),
+                        1.0
+                    );
+                    break;
+                }
+                ActionResult::Running(Some(action)) => {
+                    body.transform
+                        .borrow_mut()
+                        .translate(action.velocity / 10.0);
+                    // normalize to always have velocity of unit 1
+
+                    assert!(path.path.iter().any(|p| {
+                        (path.index_to_point(p)
+                            - body.transform.borrow().local_pos())
+                        .magnitude()
+                            < 2.0
+                    }));
+                }
+                ActionResult::Running(None) => {
+                    unreachable!("Shouldn't be none")
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sln_follow_path() {
+        let sln = StraightLineNav {
+            last_pos: None,
+            last_velocity: None,
+        };
+        let mut path1 = VecDeque::new();
+        path1.push_back(point3(1, 0, 0));
+        path1.push_back(point3(2, 0, 0));
+        path1.push_back(point3(2, -1, 0));
+        path1.push_back(point3(2, -3, 0));
+        path1.push_back(point3(2, -5, 0));
+        path1.push_back(point3(3, -5, 0));
+        path1.push_back(point3(5, -5, 0));
+        path1.push_back(point3(5, -3, 0));
+        path1.push_back(point3(5, -1, 0));
+        path1.push_back(point3(5, 0, 0));
+        path1.push_back(point3(7, 0, 0));
+        path1.push_back(point3(7, 0, 2));
+        path1.push_back(point3(7, 0, 3));
+        path1.push_back(point3(7, 0, 5));
+        path1.push_back(point3(8, 0, 5));
+        path1.push_back(point3(10, 0, 5));
+        path1.push_back(point3(12, 0, 5));
+        path1.push_back(point3(12, 0, 3));
+        path1.push_back(point3(12, 0, 1));
+        path1.push_back(point3(12, 0, 0));
+        let path1 = ComputedPath {
+            path: path1,
+            target: point3(12., 0., 0.),
+            origin: point3(0.0, 0.0, 0.0),
+            tile_dim: 1.0,
+        };
+        test_follows_path(sln, path1, point3(0.0, 0.0, 0.0));
+    }
+
+    #[ignore]
+    #[test]
+    fn sln_random_follow_path() {
+        use rand::Rng;
+        for _ in 0..10 {
+            let sln = StraightLineNav {
+                last_pos: None,
+                last_velocity: None,
+            };
+            let mut rng = rand::thread_rng();
+            let mut path = VecDeque::new();
+            let mut last_pt = point3(0, 0, 0);
+            let len = rng.gen_range(10..100);
+            for _ in 0..len {
+                path.push_back(
+                    last_pt
+                        + vec3(
+                            rng.gen_range(-1i32..1),
+                            rng.gen_range(-1i32..1),
+                            rng.gen_range(-1i32..1),
+                        ),
+                );
+                last_pt = *path.back().unwrap();
+            }
+            let path1 = ComputedPath {
+                target: path.back().unwrap().cast().unwrap(),
+                path,
+                origin: point3(0.0f64, 0.0, 0.0),
+                tile_dim: 1.0,
+            };
+            test_follows_path(sln, path1, point3(0.0, 0.0, 0.0));
+        }
+    }
+
+    #[test]
+    fn cp_simple_obstacle() {
+        let mut tree = CollisionTree::new(point3(0., 0., 0.), 10.0);
+        let obstacle = CollisionObject::new(
+            Rc::new(RefCell::new(node::Node::default())),
+            "assets/default_cube.obj",
+            TreeStopCriteria::default(),
+        );
+        assert_abs_diff_eq!(obstacle.aabb_volume(), 8.0);
+        tree.insert(&obstacle);
+        let tile_dim = 1.0;
+        let start = point3(-5f64, 0., 0.);
+        let target = point3(5f64, 0., 0.);
+        let path =
+            ComputePath::get_path(&start, tile_dim, &target, &tree).unwrap();
+        let path = ComputedPath::new(path, target, start, tile_dim);
+        for p in path.path {
+            let p = start + p.to_vec().cast().unwrap() * tile_dim;
+            assert!(
+                !(p.x.abs() <= 1. && p.y.abs() <= 1. && p.z.abs() <= 1.),
+                "Path goes through obstacle at tile {:?}",
+                p
+            );
         }
     }
 }

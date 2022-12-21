@@ -220,7 +220,10 @@ fn main() {
         controller.get_player_stats().pid,
         enemy_controls.clone(),
     );
-    enemy.get_node().borrow_mut().set_pos(point3(0., 0., 500.));
+    enemy
+        .get_node()
+        .borrow_mut()
+        .set_pos(point3(400., 100., 100.));
 
     let mediator = LocalGameMediator::<HasLightingAvailable>::new(
         &wnd.shaders,
@@ -300,8 +303,9 @@ fn main() {
     ]);
 
     // skybox must be rendered first, particles must be rendered last
+    // TODO: roll players into mediator to avoid this explicit adding of players
     let mut entities = game.get_mediator().get_entities();
-    entities.push(game.player_1().borrow().as_entity());
+    entities.append(&mut game.get_player_entities());
     main_scene.set_entities(entities);
 
     let map_screen_location = Matrix3::from_translation(vec2(-2.0f32, 0.0))

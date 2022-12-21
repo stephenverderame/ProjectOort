@@ -263,7 +263,7 @@ impl ONode {
     /// Gets all objects in the tree
     pub fn get_all_objects(&self) -> Vec<Rc<RefCell<Object>>> {
         let mut v = Vec::new();
-        for obj in self.objects.iter().filter_map(|x| x.upgrade()) {
+        for obj in self.objects.iter().filter_map(std::rc::Weak::upgrade) {
             v.push(obj);
         }
         if let Some(children) = self.children.as_ref() {

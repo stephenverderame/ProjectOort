@@ -4,11 +4,9 @@ use crate::camera;
 use crate::cg_support::node::*;
 use crate::collisions;
 use crate::controls::MovementControl;
-use crate::controls::PlayerIteratorHolder;
 use crate::graphics_engine::entity::AbstractEntity;
 use crate::graphics_engine::{drawable, entity, shader};
 use crate::model::Model;
-use crate::node;
 use crate::physics;
 use drawable::Viewer;
 use std::cell::RefCell;
@@ -247,7 +245,6 @@ impl Player {
     where
         T: crate::controls::PlayerIteratorTrait + Clone,
     {
-        let it = PlayerIteratorHolder(Box::new(other_players.clone()));
         self.controller.borrow_mut().on_frame_update(
             scene,
             &self.body.base,

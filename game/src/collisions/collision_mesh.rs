@@ -190,6 +190,7 @@ mod test {
     use super::*;
     use crate::cg_support::node;
     use crate::collisions::highp_col;
+    use crate::collisions::{Aabb, BoundingVolume, Obb};
     use crate::graphics_engine::shader;
     use serial_test::serial;
 
@@ -592,5 +593,84 @@ mod test {
         assert!(asteroid
             .collision(&t_ast.mat(), &ship, &t_ship.mat(), &strat)
             .is_some());
+    }
+
+    #[test]
+    fn bounding_volume_test() {
+        let ship = CollisionMesh::new(
+            "assets/Ships/StarSparrow01.obj",
+            TreeStopCriteria::default(),
+        );
+        let mut n = node::Node::default();
+        assert!(ship.bounding_volume_collision(
+            &n.mat(),
+            BoundingVolume::Aabb(Aabb {
+                center: point3(0., 0., 0.),
+                extents: vec3(1., 1., 1.)
+            },),
+            &Matrix4::<f64>::identity()
+        ));
+
+        assert!(ship.bounding_volume_collision(
+            &n.mat(),
+            BoundingVolume::Obb(Obb {
+                center: point3(0., 0., 0.),
+                extents: vec3(2., 0.5, 1.),
+                x: vec3(1., 0., 0.),
+                y: vec3(0., 1., 0.),
+                z: vec3(0., 0., 1.),
+            }),
+            &Matrix4::<f64>::identity()
+        ));
+
+        n.translate(vec3(10., 10., 0.));
+        n.rotate_local(Quaternion::from_axis_angle(vec3(0., 0., 1.), Rad(0.5)));
+
+        assert!(!ship.bounding_volume_collision(
+            &n.mat(),
+            BoundingVolume::Obb(Obb {
+                center: point3(0., 0., 0.),
+                extents: vec3(1., 1., 1.),
+                x: vec3(1., 0., 0.),
+                y: vec3(0., 1., 0.),
+                z: vec3(0., 0., 1.),
+            }),
+            &Matrix4::<f64>::identity()
+        ));
+
+        assert!(ship.bounding_volume_collision(
+            &n.mat(),
+            BoundingVolume::Obb(Obb {
+                center: point3(8., 8., 0.),
+                extents: vec3(1., 1., 1.),
+                x: vec3(1., 0., 0.),
+                y: vec3(0., 1., 0.),
+                z: vec3(0., 0., 1.),
+            }),
+            &Matrix4::<f64>::identity()
+        ));
+    }
+
+    #[test]
+    fn simple_bounding_volume_test() {
+        let cube = CollisionMesh::new(
+            "assets/default_cube.obj",
+            TreeStopCriteria::default(),
+        );
+
+        let n = node::Node::default();
+        let test_cube = BoundingVolume::Obb(Obb {
+            center: point3(-1., 1., 1.),
+            extents: vec3(0.5, 0.5, 0.5),
+            x: vec3(1., 0., 0.),
+            y: vec3(0., 1., 0.),
+            z: vec3(0., 0., 1.),
+        });
+
+        assert!(cube.bounding_volume_collision(
+            &n.mat(),
+            test_cube,
+            &Matrix4::<f64>::identity()
+        ));
     }
 }

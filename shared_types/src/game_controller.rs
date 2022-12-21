@@ -54,7 +54,7 @@ impl LocalGameController {
     pub fn new<M: Map, Dm: std::ops::Deref<Target = M>>(map: Dm) -> Self {
         let objs = map.initial_objects();
         let indices = (0..objs.len()).map(|i| (objs[i].id, i)).collect();
-        let player_id = objs.last().map(|o| o.id).unwrap_or_default();
+        let player_id = objs.last().map(|o| o.id.next()).unwrap_or_default();
         Self {
             last_id: player_id.next(),
             objects: objs,

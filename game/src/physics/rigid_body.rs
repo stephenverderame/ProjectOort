@@ -174,6 +174,20 @@ impl BaseRigidBody {
     pub fn col_meth(&self) -> CollisionMethod {
         unsafe { self.get_shared_body() }.collision_method
     }
+
+    /// Allows directly constructing a base rigid body for testing
+    #[cfg(test)]
+    pub fn new(transform: Rc<RefCell<node::Node>>) -> Self {
+        Self {
+            transform,
+            velocity: vec3(0., 0., 0.),
+            rot_vel: vec3(0., 0., 0.),
+            collider: None,
+            body_type: BodyType::Controlled,
+            mass: 0.,
+            shared_body_ptr: 0,
+        }
+    }
 }
 
 /// Contains the physical information for a rigid body simulation and the body's

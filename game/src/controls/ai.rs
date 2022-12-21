@@ -31,7 +31,7 @@ pub struct Blackboard {
 
 impl Blackboard {
     /// Creates a new blackboard for the player
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             target_location: None,
             computed_path: None,
@@ -125,7 +125,7 @@ pub struct AIController {
 
 impl AIController {
     /// Creates a new AI controller for the player
-    pub fn new(behavior_tree: BehaviorTree) -> Self {
+    pub const fn new(behavior_tree: BehaviorTree) -> Self {
         Self {
             behavior_tree,
             blackboard: Blackboard::new(),

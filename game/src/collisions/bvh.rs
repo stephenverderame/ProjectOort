@@ -284,6 +284,7 @@ impl<T: BaseFloat> BVHNode<T> {
                 }
             }
         };
+        let mut leaf_collision = false;
         self.descend_heirarchy(
             self_transform,
             other,
@@ -291,12 +292,13 @@ impl<T: BaseFloat> BVHNode<T> {
             |a, b| {
                 add(a, &mut our_tris);
                 add(b, &mut other_tris);
+                leaf_collision = true;
             },
         );
-        if our_tris.is_empty() || other_tris.is_empty() {
-            None
-        } else {
+        if leaf_collision {
             Some((our_tris, other_tris))
+        } else {
+            None
         }
     }
 

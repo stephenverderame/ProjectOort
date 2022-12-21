@@ -332,28 +332,35 @@ impl<M: GameMediator> Game<M> {
                 actions.insert(idx, action);
             }
         }
-        // for (idx, action) in actions {
-        //     self.characters[idx]
-        //         .borrow_mut()
-        //         .get_rigid_body_mut()
-        //         .base
-        //         .velocity = action.velocity;
-        // }
+        for (idx, action) in actions {
+            self.characters[idx]
+                .borrow_mut()
+                .get_rigid_body_mut()
+                .base
+                .velocity = action.velocity;
+        }
     }
 
     pub fn get_mediator(&self) -> std::cell::Ref<M> {
         self.mediator.borrow()
     }
 
-    #[inline]
-    #[allow(unused)]
-    pub fn get_entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>> {
-        self.mediator.borrow().get_entities()
-    }
+    // #[inline]
+    // pub fn get_entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>> {
+    //     self.mediator.borrow().get_entities()
+    // }
 
     /// Returns the player who view we are currently rendering
     pub fn player_1(&self) -> Rc<RefCell<Player>> {
         self.characters[0].clone()
+    }
+
+    /// Gets all of the players' entity representations
+    pub fn get_player_entities(&self) -> Vec<Rc<RefCell<dyn AbstractEntity>>> {
+        self.characters
+            .iter()
+            .map(|p| p.borrow().as_entity() as Rc<RefCell<dyn AbstractEntity>>)
+            .collect()
     }
 }
 

@@ -299,16 +299,18 @@ impl BoundingVolume {
             (BoundingVolume::Aabb(a), BoundingVolume::Aabb(b)) => {
                 a.collide(self_transform.unwrap(), b, other_transform.unwrap())
             }
-            (BoundingVolume::Aabb(a), BoundingVolume::Obb(b))
-            | (BoundingVolume::Obb(b), BoundingVolume::Aabb(a)) => {
+            (BoundingVolume::Aabb(a), BoundingVolume::Obb(b)) => {
                 a.obb_collide(self_transform.unwrap(), b)
+            }
+            (BoundingVolume::Obb(a), BoundingVolume::Aabb(b)) => {
+                b.obb_collide(other_transform.unwrap(), a)
             }
             (BoundingVolume::Obb(a), BoundingVolume::Obb(b)) => a.collision(b),
         }
     }
 
     /// Gets the center of the bounding volume
-    pub fn center(&self) -> Point3<f64> {
+    pub const fn center(&self) -> Point3<f64> {
         match self {
             BoundingVolume::Aabb(a) => a.center,
             BoundingVolume::Obb(o) => o.center,
@@ -323,7 +325,8 @@ impl BoundingVolume {
         }
     }
 
-    pub fn extents(&self) -> Vector3<f64> {
+    /// Gets the extents (half-widths) of the bounding volume
+    pub const fn extents(&self) -> Vector3<f64> {
         match self {
             BoundingVolume::Aabb(a) => a.extents,
             BoundingVolume::Obb(o) => o.extents,
