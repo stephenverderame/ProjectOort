@@ -65,10 +65,10 @@ impl ComputedPath {
         let mut cur_node = terminal_node;
         while let Some(parent) = cur_node.parent.clone() {
             path.push_front(cur_node.index);
-            println!(
-                "{:?}",
-                origin + cur_node.index.to_vec().cast().unwrap() * tile_dim
-            );
+            // println!(
+            //     "{:?}",
+            //     origin + cur_node.index.to_vec().cast().unwrap() * tile_dim
+            // );
             cur_node = parent;
         }
         Self {
@@ -96,6 +96,9 @@ pub struct StraightLineNav {
     last_pos: Option<Point3<f64>>,
     last_velocity: Option<Vector3<f64>>,
 }
+
+/// Velocity of updates made by `StraightLineNav`
+const SLN_FOLLOW_VELOCITY: f64 = 10.0;
 
 impl StraightLineNav {
     /// Returns true if the next point in the path is not the target
@@ -133,7 +136,8 @@ impl StraightLineNav {
                 v.dot(u) / mag
             }
         };
-        while get_projection_coef(next_point) >= 1.0 - f64::EPSILON
+        while (get_projection_coef(next_point) >= 1.0 - f64::EPSILON
+            || (next_point - cur_pos).magnitude() < 0.01)
             && Self::can_remove_next_point(path, &next_point, cur_pos)
         {
             path.path.pop_front();
@@ -149,6 +153,8 @@ impl StraightLineNav {
     ) -> Point3<f64> {
         point
         // TODO: implement
+        // move the point in the direction of the collision normal
+        // or in a random direction if no normal is defined
     }
 
     /// Returns true if our current velocity has changed direction too much from
@@ -180,7 +186,7 @@ impl StraightLineNav {
                 let velocity = if dir.is_zero() {
                     vec3(0., 0., 0.)
                 } else {
-                    dir.normalize() * 10.0
+                    dir.normalize() * SLN_FOLLOW_VELOCITY
                 };
                 self.last_velocity = Some(velocity);
                 self.last_pos = Some(npc.transform.borrow().get_pos());
@@ -460,6 +466,8 @@ mod test {
     use crate::collisions::*;
     use crate::node;
     use assertables::*;
+    use rand::Rng;
+    use serial_test::serial;
     use std::cell::RefCell;
 
     #[test]
@@ -548,7 +556,7 @@ mod test {
                 ActionResult::Running(Some(action)) => {
                     body.transform
                         .borrow_mut()
-                        .translate(action.velocity / 10.0);
+                        .translate(action.velocity / SLN_FOLLOW_VELOCITY);
                     // normalize to always have velocity of unit 1
 
                     assert!(path.path.iter().any(|p| {
@@ -601,7 +609,6 @@ mod test {
         test_follows_path(sln, path1, point3(0.0, 0.0, 0.0));
     }
 
-    #[ignore]
     #[test]
     fn sln_random_follow_path() {
         use rand::Rng;
@@ -635,6 +642,7 @@ mod test {
         }
     }
 
+    #[serial]
     #[test]
     fn cp_simple_obstacle() {
         let mut tree = CollisionTree::new(point3(0., 0., 0.), 10.0);
@@ -658,6 +666,88 @@ mod test {
                 "Path goes through obstacle at tile {:?}",
                 p
             );
+        }
+    }
+
+    /// asserts that a tile does not collide with any of the objects
+    fn assert_tile_not_collides(
+        tile_center: &Point3<f64>,
+        tile_dim: f64,
+        objects: &[CollisionObject],
+    ) {
+        let tile_vol = Obb {
+            center: *tile_center,
+            extents: vec3(tile_dim, tile_dim, tile_dim) / 2.0,
+            x: vec3(1., 0., 0.),
+            y: vec3(0., 1., 0.),
+            z: vec3(0., 0., 1.),
+        };
+        for obj in objects {
+            assert!(
+                !obj.collision_simple(
+                    BoundingVolume::Obb(tile_vol.clone()),
+                    &Matrix4::identity()
+                ),
+                "Tile {:?} collides with object \n\n{:?}\n\n",
+                tile_center,
+                *obj.get_transformation().borrow(),
+            );
+        }
+    }
+
+    #[serial]
+    #[test]
+    fn cp_mine_field() {
+        let mut tree = CollisionTree::new(point3(0., 0., 0.), 15.0);
+        let mut obstacles = Vec::new();
+        let mut rand = rand::thread_rng();
+        let obstacle_count = rand.gen_range(25..100);
+        for _ in 0..obstacle_count {
+            let mut node = node::Node::default();
+            node.translate(vec3(
+                rand.gen_range(-8f64..8.),
+                rand.gen_range(-8f64..8.),
+                rand.gen_range(-8f64..8.),
+            ));
+            node.rotate_local(Quaternion::from_axis_angle(
+                vec3(
+                    rand.gen_range(-1f64..1.),
+                    rand.gen_range(-1f64..1.),
+                    rand.gen_range(-1f64..1f64),
+                ),
+                Rad(rand.gen_range(-std::f64::consts::PI..std::f64::consts::PI)),
+            ));
+            node.set_scale(vec3(
+                rand.gen_range(0.5f64..1.5),
+                rand.gen_range(0.5f64..1.5),
+                rand.gen_range(0.5f64..1.5),
+            ));
+            let obstacle = CollisionObject::new(
+                Rc::new(RefCell::new(node)),
+                "assets/default_cube.obj",
+                TreeStopCriteria::default(),
+            );
+            assert_abs_diff_eq!(obstacle.aabb_volume(), 8.0);
+            tree.insert(&obstacle);
+            obstacles.push(obstacle);
+        }
+        let tile_dim = 1.0;
+        let start = point3(-11f64, -11., -11.);
+        let target = point3(11f64, 11., 11.);
+        let path =
+            ComputePath::get_path(&start, tile_dim, &target, &tree).unwrap();
+        println!("Path cost: {}", path.cost);
+        let path = ComputedPath::new(path, target, start, tile_dim);
+        for p in path.path {
+            let p = start + p.to_vec().cast().unwrap() * tile_dim;
+            assert_tile_not_collides(&p, tile_dim, &obstacles);
+        }
+    }
+
+    #[test]
+    fn cp_mine_field_repeated() {
+        for _ in 0..30 {
+            cp_mine_field();
         }
     }
 }

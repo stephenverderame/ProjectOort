@@ -96,6 +96,9 @@ impl ONode {
     }
 
     /// Gets octant index or `None` if object is in multiple octants
+    ///
+    /// The ith bit of the index is 1 if the ith coordinate of the object is > the
+    /// ith coordinate of the center
     fn get_octant_index(
         center: &Point3<f64>,
         h_width: f64,
@@ -107,6 +110,9 @@ impl ONode {
             if o[i].abs() < obj.borrow().radius()
                 || o[i].abs() + obj.borrow().radius() > h_width
             {
+                // if radius is greater than distance to center -> object is in multiple octants
+                // if radius + distance to center is greater than half width
+                // -> object does not fit in this node (goes beyond the boundaries)
                 return None;
             } else if o[i] > 0. {
                 index |= 1 << i;
@@ -232,6 +238,8 @@ impl ONode {
     /// Indicates that `obj` has changed and should be re-evaluated for placement in the octree
     ///
     /// If `obj` no longer fits in the octree, it remains in the root node
+    ///
+    /// Requires that `obj` is already in this node
     pub fn update(&mut self, obj: &Rc<RefCell<Object>>) {
         if let Some(parent) = self.parent.upgrade() {
             if Self::get_octant_index(
@@ -240,16 +248,26 @@ impl ONode {
                 obj,
             ) != Some(self.self_index)
             {
+                // if the object no longer should be in this node
                 self.objects.retain(|o| {
                     o.strong_count() > 0
                         && !Rc::ptr_eq(&o.upgrade().unwrap(), obj)
                 });
-                return parent.borrow_mut().insert(obj);
+                parent.borrow_mut().insert(obj);
+                // insert will not "bubble up" an object that moved out of it
+                //
+                // so if the object is held by the parent, call update to make sure
+                // it should not bubble up to the grandparent
+                let obj_holder = obj.borrow().octree_cell.upgrade().unwrap();
+                if Rc::ptr_eq(&obj_holder, &parent) {
+                    parent.borrow_mut().update(obj);
+                }
             }
         }
         if let Some(child_idx) =
             Self::get_octant_index(&self.center, self.h_width, obj)
         {
+            // if the object should now be in a child node
             if let Some(children) = self.children.as_mut() {
                 self.objects.retain(|o| {
                     o.strong_count() > 0
@@ -258,6 +276,7 @@ impl ONode {
                 children[child_idx as usize].borrow_mut().insert(obj);
             }
         }
+        // otherwise do nothing (leave the object in this node)
     }
 
     /// Gets all objects in the tree
@@ -340,11 +359,14 @@ impl Octree {
 
     /// Indictaes `obj` position data has changed.
     /// If `obj` no longer fits in the tree, it stays at the root node
-    pub fn update(obj: &Rc<RefCell<Object>>) {
+    ///
+    /// Returns true if the object was updated, false if it was never in the tree
+    pub fn update(obj: &Rc<RefCell<Object>>) -> bool {
         let res = obj.borrow().octree_cell.upgrade();
-        if let Some(n) = res {
+        res.map_or(false, |n| {
             n.borrow_mut().update(obj);
-        }
+            true
+        })
     }
 
     /// Returns all objects that have overlapping bounding spheres with the given
@@ -697,5 +719,38 @@ mod test {
                 .collect();
             assert_bag_eq!(colliders, tree_colliders);
         }
+    }
+
+    #[test]
+    fn test_octant_index() {
+        let n = Rc::new(RefCell::new(node::Node::default()));
+        let obj = Rc::new(RefCell::new(Object {
+            model: n.clone(),
+            local_radius: 1.,
+            octree_cell: Weak::new(),
+            mesh: Weak::new(),
+        }));
+        assert_eq!(
+            ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj),
+            None
+        );
+
+        n.borrow_mut().set_pos(point3(5., 5., 5.));
+        assert_eq!(
+            ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj),
+            Some(0b111)
+        );
+
+        n.borrow_mut().set_pos(point3(-5., -5., -5.));
+        assert_eq!(
+            ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj),
+            Some(0b000)
+        );
+
+        n.borrow_mut().set_pos(point3(10., -5., -5.));
+        assert_eq!(
+            ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj),
+            None
+        );
     }
 }

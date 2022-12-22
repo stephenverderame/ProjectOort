@@ -305,8 +305,10 @@ impl Drawable for Model {
     )> {
         if self.instancing {
             self.render_instanced(positions)
-        } else {
+        } else if !positions.is_empty() {
             self.render(positions[0])
+        } else {
+            vec![]
         }
     }
 

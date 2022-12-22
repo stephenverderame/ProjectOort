@@ -68,9 +68,8 @@ impl CollisionObject {
             .unwrap()
             .get(&(mesh_path.to_string(), bvh_stop))
         {
-            let (center, radius) = mesh.borrow().bounding_sphere();
             let obj = Rc::new(RefCell::new(object::Object::with_mesh(
-                transform, center, radius, mesh,
+                transform, mesh,
             )));
             Self {
                 obj,
@@ -84,9 +83,8 @@ impl CollisionObject {
                 .as_mut()
                 .unwrap()
                 .insert((mesh_path.to_owned(), bvh_stop), mesh.clone());
-            let (center, radius) = mesh.borrow().bounding_sphere();
             let obj = Rc::new(RefCell::new(object::Object::with_mesh(
-                transform, center, radius, &mesh,
+                transform, &mesh,
             )));
             Self { obj, mesh }
         }
@@ -308,9 +306,23 @@ impl CollisionTree {
         }
     }
 
+    /// Inserts the given object into the collision tree if it is not already in
+    /// the tree, otherwise updates its position
     #[inline]
     pub fn insert(&mut self, obj: &CollisionObject) {
+        if Self::update(obj) {
+            return;
+        }
         self.tree.insert(&obj.obj);
+    }
+
+    /// Updates the position of the given object in the collision tree
+    /// Does nothing if the object is not in the tree
+    ///
+    /// Returns true if the object was in the tree and updated, false otherwise
+    #[inline]
+    pub fn update(obj: &CollisionObject) -> bool {
+        Octree::update(&obj.obj)
     }
 
     #[inline]
@@ -357,5 +369,83 @@ impl CollisionTree {
                 obj: x.clone(),
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #![allow(clippy::unreadable_literal)]
+    use super::*;
+    use cgmath::*;
+    use serial_test::serial;
+
+    #[serial]
+    #[test]
+    fn collision_tree_test() {
+        let mut tree =
+            CollisionTree::new(cgmath::Point3::new(0.0, 0.0, 0.0), 15.0);
+        let mut n = node::Node::default();
+
+        n.set_pos(point3(
+            -3.0430575401731623,
+            -2.2713675814903596,
+            -3.811697260699404,
+        ));
+        n.set_scale(vec3(
+            0.7901060645496794,
+            0.5186714524834486,
+            1.2765283791294075,
+        ));
+        n.set_rot(Quaternion::new(
+            0.1383083848590439,
+            -0.9795480588051816,
+            -0.5675755819185906,
+            0.9629267337964779,
+        ));
+        let n = Rc::new(RefCell::new(n));
+        let cube = CollisionObject::new(
+            n.clone(),
+            "assets/default_cube.obj",
+            TreeStopCriteria::default(),
+        );
+        tree.insert(&cube);
+        assert_eq!(
+            tree.test_for_collisions(
+                point3(-5., -5., -6.),
+                f64::sqrt(3.) * 0.5
+            )
+            .len(),
+            1
+        );
+
+        n.borrow_mut().set_pos(point3(
+            -4.039229615816211,
+            -4.776894924136137,
+            0.09186428210173148,
+        ));
+        n.borrow_mut().set_scale(vec3(
+            1.487217370923572,
+            1.3709115200925492,
+            1.4952020627318765,
+        ));
+        n.borrow_mut().set_rot(Quaternion::new(
+            0.447239114144479,
+            0.8552816679147671,
+            -0.7830254264138842,
+            -0.7984538885011099,
+        ));
+        assert!(!cube.collision_simple(
+            BoundingVolume::Aabb(Aabb {
+                center: point3(1., 0., 0.),
+                extents: vec3(0.5, 0.5, 0.5),
+            }),
+            &Matrix4::identity(),
+        ));
+        CollisionTree::update(&cube);
+        assert_eq!(
+            tree.test_for_collisions(point3(1., 0., 0.), f64::sqrt(3.) * 0.5)
+                .len(),
+            0
+        );
     }
 }

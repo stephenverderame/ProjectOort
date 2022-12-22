@@ -231,7 +231,8 @@ fn main() {
         controller,
     );
     let mut game = game::Game::new(mediator, player);
-    game.add_character(Rc::new(RefCell::new(enemy)));
+    //game.add_character(Rc::new(RefCell::new(enemy)));
+    // TODO: enemy AI doesn't terminate
 
     let mut main_scene = scene::Scene::new(
         get_main_render_pass(

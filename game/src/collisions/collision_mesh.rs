@@ -108,8 +108,14 @@ impl CollisionMesh {
         c /= self.sub_meshes.len() as f64;
         let center = point3(c.x, c.y, c.z);
         let extents =
-            vec3(max_x - center.x, max_y - center.y, max_z - center.z);
-        (center, extents.x.max(extents.y.max(extents.z)))
+            vec3(max_x - center.x, max_y - center.y, max_z - center.z) * 2.0;
+        (
+            center,
+            f64::sqrt(extents.z.mul_add(
+                extents.z,
+                extents.x.mul_add(extents.x, extents.y.powi(2)),
+            )),
+        )
     }
 
     /// Gets a tuple of the largest bounding volume in the tree and the leaf bounding volumes
@@ -595,6 +601,7 @@ mod test {
             .is_some());
     }
 
+    #[serial]
     #[test]
     fn bounding_volume_test() {
         let ship = CollisionMesh::new(
@@ -651,6 +658,7 @@ mod test {
         ));
     }
 
+    #[serial]
     #[test]
     fn simple_bounding_volume_test() {
         let cube = CollisionMesh::new(
@@ -658,18 +666,42 @@ mod test {
             TreeStopCriteria::default(),
         );
 
-        let n = node::Node::default();
-        let test_cube = BoundingVolume::Obb(Obb {
+        let mut n = node::Node::default();
+        let mut test_cube = Obb {
             center: point3(-1., 1., 1.),
             extents: vec3(0.5, 0.5, 0.5),
             x: vec3(1., 0., 0.),
             y: vec3(0., 1., 0.),
             z: vec3(0., 0., 1.),
-        });
+        };
 
         assert!(cube.bounding_volume_collision(
             &n.mat(),
-            test_cube,
+            BoundingVolume::Obb(test_cube.clone()),
+            &Matrix4::<f64>::identity()
+        ));
+
+        test_cube.center = point3(-5., -5., -6.);
+        test_cube.extents = vec3(0.5, 0.5, 0.5);
+        n.set_pos(point3(
+            -3.0430575401731623,
+            -2.2713675814903596,
+            -3.811697260699404,
+        ));
+        n.set_scale(vec3(
+            0.7901060645496794,
+            0.5186714524834486,
+            1.2765283791294075,
+        ));
+        n.set_rot(Quaternion::new(
+            0.1383083848590439,
+            -0.9795480588051816,
+            -0.5675755819185906,
+            0.9629267337964779,
+        ));
+        assert!(cube.bounding_volume_collision(
+            &n.mat(),
+            BoundingVolume::Obb(test_cube),
             &Matrix4::<f64>::identity()
         ));
     }

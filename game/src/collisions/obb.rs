@@ -25,35 +25,104 @@ pub struct Obb {
 
 impl Obb {
     /// Creates an OBB by applying a world transformation matrix to an AABB
-    fn from_local_aligned(obb: &Aabb, model: Matrix4<f64>) -> Self {
-        let mut pts = [
-            obb.center + vec3(obb.extents.x, obb.extents.y, obb.extents.z),
-            obb.center + vec3(obb.extents.x, obb.extents.y, -obb.extents.z),
-            obb.center + vec3(obb.extents.x, -obb.extents.y, obb.extents.z),
-            obb.center + vec3(obb.extents.x, -obb.extents.y, -obb.extents.z),
-            obb.center + vec3(-obb.extents.x, obb.extents.y, obb.extents.z),
-            obb.center + vec3(-obb.extents.x, obb.extents.y, -obb.extents.z),
-            obb.center + vec3(-obb.extents.x, -obb.extents.y, obb.extents.z),
-            obb.center + vec3(-obb.extents.x, -obb.extents.y, -obb.extents.z),
-        ];
-        let mut center = point3(0f64, 0., 0.);
-        for pt in &mut pts {
-            *pt = model.transform_point(*pt);
-            center += pt.to_vec();
-        }
-        center /= 8.0;
+    fn from_local_aligned(aabb: &Aabb, model: Matrix4<f64>) -> Self {
+        // let mut pts = [
+        //     aabb.center + vec3(aabb.extents.x, aabb.extents.y, aabb.extents.z),
+        //     aabb.center + vec3(aabb.extents.x, aabb.extents.y, -aabb.extents.z),
+        //     aabb.center + vec3(aabb.extents.x, -aabb.extents.y, aabb.extents.z),
+        //     aabb.center
+        //         + vec3(aabb.extents.x, -aabb.extents.y, -aabb.extents.z),
+        //     aabb.center + vec3(-aabb.extents.x, aabb.extents.y, aabb.extents.z),
+        //     aabb.center
+        //         + vec3(-aabb.extents.x, aabb.extents.y, -aabb.extents.z),
+        //     aabb.center
+        //         + vec3(-aabb.extents.x, -aabb.extents.y, aabb.extents.z),
+        //     aabb.center
+        //         + vec3(-aabb.extents.x, -aabb.extents.y, -aabb.extents.z),
+        // ];
+        // let mut center = point3(0f64, 0., 0.);
+        // for pt in &mut pts {
+        //     *pt = model.transform_point(*pt);
+        //     center += pt.to_vec();
+        // }
+        // center /= 8.0;
 
-        let mut x = pts[0] - pts[4];
-        let ex = x.magnitude() / 2.0;
-        x = x.normalize();
+        // let mut x = pts[0] - pts[4];
+        // let ex = x.magnitude() / 2.0;
+        // x = x.normalize();
 
-        let mut y = pts[0] - pts[2];
-        let ey = y.magnitude() / 2.0;
-        y = y.normalize();
+        // let mut y = pts[0] - pts[2];
+        // let ey = y.magnitude() / 2.0;
+        // y = y.normalize();
 
-        let mut z = pts[0] - pts[1];
-        let ez = z.magnitude() / 2.0;
-        z = z.normalize();
+        // let mut z = pts[0] - pts[1];
+        // let ez = z.magnitude() / 2.0;
+        // z = z.normalize();
+
+        // Self {
+        //     center,
+        //     extents: vec3(ex, ey, ez),
+        //     x,
+        //     y,
+        //     z,
+        // }
+        // let center = model.transform_point(aabb.center);
+        // let x = model.transform_vector(vec3(aabb.extents.x, 0., 0.));
+        // let y = model.transform_vector(vec3(0., aabb.extents.y, 0.));
+        // let z = model.transform_vector(vec3(0., 0., aabb.extents.z));
+        // Self {
+        //     center,
+        //     extents: vec3(x.magnitude(), y.magnitude(), z.magnitude()),
+        //     x: x.normalize(),
+        //     y: y.normalize(),
+        //     z: z.normalize(),
+        // }
+
+        let center = model.transform_point(aabb.center);
+        // let p1 = model.transform_point(
+        //     aabb.center + vec3(aabb.extents.x, aabb.extents.y, aabb.extents.z),
+        // );
+        // let p2 = model.transform_point(
+        //     aabb.center + vec3(aabb.extents.x, aabb.extents.y, -aabb.extents.z),
+        // );
+        // let z = p1 - p2;
+        // let ez = z.magnitude() / 2.0;
+        // let z = z.normalize();
+
+        // let p3 = model.transform_point(
+        //     aabb.center + vec3(aabb.extents.x, -aabb.extents.y, aabb.extents.z),
+        // );
+        // let y = p1 - p3;
+        // let ey = y.magnitude() / 2.0;
+        // let y = y.normalize();
+
+        // let p4 = model.transform_point(
+        //     aabb.center + vec3(-aabb.extents.x, aabb.extents.y, aabb.extents.z),
+        // );
+        // let x = p1 - p4;
+        // let ex = x.magnitude() / 2.0;
+        // let x = x.normalize();
+
+        let p1 =
+            model.transform_point(aabb.center + vec3(aabb.extents.x, 0., 0.));
+        let x = p1 - center;
+        let ex = x.magnitude();
+        assert!(ex > f64::EPSILON);
+        let x = x.normalize();
+
+        let p2 =
+            model.transform_point(aabb.center + vec3(0., aabb.extents.y, 0.));
+        let y = p2 - center;
+        let ey = y.magnitude();
+        assert!(ey > f64::EPSILON);
+        let y = y.normalize();
+
+        let p3 =
+            model.transform_point(aabb.center + vec3(0., 0., aabb.extents.z));
+        let z = p3 - center;
+        let ez = z.magnitude();
+        assert!(ez > f64::EPSILON);
+        let z = z.normalize();
 
         Self {
             center,
@@ -65,7 +134,7 @@ impl Obb {
     }
 
     /// Requires `axis` is not 0 and is normalized
-    /// Gets the projected center and radius
+    /// Gets the projected min and max projection coefficients of the OBB onto the axis
     fn project_onto(&self, axis: &Vector3<f64>) -> (f64, f64) {
         let pts = [
             self.center
@@ -101,14 +170,16 @@ impl Obb {
                 + self.extents.y * -self.y
                 + self.extents.z * -self.z,
         ];
-        let mut radius = 0f64;
-        let a_dot = axis.dot(*axis);
-        let center = axis.dot(self.center.to_vec()) / a_dot;
+        // let a_dot = axis.dot(*axis);
+        // precondition that axis is normalized so we don't need to divide by a_dot
+        let mut min = f64::MAX;
+        let mut max = f64::MIN;
         for pt in pts {
-            let r = axis.dot(pt.to_vec()) / a_dot;
-            radius = radius.max((r - center).abs());
+            let r = axis.dot(pt.to_vec()); // / a_dot;
+            min = min.min(r);
+            max = max.max(r);
         }
-        (center, radius)
+        (min, max)
     }
 
     /// requires axis normalized
@@ -126,23 +197,23 @@ impl Obb {
             None => axis_a,
             Some(axis_b) => {
                 let a = axis_a.cross(axis_b);
-                if a.magnitude2() < 5. * f64::EPSILON {
-                    // axes are parallel, and lie in some plane P
-                    // choose a new axis perpendicular to that plane
-                    let n = axis_a
-                        .cross(self.center + axis_a - (other.center + axis_b));
-                    if n.magnitude2() < 5. * f64::EPSILON {
-                        return false;
-                    }
-                    n.normalize()
-                } else {
-                    a.normalize()
+                if a.magnitude() < f64::EPSILON {
+                    // // axes are parallel, and lie in some plane P
+                    // // choose a new axis perpendicular to that plane
+                    // let n = axis_a
+                    //     .cross(self.center + axis_a - (other.center + axis_b));
+                    // if n.magnitude() < f64::EPSILON {
+                    //     return false;
+                    // }
+                    // n.normalize()
+                    return false;
                 }
+                a.normalize()
             }
         };
-        let (c, r) = self.project_onto(&axis);
-        let (c2, r2) = other.project_onto(&axis);
-        (c2 - c).abs() > r + r2
+        let (min1, max1) = self.project_onto(&axis);
+        let (min2, max2) = other.project_onto(&axis);
+        min1 > max2 || min2 > max1
     }
 
     /// Returns true if there is a collision between this obb and `other`
@@ -415,5 +486,45 @@ mod test {
         assert!(!a.collide(&t_a.mat(), &b, &t_b.mat()));
         t_b = t_b.anchor(point3(0., 0., 0.));
         assert!(a.collide(&t_a.mat(), &b, &t_b.mat()));
+    }
+
+    #[allow(clippy::unreadable_literal)]
+    #[test]
+    fn obb_aabb_test() {
+        let test_cube = Obb {
+            center: point3(-5., -5., -6.),
+            extents: vec3(0.5, 0.5, 0.5),
+            x: vec3(1., 0., 0.),
+            y: vec3(0., 1., 0.),
+            z: vec3(0., 0., 1.),
+        };
+
+        let test_aabb = Aabb {
+            center: point3(0., 0., 0.),
+            extents: vec3(1., 1., 1.),
+        };
+
+        let mut n = node::Node::default();
+        n.set_pos(point3(
+            -3.0430575401731623,
+            -2.2713675814903596,
+            -3.811697260699404,
+        ));
+        n.set_scale(vec3(
+            0.7901060645496794,
+            0.5186714524834486,
+            1.2765283791294075,
+        ));
+        n.set_rot(Quaternion::new(
+            0.1383083848590439,
+            -0.9795480588051816,
+            -0.5675755819185906,
+            0.9629267337964779,
+        ));
+
+        // ?? I don't think these should collide
+        // it doesn't in Blender, but it kind of looked like it did
+        // when rendered in this engine
+        assert!(!test_aabb.obb_collide(&n.mat(), &test_cube));
     }
 }

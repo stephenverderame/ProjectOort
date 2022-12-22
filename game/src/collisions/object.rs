@@ -47,16 +47,21 @@ impl Object {
     /// `radius` - the maximum extents of the mesh based around `center`
     pub fn with_mesh(
         transform: Rc<RefCell<node::Node>>,
-        center: Point3<f64>,
-        radius: f64,
         mesh: &Rc<RefCell<collision_mesh::CollisionMesh>>,
     ) -> Self {
+        let (_, local_radius) = mesh.borrow().bounding_sphere();
         Self {
             model: transform,
-            local_radius: radius + center.x.max(center.y.max(center.z)),
+            local_radius,
             octree_cell: Weak::new(),
             mesh: Rc::downgrade(mesh),
         }
+        // local_radius was previously set as radius + center.x.max(center.y.max(center.z)),
+        // when `radius` was incorrectly the maximum of the extents
+
+        // I have no idea why I then added the max of the center. Since I didn't
+        // leave a comment, I'm guessing it was a mistake but maybe I'm thinking
+        // too highly of myself
     }
 
     /// True if this object's bounding sphere overlaps with `other`'s bounding sphere
