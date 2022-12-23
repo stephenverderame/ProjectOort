@@ -410,14 +410,47 @@ mod test {
             TreeStopCriteria::default(),
         );
         tree.insert(&cube);
+        // should have no collision in tree
         assert_eq!(
             tree.test_for_collisions(
                 point3(-5., -5., -6.),
                 f64::sqrt(3.) / 2.0
             )
             .len(),
-            1
+            0
         );
+        // distance is greater than the sum of the radii
+        assert_gt!(
+            point3(-5., -5., -6.).distance(cube.bounding_sphere().0),
+            f64::sqrt(3.) / 2.0
+                + (n.borrow().local_scale() * 2.0).magnitude() / 2.0
+        );
+        // bounding sphere radius at least as large as actual radius
+        assert_ge!(
+            cube.bounding_sphere().1,
+            (n.borrow().local_scale() * 2.0).magnitude() / 2.0
+        );
+
+        // should be not collision
+        assert!(!cube.collision_simple(
+            BoundingVolume::Obb(Obb {
+                center: point3(-5., -5., -6.),
+                extents: vec3(0.5, 0.5, 0.5),
+                x: vec3(1., 0., 0.),
+                y: vec3(0., 1., 0.),
+                z: vec3(0., 0., 1.),
+            }),
+            &Matrix4::identity()
+        ));
+
+        // should have no collision
+        assert!(!cube.collision_simple(
+            BoundingVolume::Aabb(Aabb {
+                center: point3(0., 0., 0.),
+                extents: vec3(0.5, 0.5, 0.5),
+            }),
+            &node::Node::default().pos(point3(-5., -5., -6.)).mat()
+        ));
 
         n.borrow_mut().set_pos(point3(
             -4.039229615816211,
@@ -440,11 +473,13 @@ mod test {
             center: point3(1., 0., 0.),
             extents: vec3(0.5, 0.5, 0.5),
         });
+        // distance is greater than total radius
         assert_gt!(
             tile.center().distance(n.borrow().get_pos()),
             (n.borrow().local_scale() * 2.0).magnitude() / 2.0
                 + f64::sqrt(3.) / 2.0
         );
+        // should have collision iff detected collision in tree
         assert_eq!(
             tree.test_for_collisions(point3(1., 0., 0.), f64::sqrt(3.) / 2.0)
                 .len(),

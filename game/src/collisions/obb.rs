@@ -97,12 +97,15 @@ impl Obb {
         (min, max)
     }
 
+    /// Determines if an axis is perpendicular to a plane that separates the two OBBs
+    /// (is a separating axis)
+    ///
     /// requires axis normalized
     /// returns true if tests passes (no collision)
     ///
     /// `axis` - either a tuple of an axis to test and `None`, or a tuple of an axis from this OBB, and an axis
     /// from `other`'s OBB whose cross product is the axis to test
-    fn sat_test(
+    fn is_separating_axis(
         &self,
         other: &Self,
         axis: (Vector3<f64>, Option<Vector3<f64>>),
@@ -149,9 +152,10 @@ impl Obb {
             (self.z, Some(other.x)),
             (self.z, Some(other.y)),
             (self.z, Some(other.z)),
+            ((self.center - other.center).normalize(), None),
         ];
         for a in axes {
-            if self.sat_test(other, a) {
+            if self.is_separating_axis(other, a) {
                 return false;
             }
         }
@@ -437,6 +441,7 @@ mod test {
             0.9629267337964779,
         ));
 
+        // Distance between centers greater than sum of longests sides
         assert_gt!(
             n.get_pos().distance(test_cube.center),
             (f64::sqrt(3.) / 2.0).mul_add(1.0, (f64::sqrt(3.) * 2.27) / 2.0)
