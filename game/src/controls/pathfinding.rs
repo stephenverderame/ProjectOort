@@ -4,7 +4,7 @@ use crate::collisions::CollisionTree;
 use crate::physics::{self, BaseRigidBody};
 use cgmath::*;
 use priority_queue::PriorityQueue;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
 
 /// A linked list in order to backtrack the shortest path
@@ -162,9 +162,18 @@ impl StraightLineNav {
     /// and should recalculate the path
     fn did_hit_obstacle(&self, npc: &BaseRigidBody) -> bool {
         self.last_velocity.map_or(false, |v| {
-            v.normalize().dot(npc.velocity.normalize()) < 0.0
+            let hit = v.normalize().dot(npc.velocity.normalize()) < 0.0;
+            if hit {
+                println!("Hit an obstacle during path following");
+            }
+            hit
             // less than 0 means > 90 degrees
         })
+    }
+
+    fn reset(&mut self) {
+        self.last_pos = None;
+        self.last_velocity = None;
     }
 
     fn follow_path(
@@ -174,24 +183,32 @@ impl StraightLineNav {
         _dt: std::time::Duration,
     ) -> ActionResult {
         if self.did_hit_obstacle(npc) {
+            self.reset();
             // recalculate path
             return ActionResult::Failure;
         }
-        self.get_next_point_in_path(path, &npc.transform.borrow().get_pos())
-            .map_or(ActionResult::Success, |point| {
-                let point = Self::adjust_point_to_avoid_obstacles(point);
-                let dir = point - npc.transform.borrow().get_pos();
-                // let rot_axis = dir.cross(vec3(0.0, 1.0, 0.0));
-                // TODO: rotate the npc to face the direction of the next point
-                let velocity = if dir.is_zero() {
-                    vec3(0., 0., 0.)
-                } else {
-                    dir.normalize() * SLN_FOLLOW_VELOCITY
-                };
-                self.last_velocity = Some(velocity);
-                self.last_pos = Some(npc.transform.borrow().get_pos());
-                ActionResult::Running(Some(ControllerAction { velocity }))
-            })
+        if let Some(point) =
+            self.get_next_point_in_path(path, &npc.transform.borrow().get_pos())
+        {
+            let point = Self::adjust_point_to_avoid_obstacles(point);
+            let dir = point - npc.transform.borrow().get_pos();
+            // let rot_axis = dir.cross(vec3(0.0, 1.0, 0.0));
+            // TODO: rotate the npc to face the direction of the next point
+            let velocity = if dir.is_zero() {
+                vec3(0., 0., 0.)
+            } else {
+                dir.normalize() * SLN_FOLLOW_VELOCITY
+            };
+            self.last_velocity = Some(velocity);
+            self.last_pos = Some(npc.transform.borrow().get_pos());
+            println!("Following path");
+            ActionResult::Running(Some(ControllerAction { velocity }))
+        } else {
+            self.reset();
+            ActionResult::Success(Some(ControllerAction {
+                velocity: vec3(0., 0., 0.),
+            }))
+        }
     }
 }
 
@@ -223,12 +240,21 @@ const NEIGHBORS: [Vector3<i32>; 6] = [
     vec3(0, 0, -1),
 ];
 
+const COLLISION_COST: u32 = 1000;
+
 /// Gets the cost of a tile centered around `tile_center` with a dimension of `tile_dim`
+///
+/// * `tile_center` - The center of the tile
+/// * `tile_dim` - The dimension of the tile
+/// * `scene` - The scene to test for collisions
+/// * `players` - The players to ignore in the scene
 fn tile_cost(
     tile_center: Point3<f64>,
     tile_dim: f64,
     scene: &CollisionTree,
+    players: &HashSet<usize>,
 ) -> u32 {
+    // Need to ignore controlled
     use crate::collisions;
     const DIAGONAL_LEN_FAC: f64 = 1.732_050_807_57; //sqrt(3)
     let r = DIAGONAL_LEN_FAC * tile_dim;
@@ -241,12 +267,24 @@ fn tile_cost(
         z: vec3(0.0f64, 0.0, 1.0),
     });
     let id = Matrix4::identity();
-    for c in colliders {
+    // println!("Players: {:?}", players);
+    for c in colliders
+        .into_iter()
+        .filter(|c| !players.contains(&c.node_id()))
+    {
         if c.collision_simple(obb.clone(), &id) {
-            return u32::MAX;
+            // println!("Collision with {} at {:?}", c.geometry_id(), tile_center);
+            return COLLISION_COST;
         }
     }
     0
+}
+
+/// General setup information for A*
+struct AStarInformation {
+    tile_dim: f64,
+    cur_pos: Point3<f64>,
+    target: Point3<i32>,
 }
 
 /// A Behavior Tree action node that computes a path to a target using A*
@@ -265,15 +303,17 @@ impl ComputePath {
         Self { tile_dim }
     }
 
+    /// Wrapper around `tile_cost` that takes a tile index instead of a tile center
     fn tile_cost(
         cur_pos: &Point3<f64>,
         tile_dim: f64,
         index: Point3<i32>,
         scene: &CollisionTree,
+        players: &HashSet<usize>,
     ) -> u32 {
         let tile_center =
             cur_pos + index.to_vec().cast::<f64>().unwrap() * tile_dim;
-        tile_cost(tile_center, tile_dim, scene)
+        tile_cost(tile_center, tile_dim, scene, players)
     }
     /// Gets the heuristic cost of the tile
     fn heuristic(pos: &Point3<i32>, target: &Point3<i32>) -> u32 {
@@ -299,35 +339,31 @@ impl ComputePath {
         )
     }
 
-    /// Gets a path to the target, avoiding obstacles at a resolution of `tile_dim`
-    /// using A*
+    /// Runs the A* algorithm, helper for `get_path`
     ///
-    /// Returns None if no path could be found
-    fn get_path(
-        cur_pos: &Point3<f64>,
-        tile_dim: f64,
-        target: &Point3<f64>,
+    /// See `get_path`
+    fn run_a_star(
+        frontier: &mut PriorityQueue<Rc<PathNode>, Priority>,
+        cur_node: &mut Rc<PathNode>,
+        info: &AStarInformation,
         scene: &CollisionTree,
-    ) -> Option<Rc<PathNode>> {
-        let target_tile = Self::get_tile(cur_pos, tile_dim, target);
-        let mut cur_node = Rc::new(PathNode {
-            index: point3(0, 0, 0),
-            parent: None,
-            cost: 0,
-        });
-        let mut frontier = PriorityQueue::new();
-        frontier.push(cur_node.clone(), Priority::from_cost(0));
+        players: &HashSet<usize>,
+    ) {
         while let Some((n, _)) = frontier.pop() {
-            cur_node = n;
+            *cur_node = n;
             let cur_tile = cur_node.index;
-            if cur_tile == target_tile {
+            if cur_tile == info.target {
                 break;
             }
             let cur_cost = cur_node.cost;
             for neighbor in NEIGHBORS.map(|n| cur_tile + n) {
                 let neighbor_cost = cur_cost
                     .saturating_add(Self::tile_cost(
-                        cur_pos, tile_dim, neighbor, scene,
+                        &info.cur_pos,
+                        info.tile_dim,
+                        neighbor,
+                        scene,
+                        players,
                     ))
                     .saturating_add(1);
                 let n = Rc::new(PathNode {
@@ -335,14 +371,65 @@ impl ComputePath {
                     parent: Some(cur_node.clone()),
                     cost: neighbor_cost,
                 });
-                frontier.push(
-                    n,
+                let new_priority =
                     Priority::from_cost(neighbor_cost.saturating_add(
-                        Self::heuristic(&neighbor, &target_tile),
-                    )),
-                );
+                        Self::heuristic(&neighbor, &info.target),
+                    ));
+                let mut exchange = true;
+                if let Some(old_priority) = frontier.get_priority(&n) {
+                    if new_priority < *old_priority {
+                        // higher priority means lower cost
+                        exchange = false;
+                    }
+                }
+                if exchange {
+                    frontier.remove(&n);
+                    // remove `n` bc I'm not sure if pushing an existing element will cause
+                    // the element to be updated since we need to update `parent` and `cost`
+                    frontier.push(n, new_priority);
+                }
             }
         }
+    }
+
+    /// Gets a path to the target, avoiding obstacles at a resolution of `tile_dim`
+    /// using A*
+    ///
+    /// Returns None if no path could be found
+    ///
+    /// # Arguments
+    /// * `cur_pos` - The current position of the entity
+    /// * `tile_dim` - The dimension of the tiles used for A*
+    /// * `target` - The target position
+    /// * `scene` - The collision tree of the scene
+    /// * `players` - The set of player node pointers to identify objects to ignore
+    /// in the collision test
+    fn get_path(
+        cur_pos: &Point3<f64>,
+        tile_dim: f64,
+        target: &Point3<f64>,
+        scene: &CollisionTree,
+        players: &HashSet<usize>,
+    ) -> Option<Rc<PathNode>> {
+        let target_tile = Self::get_tile(cur_pos, tile_dim, target);
+        let mut cur_node = Rc::new(PathNode {
+            index: point3(0, 0, 0),
+            parent: None,
+            cost: 0,
+        });
+        println!("Searching for path");
+        if Self::tile_cost(cur_pos, tile_dim, target_tile, scene, players) > 0 {
+            println!("Target obstructed");
+            return None;
+        }
+        let mut frontier = PriorityQueue::new();
+        frontier.push(cur_node.clone(), Priority::from_cost(0));
+        let info = AStarInformation {
+            cur_pos: *cur_pos,
+            tile_dim,
+            target: target_tile,
+        };
+        Self::run_a_star(&mut frontier, &mut cur_node, &info, scene, players);
         if cur_node.index == target_tile && cur_node.cost < u32::MAX {
             Some(cur_node)
         } else {
@@ -359,25 +446,35 @@ impl BTNode for ComputePath {
         scene: &CollisionTree,
         player: &physics::BaseRigidBody,
         _dt: std::time::Duration,
-        _other_players: PlayerIterator,
+        other_players: PlayerIterator,
     ) -> ActionResult {
+        println!("Ticking ComputePath");
         if let Some(target_location) = &blackboard.target_location {
+            let player_map: HashSet<usize> =
+                other_players.copy().map(|p| p.as_ptr() as usize).collect();
             let cur_pos = player.transform.borrow().get_pos();
-            blackboard.computed_path =
-                Self::get_path(&cur_pos, self.tile_dim, target_location, scene)
-                    .map(|path| {
-                        ComputedPath::new(
-                            path,
-                            *target_location,
-                            cur_pos,
-                            self.tile_dim,
-                        )
-                    });
+            blackboard.computed_path = Self::get_path(
+                &cur_pos,
+                self.tile_dim,
+                target_location,
+                scene,
+                &player_map,
+            )
+            .map(|path| {
+                ComputedPath::new(
+                    path,
+                    *target_location,
+                    cur_pos,
+                    self.tile_dim,
+                )
+            });
+            println!("Got path to {:?}", target_location);
             blackboard
                 .computed_path
                 .as_ref()
-                .map_or(ActionResult::Failure, |_| ActionResult::Success)
+                .map_or(ActionResult::Failure, |_| ActionResult::Success(None))
         } else {
+            println!("No target location to compute path to");
             ActionResult::Failure
         }
     }
@@ -408,7 +505,7 @@ impl BTNode for IdentifyTarget {
             }
             println!("Identified target");
         }
-        ActionResult::Success
+        ActionResult::Success(None)
     }
 }
 
@@ -437,19 +534,19 @@ impl BTNode for SearchForIDedTarget {
         _other_players: PlayerIterator,
     ) -> ActionResult {
         // TODO:
-        if let (Some(id), None) =
+        if let (Some(id), _) =
             (blackboard.target_id, blackboard.target_location)
         {
             for obj in scene.get_all_objects() {
                 if obj.node_id() == id {
-                    println!(
-                        "Found target {} at {:?}",
-                        id,
-                        obj.get_transformation().borrow().get_pos()
-                    );
+                    // println!(
+                    //     "Found target {} at {:?}",
+                    //     id,
+                    //     obj.get_transformation().borrow().get_pos()
+                    // );
                     blackboard.target_location =
                         Some(obj.get_transformation().borrow().get_pos());
-                    return ActionResult::Success;
+                    return ActionResult::Success(None);
                 }
             }
             blackboard.target_id = None;
@@ -543,7 +640,7 @@ mod test {
                 std::time::Duration::from_secs(1),
             ) {
                 ActionResult::Failure => unreachable!("Shouldn't fail"),
-                ActionResult::Success => {
+                ActionResult::Success(maybe_action) => {
                     assert_lt!(
                         body.transform
                             .borrow()
@@ -551,6 +648,11 @@ mod test {
                             .distance(path.target),
                         1.0
                     );
+                    if let Some(action) = maybe_action {
+                        body.transform
+                            .borrow_mut()
+                            .translate(action.velocity / SLN_FOLLOW_VELOCITY);
+                    }
                     break;
                 }
                 ActionResult::Running(Some(action)) => {
@@ -656,8 +758,14 @@ mod test {
         let tile_dim = 1.0;
         let start = point3(-5f64, 0., 0.);
         let target = point3(5f64, 0., 0.);
-        let path =
-            ComputePath::get_path(&start, tile_dim, &target, &tree).unwrap();
+        let path = ComputePath::get_path(
+            &start,
+            tile_dim,
+            &target,
+            &tree,
+            &HashSet::new(),
+        )
+        .unwrap();
         let path = ComputedPath::new(path, target, start, tile_dim);
         for p in path.path {
             let p = start + p.to_vec().cast().unwrap() * tile_dim;
@@ -734,8 +842,14 @@ mod test {
         let tile_dim = 1.0;
         let start = point3(-11f64, -11., -11.);
         let target = point3(11f64, 11., 11.);
-        let path =
-            ComputePath::get_path(&start, tile_dim, &target, &tree).unwrap();
+        let path = ComputePath::get_path(
+            &start,
+            tile_dim,
+            &target,
+            &tree,
+            &HashSet::new(),
+        )
+        .unwrap();
         println!("Path cost: {}", path.cost);
         let path = ComputedPath::new(path, target, start, tile_dim);
         for p in path.path {

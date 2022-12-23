@@ -112,7 +112,7 @@ pub fn get_std_behavior_tree() -> BehaviorTree {
             Box::new(Fallback {}),
             vec![
                 BehaviorTree::new(Box::new(StraightLineNav::default()), vec![]),
-                BehaviorTree::new(Box::new(ComputePath::new(50.)), vec![]),
+                BehaviorTree::new(Box::new(ComputePath::new(20.)), vec![]),
             ],
         ),
     ];

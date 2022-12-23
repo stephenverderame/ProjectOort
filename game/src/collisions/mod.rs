@@ -376,6 +376,7 @@ impl CollisionTree {
 mod test {
     #![allow(clippy::unreadable_literal)]
     use super::*;
+    use assertables::*;
     use cgmath::*;
     use serial_test::serial;
 
@@ -412,7 +413,7 @@ mod test {
         assert_eq!(
             tree.test_for_collisions(
                 point3(-5., -5., -6.),
-                f64::sqrt(3.) * 0.5
+                f64::sqrt(3.) / 2.0
             )
             .len(),
             1
@@ -434,18 +435,24 @@ mod test {
             -0.7830254264138842,
             -0.7984538885011099,
         ));
-        assert!(!cube.collision_simple(
-            BoundingVolume::Aabb(Aabb {
-                center: point3(1., 0., 0.),
-                extents: vec3(0.5, 0.5, 0.5),
-            }),
-            &Matrix4::identity(),
-        ));
         CollisionTree::update(&cube);
+        let tile = BoundingVolume::Aabb(Aabb {
+            center: point3(1., 0., 0.),
+            extents: vec3(0.5, 0.5, 0.5),
+        });
+        assert_gt!(
+            tile.center().distance(n.borrow().get_pos()),
+            (n.borrow().local_scale() * 2.0).magnitude() / 2.0
+                + f64::sqrt(3.) / 2.0
+        );
         assert_eq!(
-            tree.test_for_collisions(point3(1., 0., 0.), f64::sqrt(3.) * 0.5)
+            tree.test_for_collisions(point3(1., 0., 0.), f64::sqrt(3.) / 2.0)
                 .len(),
-            0
+            if cube.collision_simple(tile, &Matrix4::identity()) {
+                1
+            } else {
+                0
+            }
         );
     }
 }

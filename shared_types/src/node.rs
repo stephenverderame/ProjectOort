@@ -261,7 +261,7 @@ impl Node {
                 parent.borrow().trans_ver.set(t);
                 t
             }));
-        self.trans_ver.set(self.trans_ver.take() + 1);
+        self.trans_ver.set(self.trans_ver.take().wrapping_add(1));
         t_prime
     }
 

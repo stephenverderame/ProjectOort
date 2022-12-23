@@ -26,102 +26,17 @@ pub struct Obb {
 impl Obb {
     /// Creates an OBB by applying a world transformation matrix to an AABB
     fn from_local_aligned(aabb: &Aabb, model: Matrix4<f64>) -> Self {
-        // let mut pts = [
-        //     aabb.center + vec3(aabb.extents.x, aabb.extents.y, aabb.extents.z),
-        //     aabb.center + vec3(aabb.extents.x, aabb.extents.y, -aabb.extents.z),
-        //     aabb.center + vec3(aabb.extents.x, -aabb.extents.y, aabb.extents.z),
-        //     aabb.center
-        //         + vec3(aabb.extents.x, -aabb.extents.y, -aabb.extents.z),
-        //     aabb.center + vec3(-aabb.extents.x, aabb.extents.y, aabb.extents.z),
-        //     aabb.center
-        //         + vec3(-aabb.extents.x, aabb.extents.y, -aabb.extents.z),
-        //     aabb.center
-        //         + vec3(-aabb.extents.x, -aabb.extents.y, aabb.extents.z),
-        //     aabb.center
-        //         + vec3(-aabb.extents.x, -aabb.extents.y, -aabb.extents.z),
-        // ];
-        // let mut center = point3(0f64, 0., 0.);
-        // for pt in &mut pts {
-        //     *pt = model.transform_point(*pt);
-        //     center += pt.to_vec();
-        // }
-        // center /= 8.0;
-
-        // let mut x = pts[0] - pts[4];
-        // let ex = x.magnitude() / 2.0;
-        // x = x.normalize();
-
-        // let mut y = pts[0] - pts[2];
-        // let ey = y.magnitude() / 2.0;
-        // y = y.normalize();
-
-        // let mut z = pts[0] - pts[1];
-        // let ez = z.magnitude() / 2.0;
-        // z = z.normalize();
-
-        // Self {
-        //     center,
-        //     extents: vec3(ex, ey, ez),
-        //     x,
-        //     y,
-        //     z,
-        // }
-        // let center = model.transform_point(aabb.center);
-        // let x = model.transform_vector(vec3(aabb.extents.x, 0., 0.));
-        // let y = model.transform_vector(vec3(0., aabb.extents.y, 0.));
-        // let z = model.transform_vector(vec3(0., 0., aabb.extents.z));
-        // Self {
-        //     center,
-        //     extents: vec3(x.magnitude(), y.magnitude(), z.magnitude()),
-        //     x: x.normalize(),
-        //     y: y.normalize(),
-        //     z: z.normalize(),
-        // }
-
         let center = model.transform_point(aabb.center);
-        // let p1 = model.transform_point(
-        //     aabb.center + vec3(aabb.extents.x, aabb.extents.y, aabb.extents.z),
-        // );
-        // let p2 = model.transform_point(
-        //     aabb.center + vec3(aabb.extents.x, aabb.extents.y, -aabb.extents.z),
-        // );
-        // let z = p1 - p2;
-        // let ez = z.magnitude() / 2.0;
-        // let z = z.normalize();
 
-        // let p3 = model.transform_point(
-        //     aabb.center + vec3(aabb.extents.x, -aabb.extents.y, aabb.extents.z),
-        // );
-        // let y = p1 - p3;
-        // let ey = y.magnitude() / 2.0;
-        // let y = y.normalize();
-
-        // let p4 = model.transform_point(
-        //     aabb.center + vec3(-aabb.extents.x, aabb.extents.y, aabb.extents.z),
-        // );
-        // let x = p1 - p4;
-        // let ex = x.magnitude() / 2.0;
-        // let x = x.normalize();
-
-        let p1 =
-            model.transform_point(aabb.center + vec3(aabb.extents.x, 0., 0.));
-        let x = p1 - center;
-        let ex = x.magnitude();
-        assert!(ex > f64::EPSILON);
+        let x = model.x.truncate();
+        // x.magnitude() is the scale of the model in the x direction
+        let ex = model.x.magnitude() * aabb.extents.x;
         let x = x.normalize();
-
-        let p2 =
-            model.transform_point(aabb.center + vec3(0., aabb.extents.y, 0.));
-        let y = p2 - center;
-        let ey = y.magnitude();
-        assert!(ey > f64::EPSILON);
+        let y = model.y.truncate();
+        let ey = model.y.magnitude() * aabb.extents.y;
         let y = y.normalize();
-
-        let p3 =
-            model.transform_point(aabb.center + vec3(0., 0., aabb.extents.z));
-        let z = p3 - center;
-        let ez = z.magnitude();
-        assert!(ez > f64::EPSILON);
+        let z = model.z.truncate();
+        let ez = model.z.magnitude() * aabb.extents.z;
         let z = z.normalize();
 
         Self {
@@ -266,8 +181,7 @@ impl Aabb {
             maxs.z = maxs.z.max(pt.z);
         }
         let center = (mins + maxs) / 2.0;
-        let extents =
-            vec3(maxs.x - center.x, maxs.y - center.y, maxs.z - center.z);
+        let extents = maxs - center;
         Self {
             center: point3(center.x, center.y, center.z),
             extents,
@@ -409,6 +323,7 @@ impl BoundingVolume {
 mod test {
     use super::*;
     use crate::cg_support::node;
+    use assertables::*;
 
     #[allow(clippy::many_single_char_names)]
     #[test]
@@ -521,6 +436,11 @@ mod test {
             -0.5675755819185906,
             0.9629267337964779,
         ));
+
+        assert_gt!(
+            n.get_pos().distance(test_cube.center),
+            (f64::sqrt(3.) / 2.0).mul_add(1.0, (f64::sqrt(3.) * 2.27) / 2.0)
+        );
 
         // ?? I don't think these should collide
         // it doesn't in Blender, but it kind of looked like it did

@@ -107,15 +107,11 @@ impl CollisionMesh {
         }
         c /= self.sub_meshes.len() as f64;
         let center = point3(c.x, c.y, c.z);
-        let extents =
+        let full_dimensions =
             vec3(max_x - center.x, max_y - center.y, max_z - center.z) * 2.0;
-        (
-            center,
-            f64::sqrt(extents.z.mul_add(
-                extents.z,
-                extents.x.mul_add(extents.x, extents.y.powi(2)),
-            )),
-        )
+        (center, full_dimensions.magnitude() / 2.0)
+        // longest diagonal = sqrt(w^2 + h^2 + d^2)
+        // radius = longest diagonal / 2
     }
 
     /// Gets a tuple of the largest bounding volume in the tree and the leaf bounding volumes

@@ -4,7 +4,7 @@ use crate::collisions::CollisionTree;
 use crate::physics;
 
 pub enum ActionResult {
-    Success,
+    Success(Option<super::ControllerAction>),
     Failure,
     Running(Option<super::ControllerAction>),
 }
@@ -85,13 +85,14 @@ impl BTNode for Sequence {
         dt: std::time::Duration,
         other_players: PlayerIterator<'a>,
     ) -> ActionResult {
+        let mut last_action = ActionResult::Failure;
         for child in children {
             match child.tick(blackboard, scene, player, dt, other_players) {
-                ActionResult::Success => continue,
+                x @ ActionResult::Success(_) => last_action = x,
                 x => return x,
             }
         }
-        ActionResult::Success
+        last_action
     }
 }
 
@@ -110,7 +111,7 @@ impl BTNode for Fallback {
     ) -> ActionResult {
         for child in children {
             match child.tick(blackboard, scene, player, dt, other_players) {
-                ActionResult::Failure => continue,
+                ActionResult::Failure => (),
                 x => return x,
             }
         }
@@ -165,16 +166,17 @@ impl MovementControl for AIController {
         dt: std::time::Duration,
         other_players: PlayerIterator<'a>,
     ) -> Option<super::ControllerAction> {
-        if let ActionResult::Running(Some(action)) = self.behavior_tree.tick(
+        match self.behavior_tree.tick(
             &mut self.blackboard,
             scene,
             player,
             dt,
             other_players,
         ) {
-            Some(action)
-        } else {
-            None
+            ActionResult::Running(action) | ActionResult::Success(action) => {
+                action
+            }
+            ActionResult::Failure => None,
         }
     }
 }

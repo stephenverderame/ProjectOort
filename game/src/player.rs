@@ -60,7 +60,7 @@ impl Player {
         cam.set_parent(root_node.clone());
         let mut model = model.with_transparency(0.99, 0);
         let inv_fac = model.trans_fac();
-        Self {
+        let s = Self {
             cam,
             aspect: view_aspect,
             em_fac: model.emissive_strength.clone(),
@@ -90,7 +90,12 @@ impl Player {
             energy: 100.,
             shield: 100.,
             controller,
-        }
+        };
+        println!(
+            "Player geom id: {}",
+            s.body.base.collider.as_ref().unwrap().geometry_id()
+        );
+        s
     }
 
     /// Updates the players' forces based on the input controls and returns the rigid body
