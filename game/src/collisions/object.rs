@@ -6,11 +6,11 @@ use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 /// Internal use to collisions module
-pub struct Object {
-    pub model: Rc<RefCell<node::Node>>,
-    pub local_radius: f64,
-    pub octree_cell: Weak<RefCell<ONode>>,
-    pub mesh: Weak<collision_mesh::CollisionMesh>,
+pub(super) struct Object {
+    pub(super) model: Rc<RefCell<node::Node>>,
+    pub(super) local_radius: f64,
+    pub(super) octree_cell: Weak<RefCell<ONode>>,
+    pub(super) mesh: Weak<collision_mesh::CollisionMesh>,
 }
 
 impl Object {
@@ -66,9 +66,8 @@ impl Object {
 
     /// True if this object's bounding sphere overlaps with `other`'s bounding sphere
     pub fn bounding_sphere_collide(&self, other: &Self) -> bool {
-        let dist2 = (self.center() - other.center())
-            .dot(self.center() - other.center());
-        (self.radius() + other.radius()).powi(2) >= dist2
+        let dist = self.center().distance(other.center());
+        self.radius() + other.radius() >= dist
     }
 }
 

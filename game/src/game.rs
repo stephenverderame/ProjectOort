@@ -10,7 +10,7 @@ use crate::object;
 use crate::physics::*;
 use crate::player::Player;
 use cgmath::*;
-use controls::PlayerActionState;
+use controls::{ControllerAction, PlayerActionState};
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -291,6 +291,37 @@ impl<M: GameMediator> Game<M> {
         user.transition_action_state();
     }
 
+    /// Updates the players' rigid body states from the controller actions
+    /// returned from ticking each player controller
+    fn update_bodies_from_actions(
+        &self,
+        actions: HashMap<usize, ControllerAction>,
+    ) {
+        use crate::cg_support;
+        // TODO: use direction to compute target rotation
+        // lerp current and target rotation to rotate smoothly or compute rotational
+        // velocity
+
+        // then update velocity once rotations are sufficiently close
+        for (idx, action) in actions {
+            self.characters[idx]
+                .borrow_mut()
+                .get_rigid_body_mut()
+                .base
+                .velocity = action.velocity;
+            let rot = cg_support::look_at(action.velocity, &vec3(0., 1., 0.));
+            if let Some(rot) = rot {
+                self.characters[idx]
+                    .borrow()
+                    .get_rigid_body()
+                    .base
+                    .transform
+                    .borrow_mut()
+                    .set_rot(rot.into());
+            }
+        }
+    }
+
     /// Callback function for when a frame is drawn
     pub fn on_draw<'a, 'b>(
         &self,
@@ -332,13 +363,7 @@ impl<M: GameMediator> Game<M> {
                 actions.insert(idx, action);
             }
         }
-        for (idx, action) in actions {
-            self.characters[idx]
-                .borrow_mut()
-                .get_rigid_body_mut()
-                .base
-                .velocity = action.velocity;
-        }
+        self.update_bodies_from_actions(actions);
     }
 
     pub fn get_mediator(&self) -> std::cell::Ref<M> {

@@ -10,7 +10,7 @@ type ObjectList = Vec<Weak<RefCell<Object>>>;
 /// (optionally) 8 child nodes
 ///
 /// Each node is a `2 * h_width` x `2 * h_width` x `2 * h_width` box centered around `center`
-pub struct ONode {
+pub(super) struct ONode {
     center: Point3<f64>,
     h_width: f64, // dist to center to any axis-aligned side of AABB
     objects: ObjectList,
@@ -121,7 +121,7 @@ impl ONode {
         Some(index)
     }
 
-    pub fn insert(&mut self, obj: &Rc<RefCell<Object>>) {
+    pub(super) fn insert(&mut self, obj: &Rc<RefCell<Object>>) {
         if self.children.is_none()
             && self.objects.len() + 1 < Self::MAX_OBJS_PER_LEAF
         {
@@ -206,7 +206,7 @@ impl ONode {
     /// Gets objects that might collide with `obj`
     ///
     /// As the tree is traversed, references to freed objects are removed from object lists
-    pub fn get_possible_colliders(
+    pub(super) fn get_possible_colliders(
         obj: &Rc<RefCell<Object>>,
     ) -> Vec<Rc<RefCell<Object>>> {
         obj.borrow()
@@ -220,7 +220,7 @@ impl ONode {
     }
 
     /// Tests for collisions with an object that is not in the octree
-    pub fn test_for_collisions(
+    pub(super) fn test_for_collisions(
         node: &Rc<RefCell<Self>>,
         center: Point3<f64>,
         radius: f64,
@@ -240,7 +240,7 @@ impl ONode {
     /// If `obj` no longer fits in the octree, it remains in the root node
     ///
     /// Requires that `obj` is already in this node
-    pub fn update(&mut self, obj: &Rc<RefCell<Object>>) {
+    pub(super) fn update(&mut self, obj: &Rc<RefCell<Object>>) {
         if let Some(parent) = self.parent.upgrade() {
             if Self::get_octant_index(
                 &parent.borrow().center,
@@ -280,7 +280,7 @@ impl ONode {
     }
 
     /// Gets all objects in the tree
-    pub fn get_all_objects(&self) -> Vec<Rc<RefCell<Object>>> {
+    pub(super) fn get_all_objects(&self) -> Vec<Rc<RefCell<Object>>> {
         let mut v = Vec::new();
         for obj in self.objects.iter().filter_map(std::rc::Weak::upgrade) {
             v.push(obj);
@@ -294,7 +294,7 @@ impl ONode {
     }
 }
 
-pub struct Octree {
+pub(super) struct Octree {
     root: Rc<RefCell<ONode>>,
 }
 
@@ -302,7 +302,7 @@ impl Octree {
     /// Inserts a node in the tree. If the node doesn't fit,
     /// ~~it stays at the root node~~ panics
     #[inline]
-    pub fn insert(&mut self, obj: &Rc<RefCell<Object>>) {
+    pub(super) fn insert(&mut self, obj: &Rc<RefCell<Object>>) {
         if obj.borrow().radius() > self.root.borrow().h_width * 2. {
             panic!("Cannot fit into tree");
         }
@@ -318,13 +318,13 @@ impl Octree {
     }
 
     /// Get's all objects that have overlapping bounding spheres with `obj`
-    pub fn get_colliders(
+    pub(super) fn get_colliders(
         obj: &Rc<RefCell<Object>>,
     ) -> Vec<Rc<RefCell<Object>>> {
         ONode::get_possible_colliders(obj)
     }
 
-    pub fn remove(obj: &Rc<RefCell<Object>>) {
+    pub(super) fn remove(obj: &Rc<RefCell<Object>>) {
         if let Some(node) = obj.borrow().octree_cell.upgrade() {
             node.borrow_mut().objects.retain(|e| {
                 e.strong_count() > 0 && !Rc::ptr_eq(&e.upgrade().unwrap(), obj)
@@ -361,7 +361,7 @@ impl Octree {
     /// If `obj` no longer fits in the tree, it stays at the root node
     ///
     /// Returns true if the object was updated, false if it was never in the tree
-    pub fn update(obj: &Rc<RefCell<Object>>) -> bool {
+    pub(super) fn update(obj: &Rc<RefCell<Object>>) -> bool {
         let res = obj.borrow().octree_cell.upgrade();
         res.map_or(false, |n| {
             n.borrow_mut().update(obj);
@@ -372,7 +372,7 @@ impl Octree {
     /// Returns all objects that have overlapping bounding spheres with the given
     /// sphere
     #[inline]
-    pub fn test_for_collisions(
+    pub(super) fn test_for_collisions(
         &self,
         center: Point3<f64>,
         radius: f64,
@@ -382,7 +382,7 @@ impl Octree {
 
     /// Returns all objects in the tree
     #[inline]
-    pub fn get_all_objects(&self) -> Vec<Rc<RefCell<Object>>> {
+    pub(super) fn get_all_objects(&self) -> Vec<Rc<RefCell<Object>>> {
         self.root.borrow().get_all_objects()
     }
 }
