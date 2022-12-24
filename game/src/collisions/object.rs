@@ -10,7 +10,7 @@ pub struct Object {
     pub model: Rc<RefCell<node::Node>>,
     pub local_radius: f64,
     pub octree_cell: Weak<RefCell<ONode>>,
-    pub mesh: Weak<RefCell<collision_mesh::CollisionMesh>>,
+    pub mesh: Weak<collision_mesh::CollisionMesh>,
 }
 
 impl Object {
@@ -47,9 +47,9 @@ impl Object {
     /// `radius` - the maximum extents of the mesh based around `center`
     pub fn with_mesh(
         transform: Rc<RefCell<node::Node>>,
-        mesh: &Rc<RefCell<collision_mesh::CollisionMesh>>,
+        mesh: &Rc<collision_mesh::CollisionMesh>,
     ) -> Self {
-        let (_, local_radius) = mesh.borrow().bounding_sphere();
+        let (_, local_radius) = mesh.bounding_sphere();
         Self {
             model: transform,
             local_radius,

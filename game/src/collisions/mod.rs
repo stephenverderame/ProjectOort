@@ -14,8 +14,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 type MeshIdType = (String, TreeStopCriteria);
-type LoadedMeshMap =
-    HashMap<MeshIdType, Rc<RefCell<collision_mesh::CollisionMesh>>>;
+type LoadedMeshMap = HashMap<MeshIdType, Rc<collision_mesh::CollisionMesh>>;
 
 static mut LOADED_MESHES: Option<LoadedMeshMap> = None;
 
@@ -48,7 +47,7 @@ impl Drop for MeshMap {
 #[derive(Clone)]
 pub struct CollisionObject {
     obj: Rc<RefCell<object::Object>>, //shared with octree, which holds weak pointers
-    mesh: Rc<RefCell<collision_mesh::CollisionMesh>>, //shared between all objects with the same geometry
+    mesh: Rc<collision_mesh::CollisionMesh>, //shared between all objects with the same geometry
 }
 
 impl CollisionObject {
@@ -76,8 +75,8 @@ impl CollisionObject {
                 mesh: mesh.clone(),
             }
         } else {
-            let mesh = Rc::new(RefCell::new(
-                collision_mesh::CollisionMesh::new(mesh_path, bvh_stop),
+            let mesh = Rc::new(collision_mesh::CollisionMesh::new(
+                mesh_path, bvh_stop,
             ));
             mmap.loaded_meshes
                 .as_mut()
@@ -123,9 +122,9 @@ impl CollisionObject {
         other: &Self,
         highp_strategy: &dyn HighPCollision,
     ) -> Option<Hit> {
-        self.mesh.borrow().collision(
+        self.mesh.collision(
             &self.obj.borrow().model.borrow().mat(),
-            &other.mesh.borrow(),
+            &other.mesh,
             &other.obj.borrow().model.borrow().mat(),
             highp_strategy,
         )
@@ -137,7 +136,7 @@ impl CollisionObject {
         &self,
     ) -> (Vec<cgmath::Matrix4<f64>>, Vec<cgmath::Matrix4<f64>>) {
         use cgmath::*;
-        let (main, leaf) = self.mesh.borrow().main_and_leaf_boxes();
+        let (main, leaf) = self.mesh.main_and_leaf_boxes();
 
         (
             main.into_iter()
@@ -175,11 +174,9 @@ impl CollisionObject {
         use cgmath::*;
         let our_mat = self.obj.borrow().model.borrow().mat();
         let other_mat = other.obj.borrow().model.borrow().mat();
-        let (our, other) = self.mesh.borrow().get_colliding_volumes(
-            &our_mat,
-            &other.mesh.borrow(),
-            &other_mat,
-        );
+        let (our, other) =
+            self.mesh
+                .get_colliding_volumes(&our_mat, &other.mesh, &other_mat);
         our.into_iter()
             .map(|x| {
                 assert!(matches!(x, obb::BoundingVolume::Aabb(_)));
@@ -226,7 +223,7 @@ impl CollisionObject {
         use cgmath::*;
         let transform = self.obj.borrow().model.clone();
         let transform = transform.borrow();
-        let (pt, radius) = self.mesh.borrow().bounding_sphere();
+        let (pt, radius) = self.mesh.bounding_sphere();
         let scale = transform.local_scale();
         let max_scale = scale.x.abs().max(scale.y.abs().max(scale.z.abs()));
         (transform.mat().transform_point(pt), radius * max_scale)
@@ -235,7 +232,7 @@ impl CollisionObject {
     /// Gets the estimated volume of this collision object
     #[inline]
     pub fn aabb_volume(&self) -> f64 {
-        self.mesh.borrow().aabb_volume()
+        self.mesh.aabb_volume()
     }
 
     /// Calls `func` on all vertices of this mesh
@@ -244,13 +241,13 @@ impl CollisionObject {
         &self,
         mut func: F,
     ) {
-        self.mesh.borrow().forall_verts(&mut func);
+        self.mesh.forall_verts(&mut func);
     }
 
     /// Gets an id that uniquely identifies this collision objects's shared geometry
     pub fn geometry_id(&self) -> usize {
         assert_eq_size!(usize, *mut collision_mesh::CollisionMesh);
-        self.mesh.as_ptr() as usize
+        self.mesh.as_ref() as *const _ as usize
     }
 
     /// Gets an id that uniquely identifies this collision object by its transformation
@@ -266,7 +263,7 @@ impl CollisionObject {
         volume: obb::BoundingVolume,
         volume_transform: &cgmath::Matrix4<f64>,
     ) -> bool {
-        self.mesh.borrow().bounding_volume_collision(
+        self.mesh.bounding_volume_collision(
             &self.obj.borrow().model.borrow().mat(),
             volume,
             volume_transform,
@@ -480,6 +477,7 @@ mod test {
                 + f64::sqrt(3.) / 2.0
         );
         // should have collision iff detected collision in tree
+
         assert_eq!(
             tree.test_for_collisions(point3(1., 0., 0.), f64::sqrt(3.) / 2.0)
                 .len(),
