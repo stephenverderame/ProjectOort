@@ -271,6 +271,19 @@ impl Node {
         self.scale
     }
 
+    /// Gets the scale factor, taking into account parent transforms
+    pub fn get_scale(&self) -> Vector3<f64> {
+        if self.parent.is_some() {
+            let m = self.mat();
+            let x = m.x.truncate().magnitude();
+            let y = m.y.truncate().magnitude();
+            let z = m.z.truncate().magnitude();
+            vec3(x, y, z)
+        } else {
+            self.local_scale()
+        }
+    }
+
     /// Gets the rotation, ignoring any parent transforms
     #[inline]
     pub const fn local_rot(&self) -> Quaternion<f64> {

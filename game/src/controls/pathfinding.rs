@@ -859,6 +859,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn cp_mine_field_repeated() {
         for _ in 0..30 {
             cp_mine_field();

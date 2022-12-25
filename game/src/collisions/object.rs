@@ -2,13 +2,15 @@ use super::collision_mesh;
 use super::octree::ONode;
 use crate::cg_support::node;
 use cgmath::*;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
 /// Internal use to collisions module
 pub(super) struct Object {
     pub(super) model: Rc<RefCell<node::Node>>,
-    pub(super) local_radius: f64,
+    last_radius: Cell<f64>,
+    local_center: Point3<f64>,
+    last_scale: Cell<Option<Vector3<f64>>>,
     pub(super) octree_cell: Weak<RefCell<ONode>>,
     pub(super) mesh: Weak<collision_mesh::CollisionMesh>,
 }
@@ -17,18 +19,33 @@ impl Object {
     pub fn center(&self) -> Point3<f64> {
         //let p = self.model.borrow().pos.to_vec() + self.local_center.to_vec();
         //point3(p.x, p.y, p.z)
-        self.model
-            .borrow()
-            .mat()
-            .transform_point(point3(0., 0., 0.))
+        self.model.borrow().transform_point(self.local_center)
         // center in local coordinates always 0, 0, 0 to be rotationally invariant
     }
 
     pub fn radius(&self) -> f64 {
         let model = self.model.borrow();
-        let scale = model.local_scale();
-        let max_extents = scale.x.max(scale.y.max(scale.z));
-        self.local_radius * max_extents
+        match self.last_scale.get() {
+            Some(scale)
+                if scale.abs_diff_eq(&model.get_scale(), f64::EPSILON) =>
+            {
+                self.last_radius.get()
+            }
+            _ => self.mesh.upgrade().map_or_else(
+                || self.last_radius.get(),
+                |mesh| {
+                    let (_, radius) = mesh.bounding_sphere(&model.get_scale());
+                    self.last_radius.set(radius);
+                    self.last_scale.set(Some(model.get_scale()));
+                    radius
+                },
+            ),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn radius_mut(&mut self) -> &mut f64 {
+        self.last_radius.get_mut()
     }
 
     /// Testing helper function to make a new object
@@ -36,9 +53,25 @@ impl Object {
     pub fn new(transform: Rc<RefCell<node::Node>>, radius: f64) -> Self {
         Self {
             model: transform,
-            local_radius: radius,
+            last_radius: Cell::new(radius),
+            last_scale: Cell::new(None),
+            local_center: Point3::new(0.0, 0.0, 0.0),
             octree_cell: Weak::new(),
             mesh: Weak::new(),
+        }
+    }
+
+    pub fn from_prototype(
+        model: &Rc<RefCell<node::Node>>,
+        prototype: &Self,
+    ) -> Self {
+        Self {
+            model: model.clone(),
+            last_radius: Cell::new(prototype.last_radius.get()),
+            last_scale: Cell::new(prototype.last_scale.get()),
+            local_center: prototype.local_center,
+            octree_cell: Weak::new(),
+            mesh: prototype.mesh.clone(),
         }
     }
 
@@ -49,10 +82,13 @@ impl Object {
         transform: Rc<RefCell<node::Node>>,
         mesh: &Rc<collision_mesh::CollisionMesh>,
     ) -> Self {
-        let (_, local_radius) = mesh.bounding_sphere();
+        let scale = transform.borrow().get_scale();
+        let (local_center, last_radius) = mesh.bounding_sphere(&scale);
         Self {
             model: transform,
-            local_radius,
+            last_radius: Cell::new(last_radius),
+            local_center,
+            last_scale: Cell::new(Some(scale)),
             octree_cell: Weak::new(),
             mesh: Rc::downgrade(mesh),
         }
@@ -74,7 +110,7 @@ impl Object {
 impl std::fmt::Debug for Object {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Object")
-            .field("radius", &self.local_radius)
+            .field("radius", &self.radius())
             .finish()
     }
 }

@@ -444,9 +444,9 @@ mod test {
         // Distance between centers greater than sum of longests sides
         assert_lt!(
             n.get_pos().distance(test_cube.center),
-            (f64::sqrt(3.) / 2.0)
-                .mul_add(1.0, (n.local_scale() * 2.0).magnitude() / 2.0)
+            f64::sqrt(3.) + (n.local_scale() * 2.0).magnitude() / 2.0
         );
+        // if they collide this should be true?
 
         // ?? I don't think these should collide
         // it doesn't in Blender, but it kind of looked like it did

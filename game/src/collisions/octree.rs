@@ -152,6 +152,37 @@ impl ONode {
         }
     }
 
+    /// Helper for `get_subtree_colliders` which dispatches recursive calls
+    /// to the childrent of `node` which need to be checked for collisions with `test_obj`
+    fn get_subtree_colliders_dispatch_children(
+        v: &mut Vec<Rc<RefCell<Object>>>,
+        node: &Rc<RefCell<Self>>,
+        test_obj: &Rc<RefCell<Object>>,
+    ) {
+        if let Some(children) = node.borrow().children.as_ref() {
+            match Self::get_octant_index(
+                &node.borrow().center,
+                node.borrow().h_width,
+                test_obj,
+            ) {
+                Some(octant) => v.append(&mut Self::get_subtree_colliders(
+                    &children[octant as usize],
+                    test_obj,
+                )),
+                None => {
+                    // doesn't fit so check all children
+                    // TODO: could optimize by checking only the children
+                    // that overlap the bounding sphere
+                    for child in children {
+                        v.append(&mut Self::get_subtree_colliders(
+                            child, test_obj,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     /// Gets all objects that have overlapping bounding spheres as `test_obj` in `node` or children of `node`
     ///
     /// `node` - the containing octree cell of `test_obj`
@@ -172,11 +203,7 @@ impl ONode {
                 v.push(obj);
             }
         }
-        if let Some(children) = node.borrow().children.as_ref() {
-            for c in children {
-                v.append(&mut Self::get_subtree_colliders(c, test_obj));
-            }
-        }
+        Self::get_subtree_colliders_dispatch_children(&mut v, node, test_obj);
         v
     }
 
@@ -226,12 +253,11 @@ impl ONode {
         radius: f64,
     ) -> Vec<Rc<RefCell<Object>>> {
         use crate::node;
-        let test_obj = Rc::new(RefCell::new(Object {
-            model: Rc::new(RefCell::new(node::Node::default().pos(center))),
-            local_radius: radius,
-            octree_cell: Weak::new(),
-            mesh: Weak::new(),
-        }));
+        let obj = Object::new(
+            Rc::new(RefCell::new(node::Node::default().pos(center))),
+            radius,
+        );
+        let test_obj = Rc::new(RefCell::new(obj));
         Self::get_subtree_colliders(node, &test_obj)
     }
 
@@ -583,22 +609,15 @@ mod test {
             &ot.root.borrow().children.as_ref().unwrap()[6]
         )));
         //let local_origin = obj[14].borrow().local_center;
-        obj[14]
-            .borrow_mut()
-            .model
-            .borrow_mut()
-            .set_scale(vec3(0.1, 0.1, 0.1));
+        *obj[14].borrow_mut().radius_mut() = 20. * 0.1;
         //obj[14].borrow_mut().model.borrow_mut().anchor = local_origin;
         Octree::update(&obj[14]);
         assert!(obj[14].borrow().octree_cell.ptr_eq(&Rc::downgrade(
             &ot.root.borrow().children.as_ref().unwrap()[6]
         )));
         //let local_origin = obj[14].borrow().local_center;
-        obj[1]
-            .borrow_mut()
-            .model
-            .borrow_mut()
-            .set_scale(vec3(5., 5., 5.));
+        let radius = obj[1].borrow().radius();
+        *obj[1].borrow_mut().radius_mut() = radius * 5.;
         //obj[1].borrow().model.borrow_mut().anchor = local_origin;
         Octree::update(&obj[1]);
         assert!(obj[1].borrow().octree_cell.ptr_eq(&Rc::downgrade(&ot.root)));
@@ -701,7 +720,7 @@ mod test {
                 .model
                 .borrow_mut()
                 .set_pos(random_pt(point3(0., 0., 0.), 200.));
-            i.borrow_mut().local_radius = random_radius(200.);
+            *i.borrow_mut().radius_mut() = random_radius(200.);
             Octree::update(i);
         }
         for o in &objs {
@@ -724,12 +743,7 @@ mod test {
     #[test]
     fn test_octant_index() {
         let n = Rc::new(RefCell::new(node::Node::default()));
-        let obj = Rc::new(RefCell::new(Object {
-            model: n.clone(),
-            local_radius: 1.,
-            octree_cell: Weak::new(),
-            mesh: Weak::new(),
-        }));
+        let obj = Rc::new(RefCell::new(Object::new(n.clone(), 1.)));
         assert_eq!(
             ONode::get_octant_index(&point3(0., 0., 0.), 10., &obj),
             None

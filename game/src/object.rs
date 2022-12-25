@@ -164,7 +164,7 @@ impl GameObject {
         );
         for body in &mut self.instances {
             body.base.collider = Some(collisions::CollisionObject::from(
-                body.base.transform.clone(),
+                &body.base.transform,
                 self.collision_prototype.as_ref().unwrap(),
             ));
         }
@@ -199,7 +199,7 @@ impl GameObject {
             transform.clone(),
             self.collision_prototype
                 .as_ref()
-                .map(|x| collisions::CollisionObject::from(transform, x)),
+                .map(|x| collisions::CollisionObject::from(&transform, x)),
             self.bod_type,
             (self.typ, id),
         ));
@@ -222,7 +222,7 @@ impl GameObject {
                 transform.clone(),
                 self.collision_prototype
                     .as_ref()
-                    .map(|x| collisions::CollisionObject::from(transform, x)),
+                    .map(|x| collisions::CollisionObject::from(&transform, x)),
                 self.bod_type,
                 (self.typ, id),
             )

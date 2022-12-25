@@ -100,14 +100,11 @@ impl CollisionObject {
     }
 
     /// Creates a new collision object by copying an existing one
-    #[allow(dead_code)]
-    pub fn from(transform: Rc<RefCell<node::Node>>, prototype: &Self) -> Self {
-        let obj = Rc::new(RefCell::new(object::Object {
-            model: transform,
-            local_radius: prototype.obj.borrow().local_radius,
-            octree_cell: std::rc::Weak::new(),
-            mesh: prototype.obj.borrow().mesh.clone(),
-        }));
+    pub fn from(transform: &Rc<RefCell<node::Node>>, prototype: &Self) -> Self {
+        let obj = Rc::new(RefCell::new(object::Object::from_prototype(
+            transform,
+            &*prototype.obj.borrow(),
+        )));
         Self {
             obj,
             mesh: prototype.mesh.clone(),
@@ -218,15 +215,15 @@ impl CollisionObject {
     }
 
     /// Gets the center and radius of a bounding sphere for this mesh in world space
+    ///
+    /// The bounding sphere is scaled based on the current transformation matrix,
+    /// the center is not
     #[inline]
     pub fn bounding_sphere(&self) -> (cgmath::Point3<f64>, f64) {
-        use cgmath::*;
         let transform = self.obj.borrow().model.clone();
         let transform = transform.borrow();
-        let (pt, radius) = self.mesh.bounding_sphere();
-        let scale = transform.local_scale();
-        let max_scale = scale.x.abs().max(scale.y.abs().max(scale.z.abs()));
-        (transform.mat().transform_point(pt), radius * max_scale)
+        let (pt, radius) = self.mesh.bounding_sphere(&transform.get_scale());
+        (pt, radius)
     }
 
     /// Gets the estimated volume of this collision object
@@ -409,18 +406,15 @@ mod test {
         tree.insert(&cube);
         // should have no collision in tree
         assert_eq!(
-            tree.test_for_collisions(
-                point3(-5., -5., -6.),
-                f64::sqrt(3.) / 2.0
-            )
-            .len(),
-            0
+            // diagonal is sqrt(3) * 2, so radius is sqrt(3)
+            tree.test_for_collisions(point3(-5., -5., -6.), f64::sqrt(3.))
+                .len(),
+            1
         );
         // distance is greater than the sum of the radii
-        assert_gt!(
+        assert_lt!(
             point3(-5., -5., -6.).distance(cube.bounding_sphere().0),
-            f64::sqrt(3.) / 2.0
-                + (n.borrow().local_scale() * 2.0).magnitude() / 2.0
+            f64::sqrt(3.) + cube.bounding_sphere().1
         );
         // bounding sphere radius at least as large as actual radius
         assert_ge!(
@@ -428,8 +422,8 @@ mod test {
             (n.borrow().local_scale() * 2.0).magnitude() / 2.0
         );
 
-        // should be not collision
-        assert!(!cube.collision_simple(
+        // should be collision
+        assert!(cube.collision_simple(
             BoundingVolume::Obb(Obb {
                 center: point3(-5., -5., -6.),
                 extents: vec3(0.5, 0.5, 0.5),
@@ -441,7 +435,7 @@ mod test {
         ));
 
         // should have no collision
-        assert!(!cube.collision_simple(
+        assert!(cube.collision_simple(
             BoundingVolume::Aabb(Aabb {
                 center: point3(0., 0., 0.),
                 extents: vec3(0.5, 0.5, 0.5),
@@ -473,13 +467,12 @@ mod test {
         // distance is greater than total radius
         assert_gt!(
             tile.center().distance(n.borrow().get_pos()),
-            (n.borrow().local_scale() * 2.0).magnitude() / 2.0
-                + f64::sqrt(3.) / 2.0
+            (n.borrow().local_scale() * 2.0).magnitude() / 2.0 + f64::sqrt(3.)
         );
         // should have collision iff detected collision in tree
 
         assert_eq!(
-            tree.test_for_collisions(point3(1., 0., 0.), f64::sqrt(3.) / 2.0)
+            tree.test_for_collisions(point3(1., 0., 0.), f64::sqrt(3.))
                 .len(),
             if cube.collision_simple(tile, &Matrix4::identity()) {
                 1

@@ -89,8 +89,8 @@ impl CollisionMesh {
         }
     }
 
-    /// Gets a sphere that encloses the entire collision mesh, in local space
-    pub fn bounding_sphere(&self) -> (Point3<f64>, f64) {
+    /// Computes a sphere that encloses the entire collision mesh, in local space
+    pub fn bounding_sphere(&self, scale: &Vector3<f64>) -> (Point3<f64>, f64) {
         let mut c = vec3(0f64, 0., 0.);
         let mut max_x = f64::MIN;
         let mut max_y = f64::MIN;
@@ -101,9 +101,9 @@ impl CollisionMesh {
             let center = aabb.center().to_vec();
             let extents = aabb.extents();
             c += center;
-            max_x = max_x.max(center.x + extents.x);
-            max_y = max_y.max(center.y + extents.y);
-            max_z = max_z.max(center.z + extents.z);
+            max_x = max_x.max(extents.x.mul_add(scale.x, center.x));
+            max_y = max_y.max(extents.y.mul_add(scale.y, center.y));
+            max_z = max_z.max(extents.z.mul_add(scale.z, center.z));
         }
         c /= self.sub_meshes.len() as f64;
         let center = point3(c.x, c.y, c.z);
