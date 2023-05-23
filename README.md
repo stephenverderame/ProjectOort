@@ -1,10 +1,11 @@
 # Project Oort
 
-This is a WIP development of a 3D space combat game, taking place (mostly) in an asteroid field. 
+This is a WIP development of an OpenGL 3D space combat game, taking place (mostly) in an asteroid field. 
 The game lore remains mostly undecided. The plan is to be a multiplayer, third-person space shooter,
 with most of the game lying in the space combat aspect. The plan is to have different factions/species
 the player can choose from, each giving the player's ship different abilities available to them during combat.
-Two collections of factions will make up the two overarching "sides" of the conflict which players can choose from.
+Two collections of factions will make up the two overarching "sides" of the conflict which players can choose from. It should be noted this is build on Glium, and specifically the `layered-fbo` branch of my own fork of
+of it.
 
 Depending on how long I commit to working on this, there may be a small RTS aspect in which players can utilize the 
 shared resources of their faction/alliance to create battles in the shooter aspect of the game similar to Heroes and Generals.
