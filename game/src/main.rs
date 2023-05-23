@@ -199,7 +199,7 @@ fn main() {
         .depth_buffer(24)
         .build();
 
-    let controller = LocalGameController::new(
+    let mut controller = LocalGameController::new(
         &shared_types::game_controller::AsteroidMap {},
     );
     let player_controls =
@@ -217,7 +217,7 @@ fn main() {
         model::Model::new("assets/Ships/StarSparrow02.obj", &*wnd.ctx()),
         render_width as f32 / render_height as f32,
         "assets/Ships/StarSparrow02.obj",
-        controller.get_player_stats().pid,
+        controller.alloc_obj(),
         enemy_controls.clone(),
     );
     enemy

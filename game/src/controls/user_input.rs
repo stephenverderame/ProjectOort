@@ -146,4 +146,10 @@ impl MovementControl for PlayerControls {
         self.roll = 0.;
         None
     }
+
+    fn on_death(&mut self) {
+        self.state = PlayerActionState::Idle;
+        self.visible = true;
+        self.inv_fac = 0.0;
+    }
 }

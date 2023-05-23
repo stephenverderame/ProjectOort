@@ -261,7 +261,17 @@ impl<M: GameMediator> Game<M> {
         // Updates players' health
         for c in &mut characters {
             let index = c.get_rigid_body().metadata;
+            // println!("Updating {:?}", index);
             c.change_shield(self.health_deltas.borrow()[&index]);
+            if c.shield() <= f64::EPSILON {
+                c.get_node().borrow_mut().set_pos(
+                    point3(
+                        rand::random::<f64>() - 0.5,
+                        rand::random::<f64>() - 0.5,
+                        rand::random::<f64>() - 0.5,
+                    ) * 200.0,
+                );
+            }
         }
     }
 
@@ -297,7 +307,6 @@ impl<M: GameMediator> Game<M> {
         &self,
         actions: HashMap<usize, ControllerAction>,
     ) {
-        use crate::cg_support;
         // TODO: use direction to compute target rotation
         // lerp current and target rotation to rotate smoothly or compute rotational
         // velocity
@@ -309,16 +318,21 @@ impl<M: GameMediator> Game<M> {
                 .get_rigid_body_mut()
                 .base
                 .velocity = action.velocity;
-            let rot = cg_support::look_at(action.velocity, &vec3(0., 1., 0.));
-            if let Some(rot) = rot {
-                self.characters[idx]
-                    .borrow()
-                    .get_rigid_body()
-                    .base
-                    .transform
-                    .borrow_mut()
-                    .set_rot(rot.into());
-            }
+            // if action.velocity.magnitude() > 0.001 {
+            //     let rot = cg_support::look_at(
+            //         action.velocity.normalize(),
+            //         &vec3(0., 1., 0.),
+            //     );
+            //     if let Some(rot) = rot {
+            //         self.characters[idx]
+            //             .borrow()
+            //             .get_rigid_body()
+            //             .base
+            //             .transform
+            //             .borrow_mut()
+            //             .set_rot(rot.into());
+            //     }
+            // }
         }
     }
 

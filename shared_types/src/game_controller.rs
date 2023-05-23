@@ -68,6 +68,12 @@ impl LocalGameController {
             },
         }
     }
+
+    pub fn alloc_obj(&mut self) -> ObjectId {
+        let id = self.last_id;
+        self.last_id = self.last_id.next();
+        id
+    }
 }
 
 type RemoteObjectMapPair = (Vec<RemoteObject>, HashMap<ObjectId, usize>);

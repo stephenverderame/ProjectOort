@@ -223,6 +223,16 @@ impl Player {
     #[inline]
     pub fn change_shield(&mut self, delta: f64) {
         self.shield = change_stat(self.shield, delta);
+        if self.shield <= f64::EPSILON {
+            self.controller.borrow_mut().on_death();
+            self.get_node().borrow_mut().set_pos(
+                point3(
+                    rand::random::<f64>() - 0.5,
+                    rand::random::<f64>() - 0.5,
+                    rand::random::<f64>() - 0.5,
+                ) * 200.0,
+            )
+        }
     }
 
     /// Gets the player's entity id

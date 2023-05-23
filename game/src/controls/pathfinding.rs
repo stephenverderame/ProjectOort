@@ -202,11 +202,16 @@ impl StraightLineNav {
             self.last_velocity = Some(velocity);
             self.last_pos = Some(npc.transform.borrow().get_pos());
             println!("Following path");
-            ActionResult::Running(Some(ControllerAction { velocity }))
+            ActionResult::Running(Some(ControllerAction {
+                velocity,
+                fire: false,
+            }))
         } else {
             self.reset();
+            println!("No next point");
             ActionResult::Success(Some(ControllerAction {
                 velocity: vec3(0., 0., 0.),
+                fire: false,
             }))
         }
     }
@@ -349,7 +354,13 @@ impl ComputePath {
         scene: &CollisionTree,
         players: &HashSet<usize>,
     ) {
+        let start_time = std::time::Instant::now();
         while let Some((n, _)) = frontier.pop() {
+            if std::time::Instant::now() - start_time
+                >= std::time::Duration::from_millis(80)
+            {
+                break;
+            }
             *cur_node = n;
             let cur_tile = cur_node.index;
             if cur_tile == info.target {
@@ -422,6 +433,12 @@ impl ComputePath {
             println!("Target obstructed");
             return None;
         }
+        if Self::tile_cost(cur_pos, tile_dim, point3(0, 0, 0), scene, players)
+            > 0
+        {
+            println!("Self obstructed");
+            return None;
+        }
         let mut frontier = PriorityQueue::new();
         frontier.push(cur_node.clone(), Priority::from_cost(0));
         let info = AStarInformation {
@@ -450,8 +467,9 @@ impl BTNode for ComputePath {
     ) -> ActionResult {
         println!("Ticking ComputePath");
         if let Some(target_location) = &blackboard.target_location {
-            let player_map: HashSet<usize> =
+            let mut player_map: HashSet<usize> =
                 other_players.copy().map(|p| p.as_ptr() as usize).collect();
+            player_map.insert(player.transform.as_ptr() as usize);
             let cur_pos = player.transform.borrow().get_pos();
             blackboard.computed_path = Self::get_path(
                 &cur_pos,
@@ -461,6 +479,7 @@ impl BTNode for ComputePath {
                 &player_map,
             )
             .map(|path| {
+                println!("Got path to {:?}", target_location);
                 ComputedPath::new(
                     path,
                     *target_location,
@@ -468,7 +487,7 @@ impl BTNode for ComputePath {
                     self.tile_dim,
                 )
             });
-            println!("Got path to {:?}", target_location);
+            blackboard.path_target_location = blackboard.target_location;
             blackboard
                 .computed_path
                 .as_ref()

@@ -60,6 +60,7 @@ pub struct ControllerAction {
     // TODO: control forces instead of velocity directly
     pub velocity: cgmath::Vector3<f64>,
     // TODO: add rotational control, firing control, etc.
+    pub fire: bool,
 }
 
 /// `MovementControl` is a trait that controls the movement of a character
@@ -93,6 +94,8 @@ pub trait MovementControl {
         dt: std::time::Duration,
         other_players: PlayerIterator<'a>,
     ) -> Option<ControllerAction>;
+
+    fn on_death(&mut self);
 }
 
 pub use user_input::PlayerControls;
@@ -100,6 +103,13 @@ pub use user_input::PlayerControls;
 /// Returns a standard behavior tree
 pub fn get_std_behavior_tree() -> BehaviorTree {
     let root = Box::new(Sequence {});
+    let compute_path_if_necessary = BehaviorTree::new(
+        Box::new(Fallback {}),
+        vec![
+            BehaviorTree::new(Box::new(ShouldRecomputePath {}), vec![]),
+            BehaviorTree::new(Box::new(ComputePath::new(12.)), vec![]),
+        ],
+    );
     let children = vec![
         BehaviorTree::new(
             Box::new(Fallback {}),
@@ -109,10 +119,22 @@ pub fn get_std_behavior_tree() -> BehaviorTree {
             ],
         ),
         BehaviorTree::new(
-            Box::new(Fallback {}),
+            Box::new(Sequence {}),
             vec![
-                BehaviorTree::new(Box::new(StraightLineNav::default()), vec![]),
-                BehaviorTree::new(Box::new(ComputePath::new(20.)), vec![]),
+                compute_path_if_necessary,
+                BehaviorTree::new(
+                    Box::new(Fallback {}),
+                    vec![
+                        BehaviorTree::new(
+                            Box::new(StraightLineNav::default()),
+                            vec![],
+                        ),
+                        BehaviorTree::new(
+                            Box::new(TriggerRecomputePath {}),
+                            vec![],
+                        ),
+                    ],
+                ),
             ],
         ),
     ];
