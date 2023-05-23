@@ -14,7 +14,12 @@ I also hope to be able to add single player modes by developing a combat AI.
 If all else fails (either I move on or just keep adding more features to the engine), 
 then this project will simply be a collection of technical features I found interesting and fun to work on.
 
+**UPDATE**: I have decided to leave it (potentially for now) where it is. Multiplayer implementation has started
+but I will likely not finish it. As it stands, the game is singleplayer only, where you battle against
+an AI in deep-space themed combat.
+
 ![Screenshot](images/screenshot1.png)
+![Screenshot2](images/game_shot1.png)
 
 
 ## Architecture
@@ -130,7 +135,7 @@ is used to determine whether an object is the same as another. An `ONode` holds 
 
     (See below)
 
-* Volumetric Ray-Marched Dust/Nebulas (WIP) [^11] [^12] [^13]
+* Volumetric Ray-Marched Dust/Nebulas [^11] [^12] [^13]
 
     The general gist is to generate a 3D volume texture via Perlin Noise with fractal brownian motion. We then compute rays in a Vertex Shader by computing
     the direction between the vertex and camera. In the Fragment shader, the 3D texture is sampled along these rays in discrete
@@ -144,6 +149,10 @@ is used to determine whether an object is the same as another. An `ONode` holds 
     * [Another paper](https://lup.lub.lu.se/luur/download?func=downloadFile&recordOId=8893256&fileOId=8893258)
     * [Siggraph 2011 Volumetric Rendering Tutorial](http://patapom.com/topics/Revision2013/Revision%202013%20-%20Real-time%20Volumetric%20Rendering%20Course%20Notes.pdf)
     * [Horizon Zero Dawn](http://killzone.dl.playstation.net/killzone/horizonzerodawn/presentations/Siggraph15_Schneider_Real-Time_Volumetric_Cloudscapes_of_Horizon_Zero_Dawn.pdf)
+
+* Signed Distance Field Fonts
+
+    Improved anti-aliasing by using signed distance fields for text rendering.
 
 ### Collisions
 
@@ -191,10 +200,44 @@ based upon the momentum of colliding bodies.
     The basic premise is that if the two objects connected by the "cable" are too far apart, we essentially update the velocities
     of both objects by treating the cable being pulled taught as an elastic collision.
 
+### Behavior Tree Based AI
+
+A behavior tree is used to control the non-player enemy in the game. The behavior tree is built up of
+Sequence, Fallback, and ParallelSequence control nodes and custom action nodes for moving and firing.
+Path finding is done using a 3D implementation of A*, by tiling the 3D space into little cubes. Once
+a path has been computed, a simple local navigator that just follows the path in straight lines is used.
+
 ### Game Logic and Multiplayer
 
-Currently working on a UDP game server and implementing game logic in 
-an abstract way to support single and multi player modes.
+There's no deep aim of the game, the goal is to shoot down your enemies without getting
+shot down yourself. Note that, there is no atmosphere and therefore there is no drag
+that will slow down your ship. The ship moves at constant velocity unless acelerated
+or decelerated. Progress has been made on introducing the necessary abstractions to support
+a UDP server and client for multiplayer game mode, however I haven't finished it yet.
+
+![Screenshot3](images/game_shot2.png)
+
+**Controls**: Left click to fire. Right click to fire a grappling shot. `T` to turn
+invisible. `W`, `S` to accelerate forwards or backwards, and mouse movement to control rotation of
+the ship
+
+**Shield**: You have a shield, denoted by the blue number at the top left. If this goes to 0, your ship
+is destroyed and you will respawn somewhere randomly on the map. Your shield will regenerate slowly
+over time.
+
+**Energy**: Denoted by the yellow number in the top left, your energy is necessary to fire lasers
+and accelerate your ship. Your energy will regenerate slowly over time.
+
+**Minimap**: In the bottom right, you have a minimap to see where you are in relation to lasers
+and asteroids. The minimap is a 2D projection of 3D space which is "top-down" respective to your
+camera angle.
+
+**Grappling Hook**: You can fire a "hook shot" by pressing and holding right click.
+Once landed on an object, a tether will be formed between the
+target object and shooter. The distance between the shooter and the object will
+not exceed the distance when the tether was formed. The amount a tethered object moves to
+ensure this depends on the momentum of each tethered object. 
+To release the tether, release right click.
 
 ---
 ## Images
@@ -219,6 +262,9 @@ an abstract way to support single and multi player modes.
 
 I don't forsee having much time to work on this during school, so the following are currently my *immediate* next TODOs.
 There's still much more besides this and I am writing this so I know how to pick up where I left off when I get the time.
+
+**UPDATE**: Most of these have been completed. There's plenty of more things I *could* do, but I will
+probably end here, at least for now.
 
 ### Graphics
 

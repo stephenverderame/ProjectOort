@@ -193,8 +193,6 @@ impl StraightLineNav {
         {
             let point = Self::adjust_point_to_avoid_obstacles(point);
             let dir = point - npc.transform.borrow().get_pos();
-            // let rot_axis = dir.cross(vec3(0.0, 1.0, 0.0));
-            // TODO: rotate the npc to face the direction of the next point
             let velocity = if dir.is_zero() {
                 vec3(0., 0., 0.)
             } else {
@@ -202,7 +200,7 @@ impl StraightLineNav {
             };
             self.last_velocity = Some(velocity);
             self.last_pos = Some(npc.transform.borrow().get_pos());
-            println!("Following path");
+            // println!("Following path");
             ActionResult::Running(Some(ControllerAction {
                 velocity,
                 fire: false,
@@ -480,7 +478,7 @@ impl BTNode for ComputePath {
                 &player_map,
             )
             .map(|path| {
-                println!("Got path to {:?}", target_location);
+                // println!("Got path to {:?}", target_location);
                 ComputedPath::new(
                     path,
                     *target_location,
