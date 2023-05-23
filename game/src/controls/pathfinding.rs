@@ -1,5 +1,6 @@
 use super::ai::{ActionResult, BTNode, BehaviorTree, Blackboard};
 use super::{ControllerAction, PlayerIterator};
+use crate::cg_support;
 use crate::collisions::CollisionTree;
 use crate::physics::{self, BaseRigidBody};
 use cgmath::*;
@@ -98,7 +99,7 @@ pub struct StraightLineNav {
 }
 
 /// Velocity of updates made by `StraightLineNav`
-const SLN_FOLLOW_VELOCITY: f64 = 10.0;
+const SLN_FOLLOW_VELOCITY: f64 = 15.0;
 
 impl StraightLineNav {
     /// Returns true if the next point in the path is not the target
@@ -548,7 +549,7 @@ impl BTNode for SearchForIDedTarget {
         _children: &mut [BehaviorTree],
         blackboard: &mut Blackboard,
         scene: &CollisionTree,
-        _player: &physics::BaseRigidBody,
+        player: &physics::BaseRigidBody,
         _dt: std::time::Duration,
         _other_players: PlayerIterator,
     ) -> ActionResult {
@@ -563,8 +564,12 @@ impl BTNode for SearchForIDedTarget {
                     //     id,
                     //     obj.get_transformation().borrow().get_pos()
                     // );
+                    let dir = obj.get_transformation().borrow().get_pos()
+                        - player.transform.borrow().get_pos();
                     blackboard.target_location =
                         Some(obj.get_transformation().borrow().get_pos());
+                    blackboard.rot =
+                        cg_support::look_at(dir.normalize(), &vec3(0., 1., 0.));
                     return ActionResult::Success(None);
                 }
             }

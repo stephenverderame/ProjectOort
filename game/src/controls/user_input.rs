@@ -103,6 +103,14 @@ impl MovementControl for PlayerControls {
         self.movement
     }
 
+    fn get_snapped_rot(&self) -> Option<cgmath::Matrix3<f64>> {
+        None
+    }
+
+    fn is_ai(&self) -> bool {
+        false
+    }
+
     fn get_roll(&self) -> f64 {
         self.roll
     }

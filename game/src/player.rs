@@ -133,11 +133,15 @@ impl Player {
             self.energy = change_stat(self.energy, ENERGY_PER_SEC * dt_sec);
             self.shield =
                 change_stat(self.shield, ENERGY_PER_SEC / 3. * dt_sec);
-            self.body.base.rot_vel = vec3(
-                self.controller.borrow().get_pitch(),
-                0.,
-                self.controller.borrow().get_roll(),
-            ) / 10000.;
+            if let Some(rot) = self.controller.borrow().get_snapped_rot() {
+                self.get_node().borrow_mut().set_rot(rot.into());
+            } else {
+                self.body.base.rot_vel = vec3(
+                    self.controller.borrow().get_pitch(),
+                    0.,
+                    self.controller.borrow().get_roll(),
+                ) / 10000.;
+            }
         }
         &mut self.body
     }
@@ -217,6 +221,9 @@ impl Player {
 
     #[inline]
     pub fn change_energy(&mut self, delta: f64) {
+        if self.controller.borrow().is_ai() {
+            return;
+        }
         self.energy = change_stat(self.energy, delta);
     }
 
@@ -231,7 +238,9 @@ impl Player {
                     rand::random::<f64>() - 0.5,
                     rand::random::<f64>() - 0.5,
                 ) * 200.0,
-            )
+            );
+            self.shield = 100.;
+            self.energy = 100.;
         }
     }
 

@@ -1,7 +1,7 @@
 [workspace]
 
-members = [
-    "game",
-    "server",
-    "shared_types"
-]
+members = ["game", "server", "shared_types"]
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true

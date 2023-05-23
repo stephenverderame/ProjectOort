@@ -9,3 +9,7 @@ edition = "2021"
 cgmath = "0.18.0"
 itertools = "0.10.3"
 rand = "0.8.5"
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true

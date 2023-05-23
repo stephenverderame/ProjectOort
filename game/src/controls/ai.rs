@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use cgmath::{vec3, InnerSpace};
+use cgmath::{vec3, InnerSpace, Matrix3, Rad, SquareMatrix};
 
 use super::pathfinding::ComputedPath;
 use super::{Movement, MovementControl, PlayerActionState, PlayerIterator};
@@ -9,6 +9,7 @@ use crate::cg_support::node;
 use crate::collisions::CollisionTree;
 use crate::physics;
 
+#[derive(Clone)]
 pub enum ActionResult {
     Success(Option<super::ControllerAction>),
     Failure,
@@ -34,6 +35,7 @@ pub struct Blackboard {
     pub(super) computed_path: Option<ComputedPath>,
     pub(super) target_id: Option<usize>,
     pub(super) path_target_location: Option<cgmath::Point3<f64>>,
+    pub(super) rot: Option<Matrix3<f64>>,
 }
 
 impl Blackboard {
@@ -44,6 +46,7 @@ impl Blackboard {
             computed_path: None,
             target_id: None,
             path_target_location: None,
+            rot: None,
         }
     }
 }
@@ -127,11 +130,46 @@ impl BTNode for Fallback {
     }
 }
 
-pub struct Shoot {
+/// BT control node which runs all children
+/// and returns the last success, if any
+pub struct ParallelSequence {}
+
+impl BTNode for ParallelSequence {
+    fn tick<'a>(
+        &mut self,
+        children: &mut [BehaviorTree],
+        blackboard: &mut Blackboard,
+        scene: &CollisionTree,
+        player: &physics::BaseRigidBody,
+        dt: std::time::Duration,
+        other_players: PlayerIterator<'a>,
+    ) -> ActionResult {
+        let mut last_action = ActionResult::Failure;
+        for child in children {
+            let action =
+                child.tick(blackboard, scene, player, dt, other_players);
+            match (action, last_action.clone()) {
+                (action @ ActionResult::Running(_), ActionResult::Failure)
+                | (action @ ActionResult::Success(_), _) => {
+                    last_action = action;
+                }
+                _ => (),
+            }
+        }
+        last_action
+    }
+}
+
+/// A node that succeeds if the player is looking near
+/// another player
+///
+/// On success, returns a controller action to fire a laser
+/// if the last time this node fired was more than 0.5 seconds ago
+pub struct ShootIfAble {
     last_time: std::time::Instant,
 }
 
-impl Shoot {
+impl ShootIfAble {
     pub fn new() -> Self {
         Self {
             last_time: std::time::Instant::now(),
@@ -153,10 +191,11 @@ impl Shoot {
         let controlled_to_target_angle =
             controlled_dir.angle(controlled_to_target_dir);
         controlled_to_target_angle < cgmath::Rad(0.1)
+            && (controlled_pos - target_pos).magnitude() < 250.
     }
 }
 
-impl BTNode for Shoot {
+impl BTNode for ShootIfAble {
     fn tick<'a>(
         &mut self,
         _children: &mut [BehaviorTree],
@@ -179,8 +218,25 @@ impl BTNode for Shoot {
                 velocity: vec3(0., 0., 0.),
             }))
         } else {
-            ActionResult::Running(None)
+            ActionResult::Success(None)
         }
+    }
+}
+
+/// A behavior tree node that always succeeds
+pub struct AlwaysSucceed {}
+
+impl BTNode for AlwaysSucceed {
+    fn tick<'a>(
+        &mut self,
+        _children: &mut [BehaviorTree],
+        _blackboard: &mut Blackboard,
+        _scene: &CollisionTree,
+        _player: &physics::BaseRigidBody,
+        _dt: std::time::Duration,
+        _other_players: PlayerIterator<'a>,
+    ) -> ActionResult {
+        ActionResult::Success(None)
     }
 }
 
@@ -262,6 +318,14 @@ impl MovementControl for AIController {
         0.
     }
 
+    fn is_ai(&self) -> bool {
+        true
+    }
+
+    fn get_snapped_rot(&self) -> Option<cgmath::Matrix3<f64>> {
+        self.blackboard.rot
+    }
+
     fn get_action_state(&self) -> PlayerActionState {
         self.last_action_state
     }
@@ -295,6 +359,7 @@ impl MovementControl for AIController {
             ActionResult::Running(action) | ActionResult::Success(action) => {
                 if action.as_ref().map_or(false, |x| x.fire) {
                     self.last_action_state = PlayerActionState::Fire;
+                    println!("Fire state");
                 } else {
                     self.last_action_state = PlayerActionState::Idle;
                 }
