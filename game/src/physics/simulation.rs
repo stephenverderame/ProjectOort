@@ -4,6 +4,7 @@ use cgmath::*;
 use collisions::*;
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 type HitCallback<'a, T> =
     Box<dyn FnMut(&RigidBody<T>, &RigidBody<T>, &HitData) + 'a>;
@@ -18,6 +19,9 @@ pub struct Simulation<'a, 'b, T> {
     do_resolve: Cell<Option<ResolveCallback<'b, T>>>,
     scene_size: f64,
     scene_center: Point3<f64>,
+    timing_start: Instant,
+    timing_avg: Duration,
+    timing_cnt: u64,
 }
 
 /// Inserts any uninserted objects into the octree
@@ -224,6 +228,9 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
             do_resolve: Cell::default(),
             scene_size,
             scene_center,
+            timing_avg: Duration::from_secs(0),
+            timing_start: Instant::now(),
+            timing_cnt: 0,
         }
     }
 
@@ -244,6 +251,9 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
             do_resolve: self.do_resolve,
             scene_size: self.scene_size,
             scene_center: self.scene_center,
+            timing_avg: Duration::from_secs(0),
+            timing_start: Instant::now(),
+            timing_cnt: 0,
         }
     }
 
@@ -264,6 +274,9 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
             do_resolve: Cell::new(Some(Box::new(f))),
             scene_size: self.scene_size,
             scene_center: self.scene_center,
+            timing_avg: Duration::from_secs(0),
+            timing_start: Instant::now(),
+            timing_cnt: 0,
         }
     }
 
@@ -367,7 +380,7 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
                             );
                         }
                         Some(Hit::NoData) => {
-                            panic!("Complete undo not implemented");
+                            // panic!("Complete undo not implemented");
                         }
                         None => (),
                     }
@@ -395,7 +408,18 @@ impl<'a, 'b, T> Simulation<'a, 'b, T> {
     ) -> Vec<CollisionResolution> {
         let body_map = insert_into_octree(&mut self.obj_tree, objects);
         update_octree(objects);
+        // let time_start = Instant::now();
         let mut resolvers = self.get_resolving_forces(objects);
+        // let time_diff = time_start.elapsed();
+        // if self.timing_start.elapsed() > Duration::from_secs(90) {
+        //     println!("Avg Time: {}", self.timing_avg.as_micros());
+        //     panic!("Done timing");
+        // } else {
+        //     self.timing_cnt += 1;
+        //     let a = 1.0 / self.timing_cnt as f64;
+        //     let b = 1.0 - a;
+        //     self.timing_avg = self.timing_avg.mul_f64(b) + time_diff.mul_f64(a);
+        // }
         apply_forces(objects, &mut resolvers, &body_map, forces, dt);
         /*move_objects(objects, dt_sec);
         resolve_collisions(objects,

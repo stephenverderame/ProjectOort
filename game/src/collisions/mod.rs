@@ -328,8 +328,11 @@ impl CollisionTree {
         Octree::remove(&obj.obj);
     }
 
-    /// Gets all objects that collide with the given object which is part of this
+    /// Gets objects that collide with the given object which is part of this
     /// collision tree
+    ///
+    /// Some colliding objects may be missed, but all colliding objects
+    /// will be detected by iterating this method for every object
     pub fn get_colliders(obj: &CollisionObject) -> Vec<CollisionObject> {
         Octree::get_colliders(&obj.obj)
             .into_iter()

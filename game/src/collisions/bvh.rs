@@ -16,6 +16,11 @@ pub enum TreeStopCriteria {
 }
 
 impl Default for TreeStopCriteria {
+    #[cfg(not(test))]
+    fn default() -> Self {
+        Self::MaxPrimitivesPerLeaf(1024)
+    }
+    #[cfg(test)]
     fn default() -> Self {
         Self::MaxPrimitivesPerLeaf(32)
     }

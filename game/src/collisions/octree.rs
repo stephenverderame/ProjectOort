@@ -21,7 +21,10 @@ pub(super) struct ONode {
 }
 
 impl ONode {
+    #[cfg(test)]
     const MAX_OBJS_PER_LEAF: usize = 12;
+    #[cfg(not(test))]
+    const MAX_OBJS_PER_LEAF: usize = 32;
 
     /// After creation, a self reference must be assigned
     pub fn new(c: Point3<f64>, h_width: f64) -> Self {
@@ -152,10 +155,24 @@ impl ONode {
         }
     }
 
-    /// Gets all objects that have overlapping bounding spheres as `test_obj` in `node` or children of `node`
+    /// Gets all objects that have overlapping bounding spheres as `test_obj` in
+    /// children of `node`
     ///
     /// `node` - the containing octree cell of `test_obj`
     fn get_subtree_colliders(
+        node: &Rc<RefCell<Self>>,
+        test_obj: &Rc<RefCell<Object>>,
+    ) -> Vec<Rc<RefCell<Object>>> {
+        let mut v = Vec::new();
+        if let Some(children) = node.borrow().children.as_ref() {
+            for c in children {
+                v.append(&mut Self::get_subtree_colliders(c, test_obj));
+            }
+        }
+        v
+    }
+
+    fn get_self_colliders(
         node: &Rc<RefCell<Self>>,
         test_obj: &Rc<RefCell<Object>>,
     ) -> Vec<Rc<RefCell<Object>>> {
@@ -172,23 +189,20 @@ impl ONode {
                 v.push(obj);
             }
         }
-        if let Some(children) = node.borrow().children.as_ref() {
-            for c in children {
-                v.append(&mut Self::get_subtree_colliders(c, test_obj));
-            }
-        }
         v
     }
 
-    /// Gets all objects that have overlappring bounding spheres as `test` object that is a parent of `test_obj`
+    /// Gets all objects that have overlappring bounding spheres as
+    /// `test` object that is a parent of `test_obj` or contained within
+    /// `node`
     ///
     /// `node` - the containing octree cell of `test_obj`
     fn get_parent_colliders(
         node: &Rc<RefCell<Self>>,
         test_obj: &Rc<RefCell<Object>>,
     ) -> Vec<Rc<RefCell<Object>>> {
+        let mut v = Self::get_self_colliders(node, test_obj);
         let mut n = node.borrow().parent.clone();
-        let mut v = Vec::new();
         while let Some(parent) = n.upgrade() {
             parent.borrow_mut().objects.retain(|x| x.strong_count() > 0);
             for obj in
@@ -213,8 +227,8 @@ impl ONode {
             .octree_cell
             .upgrade()
             .map_or_else(Vec::new, |cell| {
-                let mut v = Self::get_subtree_colliders(&cell, obj);
-                v.append(&mut Self::get_parent_colliders(&cell, obj));
+                let mut v = Self::get_parent_colliders(&cell, obj);
+                v.append(&mut Self::get_subtree_colliders(&cell, obj));
                 v
             })
     }
@@ -232,7 +246,9 @@ impl ONode {
             octree_cell: Weak::new(),
             mesh: Weak::new(),
         }));
-        Self::get_subtree_colliders(node, &test_obj)
+        let mut v = Self::get_self_colliders(node, &test_obj);
+        v.append(&mut Self::get_subtree_colliders(node, &test_obj));
+        v
     }
 
     /// Indicates that `obj` has changed and should be re-evaluated for placement in the octree
@@ -317,7 +333,10 @@ impl Octree {
         Self { root }
     }
 
-    /// Get's all objects that have overlapping bounding spheres with `obj`
+    /// Get's some objects that have overlapping bounding spheres with `obj`
+    ///
+    /// Some colliding objects may be missed, but all colliding objects
+    /// will be detected by iterating this method for every object
     pub(super) fn get_colliders(
         obj: &Rc<RefCell<Object>>,
     ) -> Vec<Rc<RefCell<Object>>> {
@@ -669,11 +688,12 @@ mod test {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn randomized_test() {
         use rand::seq::SliceRandom;
         use rand::thread_rng;
         let mut tree = Octree::new(point3(0., 0., 0.), 200.);
-        let mut objs: Vec<Rc<RefCell<Object>>> = (0..300)
+        let mut objs: Vec<Rc<RefCell<Object>>> = (100..200)
             .map(|_| {
                 let o = random_obj(point3(0., 0., 0.), 200.);
                 tree.insert(&o);
@@ -689,10 +709,19 @@ mod test {
                 })
                 .map(|x| x.as_ptr() as *const Object)
                 .collect();
-            let tree_colliders: Vec<*const Object> = Octree::get_colliders(o)
-                .iter()
-                .map(|x| x.as_ptr() as *const Object)
-                .collect();
+            let mut tree_colliders: Vec<*const Object> =
+                Octree::get_colliders(o)
+                    .iter()
+                    .map(|x| x.as_ptr() as *const Object)
+                    .collect();
+            for o2 in &objs {
+                let ptr = o2.as_ptr() as *const Object;
+                if Octree::get_colliders(o2).iter().any(|x| Rc::ptr_eq(x, o))
+                    && !tree_colliders.contains(&ptr)
+                {
+                    tree_colliders.push(ptr);
+                }
+            }
             assert_bag_eq!(colliders, tree_colliders);
         }
         objs.shuffle(&mut thread_rng());
@@ -713,10 +742,20 @@ mod test {
                 })
                 .map(|x| x.as_ptr() as *const Object)
                 .collect();
-            let tree_colliders: Vec<*const Object> = Octree::get_colliders(o)
-                .iter()
-                .map(|x| x.as_ptr() as *const Object)
-                .collect();
+            let mut tree_colliders: Vec<*const Object> =
+                Octree::get_colliders(o)
+                    .iter()
+                    .map(|x| x.as_ptr() as *const Object)
+                    .collect();
+            for o2 in &objs {
+                let ptr = o2.as_ptr() as *const Object;
+                if Octree::get_colliders(o2).iter().any(|x| Rc::ptr_eq(x, o))
+                    && !tree_colliders.contains(&ptr)
+                {
+                    tree_colliders.push(ptr);
+                }
+            }
+            assert_eq!(colliders.len(), tree_colliders.len());
             assert_bag_eq!(colliders, tree_colliders);
         }
     }
