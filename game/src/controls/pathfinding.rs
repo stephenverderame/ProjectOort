@@ -427,15 +427,15 @@ impl ComputePath {
             parent: None,
             cost: 0,
         });
-        println!("Searching for path");
+        // println!("Searching for path");
         if Self::tile_cost(cur_pos, tile_dim, target_tile, scene, players) > 0 {
-            println!("Target obstructed");
+            // println!("Target obstructed");
             return None;
         }
         if Self::tile_cost(cur_pos, tile_dim, point3(0, 0, 0), scene, players)
             > 0
         {
-            println!("Self obstructed");
+            // println!("Self obstructed");
             return None;
         }
         let mut frontier = PriorityQueue::new();
@@ -464,7 +464,7 @@ impl BTNode for ComputePath {
         _dt: std::time::Duration,
         other_players: PlayerIterator,
     ) -> ActionResult {
-        println!("Ticking ComputePath");
+        // println!("Ticking ComputePath");
         if let Some(target_location) = &blackboard.target_location {
             let mut player_map: HashSet<usize> =
                 other_players.copy().map(|p| p.as_ptr() as usize).collect();

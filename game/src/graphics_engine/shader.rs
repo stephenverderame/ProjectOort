@@ -296,6 +296,7 @@ pub struct CloudData<'a> {
     pub model: [[f32; 4]; 4],
 }
 #[derive(Clone, Copy)]
+#[repr(C)]
 pub struct CascadeUniform {
     pub far_planes: [f32; 4],
     pub viewproj_mats: [[[f32; 4]; 4]; 5],

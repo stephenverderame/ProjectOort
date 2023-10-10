@@ -647,6 +647,7 @@ dependencies = [
 [[package]]
 name = "glium"
 version = "0.31.0"
+source = "git+https://github.com/stephenverderame/GliumFork.git?branch=layered-fbo#06455b928036e1f99eb773cc15b4a4da1b039465"
 dependencies = [
  "backtrace",
  "crossbeam-utils",
